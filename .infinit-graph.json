@@ -1,0 +1,189 @@
+{
+  "generated": "2026-07-02T18:23:16.213Z",
+  "fingerprint": "926032ce69a719de",
+  "fileCount": 24,
+  "apiRoutes": [],
+  "services": {},
+  "graph": {
+    "cli.js": {
+      "path": "cli.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 64808
+    },
+    "scripts/generate-graph.mjs": {
+      "path": "scripts/generate-graph.mjs",
+      "role": "script",
+      "exports": [],
+      "imports": [
+        "fs",
+        "path",
+        "crypto",
+        "os",
+        "Y"
+      ],
+      "size": 11538
+    },
+    "scripts/inject-memory.mjs": {
+      "path": "scripts/inject-memory.mjs",
+      "role": "script",
+      "exports": [],
+      "imports": [
+        "child_process",
+        "fs",
+        "path",
+        "os",
+        "url"
+      ],
+      "size": 4575
+    },
+    "src/api/index.js": {
+      "path": "src/api/index.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 31095
+    },
+    "src/core/conflict.js": {
+      "path": "src/core/conflict.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 3989
+    },
+    "src/core/constants.js": {
+      "path": "src/core/constants.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 2420
+    },
+    "src/core/db-path.js": {
+      "path": "src/core/db-path.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 3072
+    },
+    "src/core/db.js": {
+      "path": "src/core/db.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 9837
+    },
+    "src/core/embedding.js": {
+      "path": "src/core/embedding.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 8525
+    },
+    "src/core/export.js": {
+      "path": "src/core/export.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 16086
+    },
+    "src/core/hooks.js": {
+      "path": "src/core/hooks.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 9363
+    },
+    "src/core/index.js": {
+      "path": "src/core/index.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 729
+    },
+    "src/core/reflection.js": {
+      "path": "src/core/reflection.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 15090
+    },
+    "src/core/relations.js": {
+      "path": "src/core/relations.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 6235
+    },
+    "src/core/search.js": {
+      "path": "src/core/search.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 12753
+    },
+    "src/core/session.js": {
+      "path": "src/core/session.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 8437
+    },
+    "src/mcp/server.js": {
+      "path": "src/mcp/server.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 24048
+    },
+    "tests/conflict.test.js": {
+      "path": "tests/conflict.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 6930
+    },
+    "tests/db.test.js": {
+      "path": "tests/db.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 21508
+    },
+    "tests/embedding.test.js": {
+      "path": "tests/embedding.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 8340
+    },
+    "tests/hooks.test.js": {
+      "path": "tests/hooks.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 15885
+    },
+    "tests/relations.test.js": {
+      "path": "tests/relations.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 11300
+    },
+    "tests/search.test.js": {
+      "path": "tests/search.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 14361
+    },
+    "tests/session.test.js": {
+      "path": "tests/session.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "size": 8496
+    }
+  }
+}

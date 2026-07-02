@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// agentic-cortex CLI v3.0 — Persistent memory for AI coding agents.
+// agentic-cortex CLI — Persistent memory for AI coding agents.
 // Features: FTS5 search, BGE embeddings (768-dim), 13 typed memories,
 // confidence/provenance tracking, conflict detection, temporal queries,
 // grounded QA, file upload, daily summaries, Obsidian export.
@@ -1248,7 +1248,7 @@ commands.setup = {
       console.error('[agentic-cortex]   created knowledge.md');
     } else {
       console.error('[agentic-cortex] Template not found, creating minimal knowledge.md');
-      const minimal = '# Codebuff Agent Memory Instructions\n\n## Persistent Memory\n\nUse `agentic-cortex save` to persist observations.\nAt session start, check below for injected context.\n\n<!-- MEMORY_CONTEXT_START -->\n<!-- MEMORY_CONTEXT_END -->\n';
+      const minimal = '# Agentic Cortex Memory Instructions\n\n## Persistent Memory\n\nUse `agentic-cortex save` to persist observations.\nAt session start, check below for injected context.\n\n<!-- MEMORY_CONTEXT_START -->\n<!-- MEMORY_CONTEXT_END -->\n';
       fs.writeFileSync(targetPath, minimal, 'utf-8');
     }
 
@@ -1472,7 +1472,7 @@ commands.inject = {
 const [,, cmd, ...args] = process.argv;
 
 if (!cmd || cmd === '--help' || cmd === '-h') {
-  console.log('agentic-cortex v3.0 — Persistent memory for AI coding agents\n');
+  console.log('agentic-cortex — Persistent memory for AI coding agents\n');
   console.log('Usage: agentic-cortex <command> [args]\n');
   console.log('Commands:');
   for (const [name, c] of Object.entries(commands)) {
