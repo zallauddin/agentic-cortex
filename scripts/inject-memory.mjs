@@ -6,7 +6,7 @@
  *   1. Session memories from agentic-cortex (persistent cross-session agent memory)
  *   2. Codebase structure graph (deterministic, cached, no LLM cost)
  *
- * Run this before launching Codebuff to pre-load full context.
+ * Run this before launching your AI coding agent to pre-load full context.
  * Usage: node scripts/inject-memory.mjs [project-path]
  */
 
@@ -45,7 +45,7 @@ if (!existsSync(memCli)) {
   process.exit(1);
 }
 
-// ─── Layer 1: Session memories from freebuff-mem ──────────────────
+// ─── Layer 1: Session memories from agentic-cortex ──────────────────
 
 let sessionContext = '';
 try {
@@ -89,7 +89,7 @@ if (!hasMemories && !graphContext) {
 }
 
 const timestamp = new Date().toISOString();
-let combined = `\n<!-- Auto-injected by freebuff-mem at ${timestamp} -->\n\n`;
+let combined = `\n<!-- Auto-injected by agentic-cortex at ${timestamp} -->\n\n`;
 
 if (hasMemories) {
   combined += sessionContext + '\n';
