@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-02T18:23:16.213Z",
-  "fingerprint": "926032ce69a719de",
+  "generated": "2026-07-02T19:17:50.631Z",
+  "fingerprint": "0bbdc47263888312",
   "fileCount": 24,
   "apiRoutes": [],
   "services": {},
@@ -10,7 +10,7 @@
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 64808
+      "size": 64798
     },
     "scripts/generate-graph.mjs": {
       "path": "scripts/generate-graph.mjs",
@@ -20,10 +20,9 @@
         "fs",
         "path",
         "crypto",
-        "os",
-        "Y"
+        "url"
       ],
-      "size": 11538
+      "size": 33701
     },
     "scripts/inject-memory.mjs": {
       "path": "scripts/inject-memory.mjs",

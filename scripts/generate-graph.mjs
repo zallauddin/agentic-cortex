@@ -19,6 +19,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, relative, extname, dirname, basename } from 'path';
 import { createHash } from 'crypto';
+import { fileURLToPath } from 'url';
 
 const PROJECT_ROOT = process.cwd();
 const GRAPH_CACHE = join(PROJECT_ROOT, '.infinit-graph.json');
@@ -38,6 +39,11 @@ function fileFingerprint(filePath) {
 
 function projectFingerprint(files) {
   const hasher = createHash('sha256');
+
+  // Include script's own fingerprint to invalidate cache on algorithm changes
+  const scriptFp = fileFingerprint(fileURLToPath(import.meta.url));
+  if (scriptFp) hasher.update('script:' + scriptFp);
+
   for (const f of files.sort()) {
     const fp = fileFingerprint(f);
     if (fp) hasher.update(f + fp);
