@@ -37,15 +37,19 @@ function getDb() {
 
   const dbPath = getDbPath();
 
-  // Auto-migrate from old freebuff-mem.db to agentic-cortex.db on upgrade
+  // Auto-migrate from old database names to agentic-cortex.db on upgrade
   const dbDir = path.dirname(dbPath);
-  const oldDbPath = path.join(dbDir, 'freebuff-mem.db');
-  if (!fs.existsSync(dbPath) && fs.existsSync(oldDbPath)) {
-    try {
-      fs.renameSync(oldDbPath, dbPath);
-      console.error('[agentic-cortex] Migrated existing database from freebuff-mem.db to ' + dbPath);
-    } catch (err) {
-      console.error('[agentic-cortex] Warning: Could not migrate old database:', err.message);
+  const oldNames = ['freebuff-mem.db', 'infinit-mem.db'];
+  for (const oldName of oldNames) {
+    const oldDbPath = path.join(dbDir, oldName);
+    if (!fs.existsSync(dbPath) && fs.existsSync(oldDbPath)) {
+      try {
+        fs.renameSync(oldDbPath, dbPath);
+        console.error('[agentic-cortex] Migrated existing database from ' + oldName + ' to ' + dbPath);
+        break;
+      } catch (err) {
+        console.error('[agentic-cortex] Warning: Could not migrate old database (' + oldName + '):', err.message);
+      }
     }
   }
 
