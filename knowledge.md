@@ -45,10 +45,33 @@ The context below is AUTO-INJECTED by git hooks (post-merge, post-checkout) or `
 Use this pre-computed knowledge to skip discovery. No need to re-read files you already know about.
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-02T19:17:51.097Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-02T19:22:55.176Z -->
 
 ## Codebase Graph
-Generated: 2026-07-02T19:17:50.631Z | 24 source files | 0 API routes
+*24 source files | 0 API routes | Generated 2026-07-02T19:22:54.642Z*
+
+### Architecture
+**Patterns:** Event-Driven, CLI Tool
+**Stack:** Databases: SQLite | Tools: Xenova Transformers (AI/ML)
+
+### Data Flow
+`API → Service`
+Files per layer: UI=0 API=1 Service=21 Data=0
+**Hub files (most imported):** `scripts/inject-memory.mjs`, `scripts/generate-graph.mjs`, `cli.js`, `src/api/index.js`, `src/core/conflict.js`
+
+### Core Libraries (12)
+- `src/core/conflict.js` — fns: checkConflicts(db, opts)
+- `src/core/constants.js` — fns: getProjectDefault(opts)
+- `src/core/db-path.js` — fns: ensureDir(filePath), getDbDir(), getDbPath(), getLegacyDbPath(), getLegacyDbPathIfExists()
+- `src/core/db.js` — fns: ensureSchema(db), getDb(), getDbPath_()
+- `src/core/embedding.js` — fns: _cacheGet(key), _cacheSet(key, value), clearEmbeddingCache(), computeEmbedding(text), cosineSimilarity(a, b)
+- `src/core/export.js` — fns: exportJSON(db, opts), exportMarkdown(db, opts), findRelated(obs, allObs), importJSON(db, data, opts), sanitizeFilename(title, id)
+- `src/core/hooks.js` — fns: createHook(db, opts), deleteHook(db, id), evaluateCondition(type, value, observation, context), executePersistedHook(db, hook, observation, context), getPersistedHooks(db, event)
+- `src/core/index.js`
+- `src/core/reflection.js` — fns: archiveSuperseded(db, opts), consolidateMemories(db, opts), findSimilarClusters(observations, threshold), generateConsolidatedSummary(cluster), getEmbeddedObservations(db, project, limit)
+- `src/core/relations.js` — fns: addRelation(db, opts), deleteRelation(db, relationId), getGraph(db, opts), getRelations(db, observationId), listRelationTypes(db)
+- `src/core/search.js` — fns: buildWhereClause(opts), hybridSearch(db, query, queryVec, opts), keywordSearch(db, opts), rerankResults(query, results), sanitizeDate(dateStr)
+- `src/core/session.js` — fns: callLLM(messages, opts), endSession(db, sessionId, summary), listSessions(db, opts), startSession(db, opts), summarizeSession(db, opts)
 
 ### Scripts
 - `scripts/generate-graph.mjs`
