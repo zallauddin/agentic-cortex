@@ -6,6 +6,11 @@ const core = require('../core');
 core.hooks.setSaveFunction(save);
 core.reflection.setSaveFunction(save);
 
+// Initialize self-improving loop (error RCA, conflict resolution, learning verification)
+const selfImprove = require('../core/self-improve');
+selfImprove.initHooks(save);
+core.selfImprove = selfImprove;
+
 // ─── Cached dimension mismatch check (checked once per session) ──────
 let _dimensionMismatchChecked = false;
 let _dimensionMismatchWarning = null;

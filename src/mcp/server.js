@@ -395,6 +395,20 @@ const TOOLS = [
       required: ['workingOn'],
     },
   },
+  {
+    name: 'memory_learn_from_error',
+    description: 'Report an error or shortcoming. Saves the error observation and automatically triggers root cause analysis — the system will generate a "learning" observation with a systemic fix. Use this whenever something goes wrong so the system improves over time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        errorContent: { type: 'string', description: 'What went wrong — describe the error or shortcoming in detail' },
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+        importance: { type: 'integer', description: 'Importance 1-10', default: 8 },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Additional tags' },
+      },
+      required: ['errorContent'],
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -536,6 +550,24 @@ async function callTool(name, args) {
 
     case 'memory_skill_search':
       return api.searchSkills(args);
+
+    case 'memory_learn_from_error': {
+      // Save the error observation — the post-save hook in self-improve.js
+      // will automatically trigger root cause analysis
+      const result = await api.save({
+        type: 'error',
+        title: 'Error: ' + (args.errorContent || '').slice(0, 60),
+        content: args.errorContent,
+        project: args.project,
+        importance: args.importance || 8,
+        tags: [...(args.tags || []), 'auto-capture', 'error-report'],
+      });
+      return {
+        status: 'error_logged_and_analyzing',
+        errorId: result.id,
+        note: 'The self-improving loop will analyze this error and generate a systemic learning/fix automatically.',
+      };
+    }
 
     case 'memory_auto_capture': {
       const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
