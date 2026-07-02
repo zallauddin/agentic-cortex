@@ -26,6 +26,9 @@ const { cosineSimilarity } = require('./embedding');
 const { callLLM } = require('./session');
 const embedding = require('./embedding');
 
+// Save function injected to avoid circular dependency on src/api
+let _saveFn = null;  // (opts) => Promise<{id, status, ...}>
+
 /**
  * Default similarity threshold for consolidation.
  * Pairs above this are candidates for merging.
@@ -288,8 +291,8 @@ async function promotePatterns(db, opts = {}) {
   for (const p of patterns) {
     // Check if we already promoted this pattern recently
     const existing = db.prepare(
-      'SELECT id FROM observations WHERE project_path = ? AND type = \'learning\' AND title LIKE ? AND created_at > datetime(\'now\', \'-7 days\')'
-    ).get(project, `%${p.theme}%`);
+      'SELECT id FROM observations WHERE project_path = ? AND type = \'learning\' AND title LIKE \'%\' || ? || \'%\' AND created_at > datetime(\'now\', \'-7 days\')'
+    ).get(project, p.theme);
     if (existing) continue;
 
     // Get sample observations for this theme
@@ -329,8 +332,8 @@ Return JSON with:
       };
     }
 
-    if (!dryRun && summary.title && summary.content) {
-      await require('../api').save({
+    if (!dryRun && summary.title && summary.content && _saveFn) {
+      await _saveFn({
         project,
         type: 'learning',
         title: summary.title,
@@ -340,6 +343,8 @@ Return JSON with:
         provenance: 'inferred',
       });
       promoted++;
+    } else if (!dryRun && summary.title && summary.content && !_saveFn) {
+      console.warn('[reflection] No save function injected — skipping pattern promotion save');
     }
   }
 
@@ -423,4 +428,5 @@ module.exports = {
   promotePatterns,
   archiveSuperseded,
   reflect,
+  setSaveFunction: (fn) => { _saveFn = fn; },
 };

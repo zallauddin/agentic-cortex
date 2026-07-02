@@ -49,6 +49,17 @@ const PORT = parseInt(process.env.AGENTIC_CORTEX_PORT || '37777', 10);
 /** @type {string} llama.cpp server base URL for LLM calls */
 const LLAMA_URL = process.env.LLAMA_CPP_BASE_URL || 'http://127.0.0.1:8081';
 
+/**
+ * Get the default project path from options, env, or current working directory.
+ * Centralized to reduce duplication across the codebase.
+ *
+ * @param {Object} [opts] - Options object that may contain a `project` field
+ * @returns {string} Resolved project path
+ */
+function getProjectDefault(opts) {
+  return (opts && opts.project) || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+}
+
 module.exports = {
   VALID_TYPES,
   VALID_PROVENANCES,
@@ -58,4 +69,5 @@ module.exports = {
   DB_FILENAME,
   PORT,
   LLAMA_URL,
+  getProjectDefault,
 };

@@ -9,13 +9,14 @@ const path = require('path');
 const fs = require('fs');
 
 // ─── Core Modules ────────────────────────────────────────────────
-const { VALID_TYPES, VALID_PROVENANCES, EMBED_MODEL, DB_FILENAME, PORT, LLAMA_URL } = require('./src/core/constants');
+const { VALID_TYPES, EMBED_MODEL, DB_FILENAME, PORT, LLAMA_URL } = require('./src/core/constants');
 const { getDb, ensureSchema, getDbPath } = require('./src/core/db');
 const { getEmbedPipeline, computeEmbedding, cosineSimilarity } = require('./src/core/embedding');
 const { sanitizeDate, buildWhereClause, keywordSearch, semanticSearch, hybridSearch } = require('./src/core/search');
 const { startSession, endSession, listSessions, callLLM, templateSummary, summarizeSession } = require('./src/core/session');
 const { checkConflicts } = require('./src/core/conflict');
 const { exportJSON, exportMarkdown, importJSON } = require('./src/core/export');
+const api = require('./src/api');
 
 // ─── Core functions imported from src/core/ modules above ───────
 // (getDb, ensureSchema, getDbPath, computeEmbedding, cosineSimilarity,
@@ -30,18 +31,7 @@ commands.health = {
   desc: 'Show database stats',
   args: [],
   run(db) {
-    const sessions = db.prepare('SELECT COUNT(*) as c FROM sessions').get().c;
-    const obs = db.prepare('SELECT COUNT(*) as c FROM observations').get().c;
-    const embedded = db.prepare('SELECT COUNT(*) as c FROM observations WHERE embedding IS NOT NULL').get().c;
-    const projects = db.prepare('SELECT COUNT(DISTINCT project_path) as c FROM sessions').get().c;
-    const dbPath = getDbPath();
-    const dbSize = fs.existsSync(dbPath) ? (fs.statSync(dbPath).size / 1024).toFixed(1) : 0;
-    const meta = db.prepare('SELECT * FROM embedding_meta WHERE id = 1').get();
-    console.log(JSON.stringify({
-      status: 'ok', sessions, observations: obs, embedded, projects,
-      dbSizeKB: parseFloat(dbSize),
-      embedding: meta ? { model: meta.model, dimension: meta.dimension, count: meta.count } : null,
-    }, null, 2));
+    console.log(JSON.stringify(api.health(), null, 2));
   }
 };
 
@@ -58,43 +48,26 @@ commands.save = {
       if (args[i] === '--provenance') opts.provenance = args[i + 1];
       if (args[i] === '--project') opts.project = args[i + 1];
       if (args[i] === '--session') opts.session = args[i + 1];
+      if (args[i] === '--agent-id') opts.agentId = args[i + 1];
+      if (args[i] === '--steps') opts.steps = args[i + 1].split(',');
+      if (args[i] === '--triggers') opts.triggers = args[i + 1].split(',');
+      if (args[i] === '--preconditions') opts.preconditions = args[i + 1].split(',');
+      if (args[i] === '--postconditions') opts.postconditions = args[i + 1].split(',');
     }
     return opts;
   },
   async run(db, opts) {
     if (!opts.content) {
-      console.error('Usage: save <title> <content> [--type TYPE] [--tags t1,t2] [--importance N] [--confidence N] [--provenance explicit|inferred|observed] [--project PATH]');
+      console.error('Usage: save <title> <content> [--type TYPE] [--tags t1,t2] [--importance N] [--confidence N] [--provenance explicit|inferred|observed] [--project PATH] [--agent-id ID] [--steps step1,step2] [--triggers t1,t2] [--preconditions c1,c2] [--postconditions c1,c2]');
       process.exit(1);
     }
-    const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
-    const session = opts.session || process.env.AGENTIC_CORTEX_SESSION || null;
-    const type = opts.type || 'observation';
-    if (!VALID_TYPES.has(type)) {
-      console.error('Invalid type: ' + type + '. Valid types: ' + [...VALID_TYPES].sort().join(', '));
-      process.exit(1);
-    }
-    const provenance = opts.provenance || 'observed';
-    if (!VALID_PROVENANCES.has(provenance)) {
-      console.error('Invalid provenance: ' + provenance + '. Valid: explicit, inferred, observed');
-      process.exit(1);
-    }
-    const confidence = opts.confidence || 100;
-    const tags = JSON.stringify(opts.tags || []);
-    const imp = opts.importance || 5;
-
-    let embedding = null;
     try {
-      const text = [opts.title || '', opts.content].filter(Boolean).join('. ');
-      const vec = await computeEmbedding(text);
-      embedding = JSON.stringify(vec);
-    } catch (err) { console.error('Embedding skipped:', err.message); }
-
-    const r = db.prepare(
-      'INSERT INTO observations (session_id, project_path, type, title, content, tags, importance, confidence, provenance, embedding) VALUES (?,?,?,?,?,?,?,?,?,?)'
-    ).run(session, project, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding);
-    console.log(JSON.stringify({
-      id: Number(r.lastInsertRowid), status: 'saved', type, confidence, provenance, project, embedded: !!embedding
-    }));
+      const result = await api.save(opts);
+      console.log(JSON.stringify(result));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
   }
 };
 
@@ -163,6 +136,7 @@ commands.search = {
         // Warn about dimension mismatch (stored vs current model)
         try {
           const sample = db.prepare('SELECT embedding FROM observations WHERE embedding IS NOT NULL LIMIT 1').get();
+          const meta = db.prepare('SELECT * FROM embedding_meta WHERE id = 1').get();
           if (sample) {
             const storedDim = JSON.parse(sample.embedding).length;
             if (meta && storedDim !== meta.dimension) {
@@ -311,11 +285,9 @@ commands.get = {
   parse(args) { return { id: parseInt(args[0], 10) }; },
   run(db, opts) {
     if (isNaN(opts.id)) { console.error('Usage: get <id>'); process.exit(1); }
-    const obs = db.prepare('SELECT * FROM observations WHERE id = ?').get(opts.id);
+    const obs = api.get(opts.id);
     if (!obs) { console.error('Not found: ' + opts.id); process.exit(1); }
-    const { embedding, ...rest } = obs;
-    rest.has_embedding = !!embedding;
-    console.log(JSON.stringify(rest, null, 2));
+    console.log(JSON.stringify(obs, null, 2));
   }
 };
 
@@ -354,7 +326,7 @@ commands.context = {
       "SELECT id, session_id, type, title, substr(content, 1, 200) as preview, tags, importance, created_at FROM observations WHERE project_path = ? ORDER BY importance DESC, created_at DESC LIMIT 20"
     ).all(opts.project);
 
-    let pack = '# Infinit Memory - Project Context\n\n';
+    let pack = '# Agentic Cortex - Project Context\n\n';
     if (sessions.length) {
       pack += '## Recent Sessions\n';
       for (const s of sessions) {
@@ -463,11 +435,12 @@ commands.bulk = {
       const ids = [];
       for (const item of arr) {
         const r = db.prepare(
-          'INSERT INTO observations (session_id, project_path, type, title, content, tags, importance) VALUES (?,?,?,?,?,?,?)'
+          'INSERT INTO observations (session_id, project_path, type, title, content, tags, importance, confidence, provenance) VALUES (?,?,?,?,?,?,?,?,?)'
         ).run(
           item.session_id || null, item.project_path || process.cwd(),
           item.type || 'context', item.title || null, item.content,
-          JSON.stringify(item.tags || []), item.importance || 5
+          JSON.stringify(item.tags || []), item.importance || 5,
+          item.confidence ?? 100, item.provenance || 'observed'
         );
         ids.push(Number(r.lastInsertRowid));
       }
@@ -576,9 +549,11 @@ commands.serve = {
         }
         if (p === '/session/end' && req.method === 'POST') {
           const b = await getBody();
+          const existing = db.prepare('SELECT session_id FROM sessions WHERE session_id = ?').get(b.session_id);
+          if (!existing) return json({ error: 'Session not found: ' + b.session_id }, 404);
           db.prepare("UPDATE sessions SET ended_at=datetime('now'), summary=? WHERE session_id=?")
             .run(b.summary||'', b.session_id);
-          return json({ status: 'ended' });
+          return json({ session_id: b.session_id, status: 'ended' });
         }
         if (p === '/context') {
           const proj = url.searchParams.get('project');
@@ -622,26 +597,18 @@ commands.edit = {
     }
     return opts;
   },
-  run(db, opts) {
+  async run(db, opts) {
     if (isNaN(opts.id)) { console.error('Usage: edit <id> [--title TITLE] [--content CONTENT] [--confidence N] [--importance N]'); process.exit(1); }
-    const existing = db.prepare('SELECT * FROM observations WHERE id = ? AND is_active = 1').get(opts.id);
-    if (!existing) { console.error('Active observation not found: ' + opts.id); process.exit(1); }
-
-    // Save old version
-    db.prepare(
-      'INSERT INTO observation_versions (observation_id, version_number, old_title, old_content, old_confidence) VALUES (?, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM observation_versions WHERE observation_id = ?), ?, ?, ?)'
-    ).run(existing.id, existing.id, existing.title, existing.content, existing.confidence);
-
-    // Update in place (FTS5 triggers handle index update)
-    db.prepare(
-      'UPDATE observations SET title = COALESCE(?, title), content = COALESCE(?, content), confidence = COALESCE(?, confidence), importance = COALESCE(?, importance) WHERE id = ?'
-    ).run(opts.title || null, opts.content || null, opts.confidence ?? null, opts.importance ?? null, opts.id);
-
-    const updated = db.prepare('SELECT * FROM observations WHERE id = ?').get(opts.id);
-    console.log(JSON.stringify({
-      id: updated.id, status: 'edited', title: updated.title,
-      confidence: updated.confidence, versionCount: db.prepare('SELECT COUNT(*) as c FROM observation_versions WHERE observation_id = ?').get(updated.id).c,
-    }));
+    try {
+      const result = await api.edit(opts.id, opts);
+      console.log(JSON.stringify({
+        id: result.id, status: result.status, title: result.title,
+        confidence: result.confidence, versionCount: result.versionCount,
+      }));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
   }
 };
 
@@ -653,16 +620,15 @@ commands.forget = {
     if (args[1] === '--hard') opts.hard = true;
     return opts;
   },
-  run(db, opts) {
+  async run(db, opts) {
     if (isNaN(opts.id)) { console.error('Usage: forget <id> [--hard]'); process.exit(1); }
-    if (opts.hard) {
-      db.prepare('DELETE FROM observation_versions WHERE observation_id = ?').run(opts.id);
-      db.prepare('DELETE FROM observations WHERE id = ?').run(opts.id);
-      console.log(JSON.stringify({ id: opts.id, status: 'hard_deleted' }));
-    } else {
-      const r = db.prepare('UPDATE observations SET is_active = 0 WHERE id = ?').run(opts.id);
-      if (r.changes === 0) { console.error('Observation not found: ' + opts.id); process.exit(1); }
-      console.log(JSON.stringify({ id: opts.id, status: 'forgotten', note: 'Soft-deleted. Use --hard to permanently remove.' }));
+    try {
+      const result = await api.forget(opts.id, { hard: opts.hard });
+      if (!opts.hard) result.note = 'Soft-deleted. Use --hard to permanently remove.';
+      console.log(JSON.stringify(result));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
     }
   }
 };
@@ -1151,7 +1117,7 @@ commands.export = {
           const name = session.project_name || 'unknown';
           const sessionFile = (date + '-' + name).replace(/[^a-zA-Z0-9\-]/g, '-').replace(/-+/g, '-').toLowerCase();
           content += '## Session\n';
-          content += '- [[' + session + ']]\n\n';
+          content += '- [[' + sessionFile + ']]\n\n';
         }
       }
 
@@ -1200,7 +1166,7 @@ commands.export = {
     index += 'total_observations: ' + observations.length + '\n';
     index += 'total_sessions: ' + sessions.length + '\n';
     index += '---\n\n';
-    index += '# Infinit Memory Index\n\n';
+    index += '# Agentic Cortex Memory Index\n\n';
     index += '> Auto-generated by agentic-cortex. ' + observations.length + ' observations across ' + projectSet.size + ' projects.\n\n';
 
     index += '## Stats\n';
@@ -1540,7 +1506,7 @@ async function main() {
     console.error('Error:', err.message);
     process.exit(1);
   } finally {
-    if (cmd !== 'serve') db.close();
+    if (cmd !== 'serve' && db) db.close();
   }
 }
 

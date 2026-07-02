@@ -151,6 +151,9 @@ function cosineSimilarity(a, b) {
     normA += a[i] * a[i];
     normB += b[i] * b[i];
   }
+  // Guard against zero-norm vectors (division by zero → NaN).
+  // A vector with zero magnitude has no direction, so similarity is 0.
+  if (normA === 0 || normB === 0) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 

@@ -12,7 +12,7 @@
 'use strict';
 
 const { homedir } = require('os');
-const { join, resolve } = require('path');
+const { join, resolve, dirname } = require('path');
 const { existsSync, mkdirSync } = require('fs');
 
 const DB_FILENAME = 'agentic-cortex.db';
@@ -22,7 +22,7 @@ const DB_FILENAME = 'agentic-cortex.db';
  * @param {string} filePath - Path to file
  */
 function ensureDir(filePath) {
-  const dir = join(filePath, '..');
+  const dir = dirname(filePath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
