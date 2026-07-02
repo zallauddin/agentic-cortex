@@ -128,4 +128,4 @@ agentic-cortex init && agentic-cortex graph && agentic-cortex inject
 
 ## License
 
-MIT
+Apache 2.0
