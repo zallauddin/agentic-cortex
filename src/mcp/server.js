@@ -380,6 +380,21 @@ const TOOLS = [
       required: ['query'],
     },
   },
+  {
+    name: 'memory_auto_capture',
+    description: 'Declare what you are working on. Auto-starts a session if needed and saves a context observation. Use this at the start of every significant task so memories are automatically associated with the right session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workingOn: { type: 'string', description: 'What you are working on right now (e.g., "Fixing login bug in auth.ts")' },
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+        type: { type: 'string', description: 'Observation type', default: 'context' },
+        importance: { type: 'integer', description: 'Importance 1-10', default: 6 },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization' },
+      },
+      required: ['workingOn'],
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -521,6 +536,34 @@ async function callTool(name, args) {
 
     case 'memory_skill_search':
       return api.searchSkills(args);
+
+    case 'memory_auto_capture': {
+      const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+
+      // Auto-start session and set env var so subsequent saves are associated
+      try {
+        const sess = api.startSession({
+          project,
+          name: require('path').basename(project),
+          prompt: args.workingOn,
+        });
+        process.env.AGENTIC_CORTEX_SESSION = sess.session_id;
+      } catch {}
+
+      const content = 'Agent is working on: ' + args.workingOn +
+        '\nProject: ' + project +
+        '\nTimestamp: ' + new Date().toISOString();
+      return api.save({
+        project,
+        type: args.type || 'context',
+        title: 'Working on: ' + args.workingOn.slice(0, 80),
+        content,
+        importance: args.importance || 6,
+        session: process.env.AGENTIC_CORTEX_SESSION || null,
+        provenance: 'inferred',
+        tags: [...(args.tags || []), 'auto-capture', 'mcp'],
+      });
+    }
 
     default:
       throw new Error('Unknown tool: ' + name);

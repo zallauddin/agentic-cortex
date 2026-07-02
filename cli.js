@@ -1429,6 +1429,45 @@ commands.graph = {
   }
 };
 
+// ─── Watch: File watcher daemon ────────────────────────────────
+
+commands.watch = {
+  desc: 'Watch a directory for file changes and auto-record observations',
+  args: ['[dir]', '[--debounce N]'],
+  parse(args) {
+    const opts = { debounceMs: 10000 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--debounce') opts.debounceMs = parseInt(args[++i], 10) || 10000;
+      else if (!opts.dir) opts.dir = args[i];
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    const watcher = require('./src/core/watcher');
+    watcher.setAPI(api);
+
+    const targetDir = opts.dir || process.cwd();
+    console.log(JSON.stringify(await watcher.startWatching(targetDir, {
+      debounceMs: opts.debounceMs,
+      onBatch: (summary) => {
+        console.error('[agentic-cortex:watch] Batch: ' + summary.slice(0, 100) + '...');
+      }
+    })));
+
+    console.error('[agentic-cortex:watch] Daemon running. Press Ctrl+C to stop.');
+
+    // Keep process alive
+    process.on('SIGINT', () => {
+      watcher.stopWatching();
+      process.exit(0);
+    });
+    process.on('SIGTERM', () => {
+      watcher.stopWatching();
+      process.exit(0);
+    });
+  }
+};
+
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
 commands.inject = {
