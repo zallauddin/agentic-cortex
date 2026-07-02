@@ -540,15 +540,17 @@ async function callTool(name, args) {
     case 'memory_auto_capture': {
       const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
 
-      // Auto-start session and set env var so subsequent saves are associated
-      try {
-        const sess = api.startSession({
-          project,
-          name: require('path').basename(project),
-          prompt: args.workingOn,
-        });
-        process.env.AGENTIC_CORTEX_SESSION = sess.session_id;
-      } catch {}
+      // Only start a new session if none is active
+      if (!process.env.AGENTIC_CORTEX_SESSION) {
+        try {
+          const sess = api.startSession({
+            project,
+            name: require('path').basename(project),
+            prompt: args.workingOn,
+          });
+          process.env.AGENTIC_CORTEX_SESSION = sess.session_id;
+        } catch {}
+      }
 
       const content = 'Agent is working on: ' + args.workingOn +
         '\nProject: ' + project +
