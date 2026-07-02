@@ -1,12 +1,20 @@
 {
   "name": "agentic-cortex",
-  "version": "3.1.0",
+  "version": "3.2.1",
   "description": "Persistent typed memory for AI coding agents — install & forget: auto-inject context via git hooks, 13 memory types, confidence tracking, conflict detection, grounded QA, codebase graphs",
-  "keywords": ["ai-agent", "memory", "codebase-graph", "knowledge-graph", "agent-context", "rag", "semantic-memory"],
+  "keywords": [
+    "ai-agent",
+    "memory",
+    "codebase-graph",
+    "knowledge-graph",
+    "agent-context",
+    "rag",
+    "semantic-memory"
+  ],
   "license": "MIT",
   "bin": {
-    "agentic-cortex": "./cli.js",
-    "agentic-cortex-mcp": "./src/mcp/server.js"
+    "agentic-cortex": "cli.js",
+    "agentic-cortex-mcp": "src/mcp/server.js"
   },
   "main": "./src/api/index.js",
   "dependencies": {
