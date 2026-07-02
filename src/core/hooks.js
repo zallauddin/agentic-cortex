@@ -12,8 +12,8 @@
 /** @type {Map<string, Array<Function>>} In-memory hook registry */
 const _hookRegistry = new Map();
 
-/** @type {Array<Object>} Persisted hook definitions (loaded from DB) */
-let _persistedHooks = null;
+// Inject save function to avoid circular dependency on src/api
+let _saveFn = null;  // (opts) => Promise<{id, status, ...}>
 
 /**
  * Valid hook events
@@ -116,6 +116,10 @@ async function executePersistedHook(db, hook, observation, context) {
   switch (hook.action_type) {
     case 'save_memory': {
       // Auto-save a related observation
+      if (!_saveFn) {
+        console.warn('[hooks] No save function injected — skipping save_memory action');
+        break;
+      }
       const { title, content, type, tags, importance, provenance } = actionConfig;
       const saveOpts = {
         title: interpolate(title, observation, context),
@@ -128,8 +132,7 @@ async function executePersistedHook(db, hook, observation, context) {
         session: observation.session_id,
         agentId: observation.agent_id || null,
       };
-      const { save } = require('../api');
-      await save(saveOpts);
+      await _saveFn(saveOpts);
       break;
     }
     case 'log': {
@@ -211,7 +214,6 @@ function createHook(db, opts) {
     opts.enabled !== false ? 1 : 0
   );
 
-  _persistedHooks = null; // Invalidate cache
   return { id: Number(r.lastInsertRowid), status: 'created' };
 }
 
@@ -257,7 +259,6 @@ function updateHook(db, id, opts) {
   params.push(id);
 
   const r = db.prepare('UPDATE hooks SET ' + fields.join(', ') + ' WHERE id = ?').run(...params);
-  _persistedHooks = null;
   if (r.changes === 0) throw new Error('Hook not found: ' + id);
   return { id, status: 'updated' };
 }
@@ -270,7 +271,6 @@ function updateHook(db, id, opts) {
  */
 function deleteHook(db, id) {
   const r = db.prepare('DELETE FROM hooks WHERE id = ?').run(id);
-  _persistedHooks = null;
   if (r.changes === 0) throw new Error('Hook not found: ' + id);
   return { id, status: 'deleted' };
 }
@@ -297,4 +297,5 @@ module.exports = {
   setHookEnabled,
   VALID_EVENTS,
   VALID_ACTION_TYPES,
+  setSaveFunction: (fn) => { _saveFn = fn; },
 };

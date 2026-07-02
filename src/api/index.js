@@ -2,6 +2,31 @@
 
 const core = require('../core');
 
+// Wire up save function for hooks and reflection to avoid circular dependencies
+core.hooks.setSaveFunction(save);
+core.reflection.setSaveFunction(save);
+
+// ─── Cached dimension mismatch check (checked once per session) ──────
+let _dimensionMismatchChecked = false;
+let _dimensionMismatchWarning = null;
+
+function _checkEmbeddingMismatch() {
+  if (_dimensionMismatchChecked) return _dimensionMismatchWarning;
+  _dimensionMismatchChecked = true;
+  try {
+    const db = _getDB();
+    const sample = db.prepare('SELECT embedding FROM observations WHERE embedding IS NOT NULL LIMIT 1').get();
+    const meta = db.prepare('SELECT * FROM embedding_meta WHERE id = 1').get();
+    if (sample && meta) {
+      const storedDim = JSON.parse(sample.embedding).length;
+      if (storedDim !== meta.dimension) {
+        _dimensionMismatchWarning = 'Embedding dimension mismatch: stored=' + storedDim + ' current=' + meta.dimension + '. Run embedAll() or "embed --force" to upgrade.';
+      }
+    }
+  } catch {}
+  return _dimensionMismatchWarning;
+}
+
 // ─── Lazy DB Singleton ──────────────────────────────────────────────
 // Wraps core.db.getDb() but throws Error instead of process.exit(1)
 // when better-sqlite3 is missing.
@@ -110,28 +135,31 @@ async function edit(id, opts) {
   // Pre-edit hooks
   await core.hooks.triggerHooks(db, 'pre_edit', existing, { id, changes: opts });
 
-  db.prepare(
-    'INSERT INTO observation_versions (observation_id, version_number, old_title, old_content, old_confidence) VALUES (?, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM observation_versions WHERE observation_id = ?), ?, ?, ?)'
-  ).run(existing.id, existing.id, existing.title, existing.content, existing.confidence);
-
   // Skill/procedure fields — serialize JSON arrays if provided
   const steps = opts.steps !== undefined ? (opts.steps ? JSON.stringify(opts.steps) : null) : null;
   const triggers = opts.triggers !== undefined ? (opts.triggers ? JSON.stringify(opts.triggers) : null) : null;
   const preconditions = opts.preconditions !== undefined ? (opts.preconditions ? JSON.stringify(opts.preconditions) : null) : null;
   const postconditions = opts.postconditions !== undefined ? (opts.postconditions ? JSON.stringify(opts.postconditions) : null) : null;
 
-  db.prepare(
-    `UPDATE observations SET title = COALESCE(?, title), content = COALESCE(?, content), confidence = COALESCE(?, confidence), importance = COALESCE(?, importance),
-     steps = CASE WHEN ? IS NOT NULL THEN ? ELSE steps END,
-     triggers = CASE WHEN ? IS NOT NULL THEN ? ELSE triggers END,
-     preconditions = CASE WHEN ? IS NOT NULL THEN ? ELSE preconditions END,
-     postconditions = CASE WHEN ? IS NOT NULL THEN ? ELSE postconditions END
-     WHERE id = ?`
-  ).run(
-    opts.title || null, opts.content || null, opts.confidence ?? null, opts.importance ?? null,
-    steps, steps, triggers, triggers, preconditions, preconditions, postconditions, postconditions,
-    id
-  );
+  // Save old version and update atomically
+  db.transaction(() => {
+    db.prepare(
+      'INSERT INTO observation_versions (observation_id, version_number, old_title, old_content, old_confidence) VALUES (?, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM observation_versions WHERE observation_id = ?), ?, ?, ?)'
+    ).run(existing.id, existing.id, existing.title, existing.content, existing.confidence);
+
+    db.prepare(
+      `UPDATE observations SET title = COALESCE(?, title), content = COALESCE(?, content), confidence = COALESCE(?, confidence), importance = COALESCE(?, importance),
+       steps = CASE WHEN ? IS NOT NULL THEN ? ELSE steps END,
+       triggers = CASE WHEN ? IS NOT NULL THEN ? ELSE triggers END,
+       preconditions = CASE WHEN ? IS NOT NULL THEN ? ELSE preconditions END,
+       postconditions = CASE WHEN ? IS NOT NULL THEN ? ELSE postconditions END
+       WHERE id = ?`
+    ).run(
+      opts.title || null, opts.content || null, opts.confidence ?? null, opts.importance ?? null,
+      steps, steps, triggers, triggers, preconditions, preconditions, postconditions, postconditions,
+      id
+    );
+  })();
 
   // Re-embed if content or title changed
   if (opts.title || opts.content) {
@@ -178,8 +206,11 @@ async function forget(id, opts) {
   await core.hooks.triggerHooks(db, 'pre_forget', existing, { id, hard: opts.hard });
 
   if (opts.hard) {
-    db.prepare('DELETE FROM observation_versions WHERE observation_id = ?').run(id);
-    db.prepare('DELETE FROM observations WHERE id = ?').run(id);
+    db.transaction(() => {
+      db.prepare('DELETE FROM memory_relations WHERE source_id = ? OR target_id = ?').run(id, id);
+      db.prepare('DELETE FROM observation_versions WHERE observation_id = ?').run(id);
+      db.prepare('DELETE FROM observations WHERE id = ?').run(id);
+    })();
     const result = { id, status: 'hard_deleted' };
     await core.hooks.triggerHooks(db, 'post_forget', existing, { id, hard: true });
     return result;
@@ -229,6 +260,12 @@ async function search(query, opts) {
 
   let queryVec;
   try { queryVec = await core.embedding.computeEmbedding(query); } catch { queryVec = null; }
+
+  // Check for embedding dimension mismatch once (cached)
+  if (queryVec) {
+    const warn = _checkEmbeddingMismatch();
+    if (warn) console.error('[agentic-cortex] Warning:', warn);
+  }
 
   let results;
   if (queryVec) {
@@ -423,7 +460,7 @@ function context(opts) {
     'SELECT id, session_id, type, title, substr(content, 1, 200) as preview, tags, importance, created_at FROM observations WHERE project_path = ? AND is_active = 1 ORDER BY importance DESC, created_at DESC LIMIT 20'
   ).all(project);
 
-  let pack = '# Infinit Memory - Project Context\n\n';
+  let pack = '# Agentic Cortex - Project Context\n\n';
   if (sessions.length) {
     pack += '## Recent Sessions\n';
     for (const s of sessions) {
@@ -478,12 +515,26 @@ function health() {
   const sessions = db.prepare('SELECT COUNT(*) as c FROM sessions').get().c;
   const cacheStats = core.embedding.getEmbeddingCacheStats();
 
+  // Check for embedding dimension mismatch (stored vs current model)
+  let dimensionWarning = null;
+  try {
+    const sample = db.prepare('SELECT embedding FROM observations WHERE embedding IS NOT NULL LIMIT 1').get();
+    const meta = db.prepare('SELECT * FROM embedding_meta WHERE id = 1').get();
+    if (sample && meta) {
+      const storedDim = JSON.parse(sample.embedding).length;
+      if (storedDim !== meta.dimension) {
+        dimensionWarning = 'Embedding dimension mismatch: stored=' + storedDim + ' current=' + meta.dimension + '. Run embed --force to upgrade all embeddings.';
+      }
+    }
+  } catch {}
+
   return {
     status: 'ok',
     dbPath: core.db.getDbPath(),
     observations: { total: observations, active, embedded },
     sessions,
     embeddingCache: cacheStats,
+    dimensionWarning,
   };
 }
 
@@ -731,36 +782,42 @@ async function searchSkills(opts) {
   const limit = opts.limit || 10;
   const agentId = opts.agentId || null;
 
-  // Determine type filter
+  // Determine type filter — push skill/procedure type into the search query
   let typeFilter;
   if (opts.type && opts.type !== 'both') {
     typeFilter = opts.type;
+  } else {
+    // Default: search both skill and procedure types
+    typeFilter = undefined;  // We'll filter in SQL via an IN clause instead
+  }
+
+  // Build a search that targets skill/procedure types specifically
+  const searchOpts = { project, agentId, limit: limit * 3 };
+  if (typeFilter) {
+    searchOpts.type = typeFilter;
   }
 
   // Use hybrid search if available, otherwise keyword-only
   let results;
   try {
     const queryVec = await core.embedding.computeEmbedding(opts.query);
-    results = core.search.hybridSearch(db, opts.query, queryVec, { project, type: typeFilter, agentId, limit: limit * 3 });
+    results = core.search.hybridSearch(db, opts.query, queryVec, searchOpts);
   } catch {
-    results = core.search.keywordSearch(db, { query: opts.query, project, type: typeFilter, agentId, limit: limit * 3 });
+    results = core.search.keywordSearch(db, { ...searchOpts, query: opts.query });
   }
 
-  // Filter to only skill/procedure types and augment with structured fields
+  // Augment with structured fields
   const db2 = _getDB();
-  const skills = results
-    .filter(r => r.type === 'skill' || r.type === 'procedure')
-    .slice(0, limit)
-    .map(r => {
-      const full = db2.prepare('SELECT steps, triggers, preconditions, postconditions FROM observations WHERE id = ?').get(r.id);
-      return {
-        ...r,
-        steps: full?.steps ? JSON.parse(full.steps) : [],
-        triggers: full?.triggers ? JSON.parse(full.triggers) : [],
-        preconditions: full?.preconditions ? JSON.parse(full.preconditions) : [],
-        postconditions: full?.postconditions ? JSON.parse(full.postconditions) : [],
-      };
-    });
+  const skills = results.slice(0, limit).map(r => {
+    const full = db2.prepare('SELECT steps, triggers, preconditions, postconditions FROM observations WHERE id = ?').get(r.id);
+    return {
+      ...r,
+      steps: full?.steps ? JSON.parse(full.steps) : [],
+      triggers: full?.triggers ? JSON.parse(full.triggers) : [],
+      preconditions: full?.preconditions ? JSON.parse(full.preconditions) : [],
+      postconditions: full?.postconditions ? JSON.parse(full.postconditions) : [],
+    };
+  });
 
   return skills;
 }

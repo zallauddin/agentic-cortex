@@ -32,8 +32,7 @@ function getDb() {
   try {
     Database = require('better-sqlite3');
   } catch {
-    console.error('better-sqlite3 not installed. Run: npm install better-sqlite3');
-    process.exit(1);
+    throw new Error('better-sqlite3 is not installed. Run: npm install better-sqlite3');
   }
 
   const dbPath = getDbPath();
@@ -113,7 +112,6 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_observations_project ON observations(project_path);
     CREATE INDEX IF NOT EXISTS idx_observations_type ON observations(type);
     CREATE INDEX IF NOT EXISTS idx_observations_session ON observations(session_id);
-    CREATE INDEX IF NOT EXISTS idx_observations_active ON observations(is_active);
     CREATE INDEX IF NOT EXISTS idx_versions_obs_id ON observation_versions(observation_id);
   `);
 
