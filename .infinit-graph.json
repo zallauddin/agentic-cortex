@@ -1,16 +1,143 @@
 {
-  "generated": "2026-07-02T19:17:50.631Z",
-  "fingerprint": "0bbdc47263888312",
+  "generated": "2026-07-02T19:22:54.642Z",
+  "fingerprint": "7644860cf667b52d",
   "fileCount": 24,
   "apiRoutes": [],
   "services": {},
+  "prismaSchema": {
+    "models": [],
+    "enums": []
+  },
+  "layerMap": {
+    "layerCounts": {
+      "UI": 0,
+      "API": 1,
+      "Service": 21,
+      "Data": 0
+    },
+    "crossLayerEdges": {},
+    "requestPath": "API → Service",
+    "hubFiles": [
+      {
+        "path": "scripts/inject-memory.mjs",
+        "imports": 5
+      },
+      {
+        "path": "scripts/generate-graph.mjs",
+        "imports": 4
+      },
+      {
+        "path": "cli.js",
+        "imports": 0
+      },
+      {
+        "path": "src/api/index.js",
+        "imports": 0
+      },
+      {
+        "path": "src/core/conflict.js",
+        "imports": 0
+      },
+      {
+        "path": "src/core/constants.js",
+        "imports": 0
+      },
+      {
+        "path": "src/core/db-path.js",
+        "imports": 0
+      },
+      {
+        "path": "src/core/db.js",
+        "imports": 0
+      }
+    ]
+  },
+  "paradigms": [
+    "Event-Driven",
+    "CLI Tool"
+  ],
+  "techStack": {
+    "runtime": [],
+    "frameworks": [],
+    "databases": [
+      "SQLite"
+    ],
+    "tools": [
+      "Xenova Transformers (AI/ML)"
+    ]
+  },
   "graph": {
     "cli.js": {
       "path": "cli.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 64798
+      "functions": [
+        {
+          "name": "findRelated",
+          "params": [
+            {
+              "name": "obs",
+              "type": null
+            },
+            {
+              "name": "allObs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "getBody",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "json",
+          "params": [
+            {
+              "name": "d",
+              "type": null
+            },
+            {
+              "name": "s",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        },
+        {
+          "name": "sanitizeFilename",
+          "params": [
+            {
+              "name": "title",
+              "type": null
+            },
+            {
+              "name": "id",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 64798,
+      "layer": "Service"
     },
     "scripts/generate-graph.mjs": {
       "path": "scripts/generate-graph.mjs",
@@ -22,7 +149,259 @@
         "crypto",
         "url"
       ],
-      "size": 33701
+      "functions": [
+        {
+          "name": "buildLayerMap",
+          "params": [
+            {
+              "name": "graph",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "classifyLayer",
+          "params": [
+            {
+              "name": "filePath",
+              "type": null
+            },
+            {
+              "name": "role",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "declarations",
+          "params": [],
+          "returnType": "RetType",
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "detectApiRoutes",
+          "params": [
+            {
+              "name": "files",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "detectParadigms",
+          "params": [
+            {
+              "name": "files",
+              "type": null
+            },
+            {
+              "name": "graph",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "detectRole",
+          "params": [
+            {
+              "name": "filePath",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "detectServices",
+          "params": [
+            {
+              "name": "graph",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "detectTechStack",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "findBestMatch",
+          "params": [
+            {
+              "name": "path",
+              "type": null
+            },
+            {
+              "name": "graph",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "formatGraphAsMarkdown",
+          "params": [
+            {
+              "name": "output",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "name",
+          "params": [
+            {
+              "name": "params",
+              "type": null
+            }
+          ],
+          "returnType": "RetType",
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseExports",
+          "params": [
+            {
+              "name": "content",
+              "type": null
+            },
+            {
+              "name": "filePath",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseFunctionSignatures",
+          "params": [
+            {
+              "name": "content",
+              "type": null
+            },
+            {
+              "name": "filePath",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "generate-graph.mjs — Deterministic codebase structure graph generator.  Walks the project tree, parses source files to e",
+          "isAsync": false
+        },
+        {
+          "name": "parseImports",
+          "params": [
+            {
+              "name": "content",
+              "type": null
+            },
+            {
+              "name": "filePath",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseParamList",
+          "params": [
+            {
+              "name": "paramStr",
+              "type": null
+            },
+            {
+              "name": "lang",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parsePrismaSchema",
+          "params": [
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "resolveImport",
+          "params": [
+            {
+              "name": "importPath",
+              "type": null
+            },
+            {
+              "name": "fromFile",
+              "type": null
+            },
+            {
+              "name": "graph",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "splitParams",
+          "params": [
+            {
+              "name": "str",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 33701,
+      "layer": "Unknown"
     },
     "scripts/inject-memory.mjs": {
       "path": "scripts/inject-memory.mjs",
@@ -35,154 +414,1873 @@
         "os",
         "url"
       ],
-      "size": 4575
+      "functions": [],
+      "size": 4575,
+      "layer": "Unknown"
     },
     "src/api/index.js": {
       "path": "src/api/index.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 31095
+      "functions": [
+        {
+          "name": "_checkEmbeddingMismatch",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_getDB",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "addRelation",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Add a relation between two observations. @param {Object} opts - { sourceId, targetId, relationType, confidence? } @retur",
+          "isAsync": true
+        },
+        {
+          "name": "archiveSuperseded",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Archive superseded observations only",
+          "isAsync": true
+        },
+        {
+          "name": "checkConflicts",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Detect conflicting observations (async)",
+          "isAsync": true
+        },
+        {
+          "name": "close",
+          "params": [],
+          "returnType": null,
+          "doc": "Close the database connection",
+          "isAsync": false
+        },
+        {
+          "name": "consolidateMemories",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Consolidate similar observations only",
+          "isAsync": true
+        },
+        {
+          "name": "context",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Generate a formatted markdown context pack for AI system prompts. @param {Object} [opts] - { project? } @returns {string",
+          "isAsync": false
+        },
+        {
+          "name": "createHook",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Create a persisted hook. @param {Object} opts - { name, event, condition_type, condition_value, action_type, action_conf",
+          "isAsync": false
+        },
+        {
+          "name": "deleteHook",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Delete a persisted hook. @param {number} id @returns {Object}",
+          "isAsync": false
+        },
+        {
+          "name": "deleteRelation",
+          "params": [
+            {
+              "name": "relationId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Delete a relation by ID. @param {number} relationId @returns {Object}",
+          "isAsync": false
+        },
+        {
+          "name": "edit",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Edit an observation (creates version history entry first). @param {number} id @param {Object} opts - { title?, content?,",
+          "isAsync": true
+        },
+        {
+          "name": "embed",
+          "params": [
+            {
+              "name": "idOrText",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Embed a text string or re-embed an observation. - Number id → re-embeds that observation in-place - String → returns the",
+          "isAsync": true
+        },
+        {
+          "name": "embedAll",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Re-embed all observations that lack embeddings. @param {Object} [opts] - { project?, limit? } @returns {Promise<{total: ",
+          "isAsync": true
+        },
+        {
+          "name": "endAgentSession",
+          "params": [
+            {
+              "name": "agentId",
+              "type": null
+            },
+            {
+              "name": "sessionId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "End an agent session. @param {string} agentId @param {string} sessionId @returns {Object}",
+          "isAsync": false
+        },
+        {
+          "name": "endSession",
+          "params": [
+            {
+              "name": "sessionId",
+              "type": null
+            },
+            {
+              "name": "summary",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "End a session",
+          "isAsync": false
+        },
+        {
+          "name": "exportJSON",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Export observations and sessions as JSON",
+          "isAsync": false
+        },
+        {
+          "name": "exportMarkdown",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Export to Obsidian-compatible markdown. opts.vaultPath required.",
+          "isAsync": false
+        },
+        {
+          "name": "forget",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Soft-delete (forget) or hard-delete an observation. @param {number} id @param {Object} [opts] - { hard?: boolean } @retu",
+          "isAsync": true
+        },
+        {
+          "name": "get",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get a single observation by ID. Strips the raw embedding blob, adds has_embedding boolean, and parses JSON skill/procedu",
+          "isAsync": false
+        },
+        {
+          "name": "getGraph",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get a subgraph around an observation. @param {Object} opts - { observationId, depth?, limit? } @returns {Object} { nodes",
+          "isAsync": false
+        },
+        {
+          "name": "getRelations",
+          "params": [
+            {
+              "name": "observationId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get all relations for an observation. @param {number} observationId @returns {Object[]}",
+          "isAsync": false
+        },
+        {
+          "name": "getSharedMemories",
+          "params": [
+            {
+              "name": "agentId",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get memories shared with a specific agent. Returns observations from agent sessions where the agent is in shared_with. @",
+          "isAsync": false
+        },
+        {
+          "name": "health",
+          "params": [],
+          "returnType": null,
+          "doc": "Health check: DB stats + embedding cache stats",
+          "isAsync": false
+        },
+        {
+          "name": "importJSON",
+          "params": [
+            {
+              "name": "data",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Import observations from JSON data",
+          "isAsync": true
+        },
+        {
+          "name": "init",
+          "params": [],
+          "returnType": null,
+          "doc": "Initialize the database (idempotent)",
+          "isAsync": false
+        },
+        {
+          "name": "keywordSearch",
+          "params": [
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Keyword-only search (FTS5). @param {string} query @param {Object} [opts] @returns {Object[]}",
+          "isAsync": false
+        },
+        {
+          "name": "list",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List observations with filters. @param {Object} [opts] - { project?, type?, limit?, minConfidence?, changedSince?, asOf?",
+          "isAsync": false
+        },
+        {
+          "name": "listAgentSessions",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List agent sessions. @param {Object} [opts] - { agentId?, project?, limit? } @returns {Object[]}",
+          "isAsync": false
+        },
+        {
+          "name": "listHooks",
+          "params": [],
+          "returnType": null,
+          "doc": "List all persisted hooks. @returns {Object[]}",
+          "isAsync": false
+        },
+        {
+          "name": "listRelationTypes",
+          "params": [],
+          "returnType": null,
+          "doc": "List all relation types with counts. @returns {Object[]}",
+          "isAsync": false
+        },
+        {
+          "name": "listSessions",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List recent sessions",
+          "isAsync": false
+        },
+        {
+          "name": "promotePatterns",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Promote recurring patterns only",
+          "isAsync": true
+        },
+        {
+          "name": "reflect",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Run reflection cycle: consolidate similar memories, promote patterns, and archive superseded observations. @param {Objec",
+          "isAsync": true
+        },
+        {
+          "name": "registerHook",
+          "params": [
+            {
+              "name": "event",
+              "type": null
+            },
+            {
+              "name": "callback",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Register an in-memory hook callback. @param {string} event @param {Function} callback",
+          "isAsync": false
+        },
+        {
+          "name": "save",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Save a new observation. Auto-embeds if the pipeline is available. @param {Object} opts - { title?, content, type?, tags?",
+          "isAsync": true
+        },
+        {
+          "name": "search",
+          "params": [
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Hybrid search (FTS5 + semantic). Auto-computes embedding for the query. Falls back to keyword-only if embedding pipeline",
+          "isAsync": true
+        },
+        {
+          "name": "searchSkills",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Search within skills and procedures by text query. Searches across title, content, steps, triggers, preconditions, and p",
+          "isAsync": true
+        },
+        {
+          "name": "semanticSearch",
+          "params": [
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Semantic search (vector similarity). Auto-computes embedding for the query. @param {string} query @param {Object} [opts]",
+          "isAsync": true
+        },
+        {
+          "name": "setHookEnabled",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "enabled",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Enable or disable a persisted hook. @param {number} id @param {boolean} enabled @returns {Object}",
+          "isAsync": false
+        },
+        {
+          "name": "shareMemory",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Share an observation with other agents. Updates the agent's session shared_with list, and copies the observation's agent",
+          "isAsync": false
+        },
+        {
+          "name": "startAgentSession",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Start an agent session. @param {Object} opts - { agentId, sessionId, project?, role? } @returns {Object}",
+          "isAsync": false
+        },
+        {
+          "name": "startSession",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Start a new session",
+          "isAsync": false
+        },
+        {
+          "name": "summarizeSession",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Summarize a session (async — calls LLM if available)",
+          "isAsync": true
+        },
+        {
+          "name": "unregisterHook",
+          "params": [
+            {
+              "name": "event",
+              "type": null
+            },
+            {
+              "name": "callback",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Unregister an in-memory hook callback. @param {string} event @param {Function} callback",
+          "isAsync": false
+        },
+        {
+          "name": "updateHook",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Update a persisted hook. @param {number} id @param {Object} opts - fields to update @returns {Object}",
+          "isAsync": false
+        }
+      ],
+      "size": 31095,
+      "layer": "API"
     },
     "src/core/conflict.js": {
       "path": "src/core/conflict.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 3989
+      "functions": [
+        {
+          "name": "checkConflicts",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "conflict.js — Conflict detection for agentic-cortex.  Detects potentially contradictory observations using semantic simi",
+          "isAsync": true
+        }
+      ],
+      "size": 3989,
+      "layer": "Service"
     },
     "src/core/constants.js": {
       "path": "src/core/constants.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 2420
+      "functions": [
+        {
+          "name": "getProjectDefault",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "constants.js — Shared constants for agentic-cortex core modules.  Contains valid observation types, provenance values, m",
+          "isAsync": false
+        }
+      ],
+      "size": 2420,
+      "layer": "Service"
     },
     "src/core/db-path.js": {
       "path": "src/core/db-path.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 3072
+      "functions": [
+        {
+          "name": "ensureDir",
+          "params": [
+            {
+              "name": "filePath",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "db-path.js — XDG-aware database path resolution with env var override  Priority order: 1. AGENTIC_CORTEX_DB environment ",
+          "isAsync": false
+        },
+        {
+          "name": "getDbDir",
+          "params": [],
+          "returnType": null,
+          "doc": "Get the database directory (parent of db file) @returns {string} Absolute path to database directory",
+          "isAsync": false
+        },
+        {
+          "name": "getDbPath",
+          "params": [],
+          "returnType": null,
+          "doc": "Resolve the database path following XDG Base Directory Specification with environment variable override.  @returns {stri",
+          "isAsync": false
+        },
+        {
+          "name": "getLegacyDbPath",
+          "params": [],
+          "returnType": null,
+          "doc": "Get the legacy database path (for migration purposes) @returns {string} Legacy path in project root",
+          "isAsync": false
+        },
+        {
+          "name": "getLegacyDbPathIfExists",
+          "params": [],
+          "returnType": null,
+          "doc": "Check if legacy database exists and should be migrated @returns {string|null} Legacy path if exists, null otherwise",
+          "isAsync": false
+        }
+      ],
+      "size": 3072,
+      "layer": "Service"
     },
     "src/core/db.js": {
       "path": "src/core/db.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 9837
+      "functions": [
+        {
+          "name": "ensureSchema",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Initialize the database schema with all required tables, indexes, FTS5 virtual tables, and triggers. Uses IF NOT EXISTS ",
+          "isAsync": false
+        },
+        {
+          "name": "getDb",
+          "params": [],
+          "returnType": null,
+          "doc": "db.js — Database module for agentic-cortex.  Provides lazy singleton database initialization with WAL mode, foreign keys",
+          "isAsync": false
+        },
+        {
+          "name": "getDbPath_",
+          "params": [],
+          "returnType": null,
+          "doc": "Get the resolved database file path. Useful for health checks and size reporting.  @returns {string} Absolute path to th",
+          "isAsync": false
+        }
+      ],
+      "size": 9837,
+      "layer": "Service"
     },
     "src/core/embedding.js": {
       "path": "src/core/embedding.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 8525
+      "functions": [
+        {
+          "name": "_cacheGet",
+          "params": [
+            {
+              "name": "key",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "@type {number} Maximum cache entries before eviction /\nconst CACHE_MAX_SIZE = 500;\n\n/  @type {Map<string, number[]>} LRU",
+          "isAsync": false
+        },
+        {
+          "name": "_cacheSet",
+          "params": [
+            {
+              "name": "key",
+              "type": null
+            },
+            {
+              "name": "value",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Store an entry in the LRU cache. Evicts the oldest entry if the cache is at max capacity.  @param {string} key - Cache k",
+          "isAsync": false
+        },
+        {
+          "name": "clearEmbeddingCache",
+          "params": [],
+          "returnType": null,
+          "doc": "Clear the embedding result cache and reset hit/miss counters.",
+          "isAsync": false
+        },
+        {
+          "name": "computeEmbedding",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Compute a 768-dimensional embedding vector for the given text. Uses mean pooling and L2 normalization. Results are cache",
+          "isAsync": true
+        },
+        {
+          "name": "cosineSimilarity",
+          "params": [
+            {
+              "name": "a",
+              "type": null
+            },
+            {
+              "name": "b",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Compute cosine similarity between two vectors. Returns 0 if dimensions differ (different models produce meaningless scor",
+          "isAsync": false
+        },
+        {
+          "name": "getEmbeddingCacheStats",
+          "params": [],
+          "returnType": null,
+          "doc": "Get embedding cache statistics.  @returns {{ size: number, maxSize: number, hits: number, misses: number }}",
+          "isAsync": false
+        },
+        {
+          "name": "getEmbedPipeline",
+          "params": [],
+          "returnType": null,
+          "doc": "embedding.js — Embedding engine for agentic-cortex.  Provides text embedding via @xenova/transformers (BGE-base-en-v1.5)",
+          "isAsync": true
+        },
+        {
+          "name": "getRerankPipeline",
+          "params": [],
+          "returnType": null,
+          "doc": "Get or create the cross-encoder reranker pipeline (lazy singleton). The cross-encoder scores (query, document) pairs for",
+          "isAsync": true
+        },
+        {
+          "name": "rerank",
+          "params": [
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "documents",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Rerank a list of documents for relevance to a query using a cross-encoder model. The model takes (query, document) pairs",
+          "isAsync": true
+        }
+      ],
+      "size": 8525,
+      "layer": "Service"
     },
     "src/core/export.js": {
       "path": "src/core/export.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 16086
+      "functions": [
+        {
+          "name": "exportJSON",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "export.js — Import/export operations for agentic-cortex.  Provides JSON export/import for programmatic data exchange and",
+          "isAsync": false
+        },
+        {
+          "name": "exportMarkdown",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Export memories to an Obsidian vault (one-way, read-only mirror). Creates session files, observation files by type, tag ",
+          "isAsync": false
+        },
+        {
+          "name": "findRelated",
+          "params": [
+            {
+              "name": "obs",
+              "type": null
+            },
+            {
+              "name": "allObs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Find related observations by shared tags.  @param {Object} obs - The observation to find related items for @param {Array",
+          "isAsync": false
+        },
+        {
+          "name": "importJSON",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "data",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Import observations from a JSON array or object. Embeds each observation if the pipeline is available.  @param {import('",
+          "isAsync": true
+        },
+        {
+          "name": "sanitizeFilename",
+          "params": [
+            {
+              "name": "title",
+              "type": null
+            },
+            {
+              "name": "id",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "@type {Object<string, string>} Observation type to vault folder mapping /\nconst TYPE_FOLDERS = {\n  decision: 'decisions'",
+          "isAsync": false
+        }
+      ],
+      "size": 16086,
+      "layer": "Service"
     },
     "src/core/hooks.js": {
       "path": "src/core/hooks.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 9363
+      "functions": [
+        {
+          "name": "createHook",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Persist a hook definition to the database. @param {import('better-sqlite3').Database} db @param {Object} opts - { name, ",
+          "isAsync": false
+        },
+        {
+          "name": "deleteHook",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "id",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Delete a persisted hook. @param {import('better-sqlite3').Database} db @param {number} id @returns {Object}",
+          "isAsync": false
+        },
+        {
+          "name": "evaluateCondition",
+          "params": [
+            {
+              "name": "type",
+              "type": null
+            },
+            {
+              "name": "value",
+              "type": null
+            },
+            {
+              "name": "observation",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Evaluate a condition against observation/context.",
+          "isAsync": false
+        },
+        {
+          "name": "executePersistedHook",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "hook",
+              "type": null
+            },
+            {
+              "name": "observation",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Execute a persisted hook definition. @param {import('better-sqlite3').Database} db @param {Object} hook @param {Object} ",
+          "isAsync": true
+        },
+        {
+          "name": "getPersistedHooks",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "event",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get persisted hooks for an event from database. @param {import('better-sqlite3').Database} db @param {string} event @ret",
+          "isAsync": false
+        },
+        {
+          "name": "interpolate",
+          "params": [
+            {
+              "name": "str",
+              "type": null
+            },
+            {
+              "name": "observation",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Simple template interpolation: {{field}} -> value from observation or context.",
+          "isAsync": false
+        },
+        {
+          "name": "listHooks",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List all persisted hooks. @param {import('better-sqlite3').Database} db @returns {Array<Object>}",
+          "isAsync": false
+        },
+        {
+          "name": "registerHook",
+          "params": [
+            {
+              "name": "event",
+              "type": null
+            },
+            {
+              "name": "callback",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "hooks.js — Auto-capture hook system.  Allows registering callbacks that trigger on memory events (save, edit, forget). H",
+          "isAsync": false
+        },
+        {
+          "name": "setHookEnabled",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "enabled",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Enable/disable a hook. @param {import('better-sqlite3').Database} db @param {number} id @param {boolean} enabled @return",
+          "isAsync": false
+        },
+        {
+          "name": "triggerHooks",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "event",
+              "type": null
+            },
+            {
+              "name": "observation",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Trigger all registered hooks for an event. @param {import('better-sqlite3').Database} db @param {string} event @param {O",
+          "isAsync": true
+        },
+        {
+          "name": "unregisterHook",
+          "params": [
+            {
+              "name": "event",
+              "type": null
+            },
+            {
+              "name": "callback",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Unregister an in-memory hook callback. @param {string} event @param {Function} callback",
+          "isAsync": false
+        },
+        {
+          "name": "updateHook",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Update a persisted hook. @param {import('better-sqlite3').Database} db @param {number} id @param {Object} opts - Fields ",
+          "isAsync": false
+        }
+      ],
+      "size": 9363,
+      "layer": "Service"
     },
     "src/core/index.js": {
       "path": "src/core/index.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 729
+      "functions": [],
+      "size": 729,
+      "layer": "Service"
     },
     "src/core/reflection.js": {
       "path": "src/core/reflection.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 15090
+      "functions": [
+        {
+          "name": "archiveSuperseded",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Archive observations that have been superseded by newer versions.  Finds observations linked via 'supersedes' relation w",
+          "isAsync": true
+        },
+        {
+          "name": "consolidateMemories",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Consolidate similar observations within a project.  Algorithm: 1. Load recent embedded observations 2. Cluster by cosine",
+          "isAsync": true
+        },
+        {
+          "name": "findSimilarClusters",
+          "params": [
+            {
+              "name": "observations",
+              "type": null
+            },
+            {
+              "name": "threshold",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Find clusters of highly similar observations using greedy clustering.  @param {Array<Object>} observations - Embedded ob",
+          "isAsync": false
+        },
+        {
+          "name": "generateConsolidatedSummary",
+          "params": [
+            {
+              "name": "cluster",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Create a consolidated summary via LLM (optional but preferred).  @param {Array<Object>} cluster @returns {Promise<{title",
+          "isAsync": true
+        },
+        {
+          "name": "getEmbeddedObservations",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "limit",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "reflection.js — Reflection & Consolidation for agentic-cortex.  Provides three core operations that help maintain a clea",
+          "isAsync": false
+        },
+        {
+          "name": "pickCanonical",
+          "params": [
+            {
+              "name": "cluster",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Pick the \"canonical\" observation from a cluster — the one with highest confidence, most recent if tied.  @param {Array<O",
+          "isAsync": false
+        },
+        {
+          "name": "promotePatterns",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Detect recurring patterns and create \"pattern\" observations.  Looks at tags, types, and content themes across recent obs",
+          "isAsync": true
+        },
+        {
+          "name": "reflect",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Run a full reflection cycle: consolidate, promote, archive.  @param {import('better-sqlite3').Database} db @param {Objec",
+          "isAsync": true
+        }
+      ],
+      "size": 15090,
+      "layer": "Service"
     },
     "src/core/relations.js": {
       "path": "src/core/relations.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 6235
+      "functions": [
+        {
+          "name": "addRelation",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "relations.js — Memory graph relations (edges between observations).  Provides CRUD for memory_relations table and graph ",
+          "isAsync": false
+        },
+        {
+          "name": "deleteRelation",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "relationId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Delete a relation by ID. @param {import('better-sqlite3').Database} db - Database instance @param {number} relationId - ",
+          "isAsync": false
+        },
+        {
+          "name": "getGraph",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get a subgraph around an observation up to a given depth. @param {import('better-sqlite3').Database} db - Database insta",
+          "isAsync": false
+        },
+        {
+          "name": "getRelations",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "observationId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get all relations for a given observation (as source or target). @param {import('better-sqlite3').Database} db - Databas",
+          "isAsync": false
+        },
+        {
+          "name": "listRelationTypes",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List all relation types with counts. @param {import('better-sqlite3').Database} db - Database instance @returns {Array<O",
+          "isAsync": false
+        }
+      ],
+      "size": 6235,
+      "layer": "Service"
     },
     "src/core/search.js": {
       "path": "src/core/search.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 12753
+      "functions": [
+        {
+          "name": "buildWhereClause",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Build a SQL WHERE clause and parameter array from search options.  @param {Object} opts - Filter options @param {string}",
+          "isAsync": false
+        },
+        {
+          "name": "hybridSearch",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "queryVec",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Perform a hybrid search combining FTS5 keyword ranking with semantic vector similarity. FTS results seed the candidate p",
+          "isAsync": false
+        },
+        {
+          "name": "keywordSearch",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "@type {string} Column selection for result rows /\nconst RESULT_COLUMNS = 'o.id, o.agent_id, o.project_path, o.type, o.ti",
+          "isAsync": false
+        },
+        {
+          "name": "rerankResults",
+          "params": [
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "results",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Rerank a list of search results using a cross-encoder model. Preserves the input shape (id, project_path, type, preview,",
+          "isAsync": true
+        },
+        {
+          "name": "sanitizeDate",
+          "params": [
+            {
+              "name": "dateStr",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "search.js — Search engine for agentic-cortex.  Provides keyword (FTS5), semantic (vector), and hybrid search over observ",
+          "isAsync": false
+        },
+        {
+          "name": "semanticSearch",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "queryVec",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Perform a semantic (vector similarity) search over embedded observations. Returns results ordered by cosine similarity s",
+          "isAsync": false
+        }
+      ],
+      "size": 12753,
+      "layer": "Service"
     },
     "src/core/session.js": {
       "path": "src/core/session.js",
-      "role": "source",
+      "role": "library",
       "exports": [],
       "imports": [],
-      "size": 8437
+      "functions": [
+        {
+          "name": "callLLM",
+          "params": [
+            {
+              "name": "messages",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Call the LLM (llama.cpp) for text generation. Returns null if llama.cpp is unreachable (caller should use template fallb",
+          "isAsync": true
+        },
+        {
+          "name": "endSession",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "sessionId",
+              "type": null
+            },
+            {
+              "name": "summary",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "End a session and optionally set its summary.  @param {import('better-sqlite3').Database} db - Database instance @param ",
+          "isAsync": false
+        },
+        {
+          "name": "listSessions",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List recent sessions for a project.  @param {import('better-sqlite3').Database} db - Database instance @param {Object} o",
+          "isAsync": false
+        },
+        {
+          "name": "startSession",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "session.js — Session management for agentic-cortex.  Provides session lifecycle operations (start, end, list, summarize)",
+          "isAsync": false
+        },
+        {
+          "name": "summarizeSession",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Summarize a session using the LLM with template fallback. Fetches observations for the session, calls the LLM, and store",
+          "isAsync": true
+        },
+        {
+          "name": "templateSummary",
+          "params": [
+            {
+              "name": "obs",
+              "type": null
+            },
+            {
+              "name": "reason",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Generate a template-based summary when the LLM is unavailable. Produces a simple list of observation topics.  @param {Ar",
+          "isAsync": false
+        }
+      ],
+      "size": 8437,
+      "layer": "Service"
     },
     "src/mcp/server.js": {
       "path": "src/mcp/server.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 24048
+      "functions": [
+        {
+          "name": "callTool",
+          "params": [
+            {
+              "name": "name",
+              "type": null
+            },
+            {
+              "name": "args",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        },
+        {
+          "name": "handleRequest",
+          "params": [
+            {
+              "name": "msg",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        },
+        {
+          "name": "rpcError",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "code",
+              "type": null
+            },
+            {
+              "name": "message",
+              "type": null
+            },
+            {
+              "name": "data",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "rpcResult",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "result",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 24048,
+      "layer": "Service"
     },
     "tests/conflict.test.js": {
       "path": "tests/conflict.test.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 6930
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 6930,
+      "layer": "Service"
     },
     "tests/db.test.js": {
       "path": "tests/db.test.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 21508
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": "Helper: create a fresh in-memory database with full schema. Returns the db instance ready for testing.",
+          "isAsync": false
+        }
+      ],
+      "size": 21508,
+      "layer": "Service"
     },
     "tests/embedding.test.js": {
       "path": "tests/embedding.test.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 8340
+      "functions": [],
+      "size": 8340,
+      "layer": "Service"
     },
     "tests/hooks.test.js": {
       "path": "tests/hooks.test.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 15885
+      "functions": [
+        {
+          "name": "afterEach",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "cb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "cb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "cb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "fn",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        },
+        {
+          "name": "trackHook",
+          "params": [
+            {
+              "name": "event",
+              "type": null
+            },
+            {
+              "name": "cb",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 15885,
+      "layer": "Service"
     },
     "tests/relations.test.js": {
       "path": "tests/relations.test.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 11300
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "seedObservations",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 11300,
+      "layer": "Service"
     },
     "tests/search.test.js": {
       "path": "tests/search.test.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 14361
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": "Helper: create a fresh in-memory database with schema and seed data.",
+          "isAsync": false
+        },
+        {
+          "name": "seedTestData",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Seed a few observations for search tests. Returns the db instance.",
+          "isAsync": false
+        }
+      ],
+      "size": 14361,
+      "layer": "Service"
     },
     "tests/session.test.js": {
       "path": "tests/session.test.js",
       "role": "source",
       "exports": [],
       "imports": [],
-      "size": 8496
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 8496,
+      "layer": "Service"
     }
   }
 }
