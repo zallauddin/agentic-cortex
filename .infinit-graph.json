@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-03T22:31:11.977Z",
-  "fingerprint": "d7907aec0649d303",
+  "generated": "2026-07-03T22:42:21.501Z",
+  "fingerprint": "bfa8a995e489d5ae",
   "fileCount": 35,
   "apiRoutes": [],
   "services": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 45574,
+      "size": 45586,
       "layer": "Service"
     },
     "scripts/generate-graph.mjs": {
@@ -486,8 +486,8 @@
             }
           ],
           "returnType": null,
-          "doc": "Generate a formatted markdown context pack for AI system prompts. @param {Object} [opts] - { project? } @returns {string",
-          "isAsync": false
+          "doc": "Generate a formatted markdown context pack for AI system prompts. If opts.query is provided, performs adaptive context: ",
+          "isAsync": true
         },
         {
           "name": "createHook",
@@ -1062,7 +1062,7 @@
           "isAsync": false
         }
       ],
-      "size": 52279,
+      "size": 55399,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -2484,7 +2484,7 @@
           "isAsync": true
         }
       ],
-      "size": 31739,
+      "size": 36466,
       "layer": "Service"
     },
     "tests/cli.test.js": {
@@ -2754,7 +2754,7 @@
           "isAsync": false
         }
       ],
-      "size": 15535,
+      "size": 15541,
       "layer": "Service"
     },
     "tests/mcp.test.js": {
