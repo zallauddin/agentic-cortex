@@ -925,6 +925,122 @@ commands.watch = {
   }
 };
 
+// ─── Action: Intent → Action → Outcome tracking ─────────────────
+
+commands.action = {
+  desc: 'Record an agent action as intent→action→outcome triplet',
+  args: ['--intent INTENT', '--action ACTION', '--outcome OUTCOME', '[--project PATH]', '[--agent-id ID]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i += 2) {
+      if (args[i] === '--intent') opts.intent = args[i + 1];
+      if (args[i] === '--action') opts.action = args[i + 1];
+      if (args[i] === '--outcome') opts.outcome = args[i + 1];
+      if (args[i] === '--project') opts.project = args[i + 1];
+      if (args[i] === '--agent-id') opts.agentId = args[i + 1];
+      if (args[i] === '--confidence') opts.confidence = parseInt(args[i + 1], 10);
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    if (!opts.intent || !opts.action || !opts.outcome) {
+      console.error('Usage: action --intent "what you tried" --action "what you did" --outcome "what happened" [--project PATH] [--agent-id ID]');
+      process.exit(1);
+    }
+    try {
+      const result = await api.recordAction(opts);
+      console.log(JSON.stringify(result));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+// ─── Transfer: Cross-project knowledge transfer ──────────────────
+
+commands.transfer = {
+  desc: 'Transfer high-confidence knowledge between projects',
+  args: ['--from PROJECT', '--to PROJECT', '[--types t1,t2]', '[--min-confidence N]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i += 2) {
+      if (args[i] === '--from') opts.fromProject = args[i + 1];
+      if (args[i] === '--to') opts.toProject = args[i + 1];
+      if (args[i] === '--types') opts.types = args[i + 1].split(',');
+      if (args[i] === '--min-confidence') opts.minConfidence = parseInt(args[i + 1], 10);
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    if (!opts.fromProject || !opts.toProject) {
+      console.error('Usage: transfer --from PROJECT --to PROJECT [--types t1,t2] [--min-confidence N]');
+      process.exit(1);
+    }
+    try {
+      const result = await api.transferKnowledge(opts);
+      console.log(JSON.stringify(result));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+// ─── Ingest: Parse transcripts into structured observations ──────
+
+commands.ingest = {
+  desc: 'Parse conversation transcript into structured observations',
+  args: ['<text|--file PATH>', '[--project PATH]', '[--agent-id ID]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--file') {
+        const filePath = args[++i];
+        if (filePath && require('fs').existsSync(filePath)) {
+          opts.text = require('fs').readFileSync(filePath, 'utf-8');
+        }
+      } else if (args[i] === '--project') opts.project = args[++i];
+      else if (args[i] === '--agent-id') opts.agentId = args[++i];
+      else if (!opts.text) opts.text = (opts.text ? opts.text + ' ' : '') + args[i];
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    if (!opts.text) {
+      console.error('Usage: ingest <text> [--file PATH] [--project PATH] [--agent-id ID]');
+      console.error('  Or pipe: cat transcript.txt | agentic-cortex ingest --file -');
+      process.exit(1);
+    }
+    try {
+      const result = await api.ingestTranscript(opts.text, { project: opts.project, agentId: opts.agentId });
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+// ─── Utility: Memory utility stats ───────────────────────────────
+
+commands.utility = {
+  desc: 'Show which memories are most/least useful (by access count)',
+  args: ['[--project PATH]', '[--limit N]'],
+  parse(args) {
+    const opts = { limit: 10 };
+    for (let i = 0; i < args.length; i += 2) {
+      if (args[i] === '--project') opts.project = args[i + 1];
+      if (args[i] === '--limit') opts.limit = parseInt(args[i + 1], 10);
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const stats = api.getUtilityStats(opts);
+    console.log(JSON.stringify(stats, null, 2));
+  }
+};
+
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
 commands.inject = {

@@ -244,7 +244,7 @@ async function consolidateMemories(db, opts = {}) {
  * @param {string} [opts.project] - Project path
  * @param {number} [opts.minCount=3] - Minimum occurrences to promote
  * @param {boolean} [opts.dryRun=false] - If true, only report
- * @returns {Promise<{patterns: Array<{theme: string, count: number, type: string}>, promoted: number, dryRun: boolean}>}
+ * @returns {Promise<{patterns: Array<{theme: string, count: number, type: string}>, promoted: number, skillsExtracted: number, dryRun: boolean}>}
  */
 async function promotePatterns(db, opts = {}) {
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
@@ -349,7 +349,83 @@ Return JSON with:
     }
   }
 
-  return { patterns, promoted, dryRun };
+  // ── Skill auto-extraction: high-confidence learnings become instructions ──
+  let skillsExtracted = 0;
+  const ripeLearnings = db.prepare(
+    'SELECT id, title, content, confidence, tags FROM observations ' +
+    'WHERE project_path = ? AND type = ? AND is_active = 1 AND confidence >= ? ' +
+    'ORDER BY confidence DESC LIMIT 5'
+  ).all(project, 'learning', 90);
+
+  for (const learning of ripeLearnings) {
+    // Check if already promoted
+    const existing = db.prepare(
+      'SELECT id FROM memory_relations WHERE source_id = ? AND relation_type = ?'
+    ).get(learning.id, 'refines');
+    if (existing) continue;
+
+    let structured;
+    try {
+      const prompt = `Convert this high-confidence learning into a structured instruction with actionable steps.\n\nLearning: "${learning.title}: ${learning.content}"\n\nReturn JSON with:\n- title: Instruction title (max 80 chars)\n- content: Clear instructional content (max 500 chars)\n- steps: Array of actionable step strings (3-5 steps)\n- triggers: Array of situations that trigger this instruction (e.g., "TypeError", "before PR")\n- preconditions: Array of conditions that must be true (e.g., "Node.js >= 18")\n- postconditions: Array of expected results (e.g., "No null pointer errors")`;
+
+      const { callLLM } = require('./session');
+      const result = await callLLM([
+        { role: 'system', content: 'You convert learnings into structured instructions. Respond ONLY with valid JSON.' },
+        { role: 'user', content: prompt },
+      ], { temperature: 0.2, maxTokens: 1200, timeout: 30000 });
+      structured = JSON.parse(result || '{}');
+    } catch {
+      structured = {
+        title: learning.title,
+        content: learning.content,
+        steps: [learning.content],
+        triggers: [],
+        preconditions: [],
+        postconditions: [],
+      };
+    }
+
+    if (!dryRun && structured.title && structured.content && _saveFn) {
+      // Determine scope: if this learning tag appears across multiple projects, make it global
+      let scope = 'local';
+      try {
+        const tags = JSON.parse(learning.tags || '[]');
+        if (tags.length > 0) {
+          const globalCount = db.prepare(
+            'SELECT COUNT(DISTINCT project_path) as c FROM observations WHERE is_active = 1 AND (' +
+            tags.map(() => 'tags LIKE ?').join(' OR ') + ')'
+          ).all(...tags.map(t => '%' + t + '%'))[0]?.c || 0;
+          if (globalCount >= 2) scope = 'global';
+        }
+      } catch {}
+
+      const skillObs = await _saveFn({
+        project,
+        type: 'instruction',
+        title: structured.title,
+        content: structured.content,
+        steps: structured.steps || [structured.content],
+        triggers: structured.triggers || [],
+        preconditions: structured.preconditions || [],
+        postconditions: structured.postconditions || [],
+        tags: [...(JSON.parse(learning.tags || '[]')), 'auto-extracted-skill'],
+        confidence: Math.min(100, learning.confidence),
+        importance: 9,
+        provenance: 'inferred',
+        project_scope: scope,
+      });
+
+      if (skillObs && skillObs.id) {
+        // Link learning → instruction via 'refines' relation
+        db.prepare(
+          'INSERT INTO memory_relations (source_id, target_id, relation_type, confidence) VALUES (?,?,?,?)'
+        ).run(learning.id, skillObs.id, 'refines', 90);
+        skillsExtracted++;
+      }
+    }
+  }
+
+  return { patterns, promoted, skillsExtracted, dryRun };
 }
 
 // ─── 3. Archive Superseded ──────────────────────────────────────────
@@ -394,7 +470,23 @@ async function archiveSuperseded(db, opts = {}) {
     }
   }
 
-  return { candidates: candidates.length, archived, dryRun };
+  // ── Utility decay pass: observations never accessed in 30+ days lose confidence ──
+  let decayed = 0;
+  const staleObs = db.prepare(
+    `SELECT id, confidence FROM observations
+     WHERE project_path = ? AND is_active = 1 AND access_count = 0
+       AND created_at < datetime('now', '-' || ? || ' days')
+       AND confidence > 20`
+  ).all(project, maxAgeDays);
+
+  for (const o of staleObs) {
+    if (!dryRun) {
+      db.prepare('UPDATE observations SET confidence = MAX(confidence - 10, 10) WHERE id = ?').run(o.id);
+      decayed++;
+    }
+  }
+
+  return { candidates: candidates.length, archived, decayed, dryRun };
 }
 
 // ─── Combined Reflection Pass ───────────────────────────────────────

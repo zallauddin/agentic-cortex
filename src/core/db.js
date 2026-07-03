@@ -224,6 +224,15 @@ function ensureSchema(db) {
   try { db.exec(`ALTER TABLE observations ADD COLUMN postconditions TEXT`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_type_active ON observations(type, is_active)`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_project_active_type ON observations(project_path, is_active, type)`); } catch {}
+
+  // Phase 7: Memory utility tracking — access_count, last_accessed_at
+  try { db.exec(`ALTER TABLE observations ADD COLUMN access_count INTEGER DEFAULT 0`); } catch {}
+  try { db.exec(`ALTER TABLE observations ADD COLUMN last_accessed_at TEXT`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_access ON observations(access_count, last_accessed_at)`); } catch {}
+
+  // Phase 8: Cross-project knowledge transfer — project_scope
+  try { db.exec(`ALTER TABLE observations ADD COLUMN project_scope TEXT DEFAULT 'local'`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_scope ON observations(project_scope)`); } catch {}
 }
 
 /**

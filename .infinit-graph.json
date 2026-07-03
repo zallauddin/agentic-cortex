@@ -1,7 +1,7 @@
 {
-  "generated": "2026-07-03T15:32:02.209Z",
-  "fingerprint": "e23c2280e4833d0d",
-  "fileCount": 27,
+  "generated": "2026-07-03T22:03:24.127Z",
+  "fingerprint": "1c64fee399e50934",
+  "fileCount": 35,
   "apiRoutes": [],
   "services": {},
   "prismaSchema": {
@@ -12,7 +12,7 @@
     "layerCounts": {
       "UI": 0,
       "API": 1,
-      "Service": 24,
+      "Service": 32,
       "Data": 0
     },
     "crossLayerEdges": {},
@@ -1307,7 +1307,7 @@
           "isAsync": false
         }
       ],
-      "size": 16314,
+      "size": 16345,
       "layer": "Service"
     },
     "src/core/hooks.js": {
@@ -1684,7 +1684,7 @@
           "isAsync": true
         }
       ],
-      "size": 15172,
+      "size": 15270,
       "layer": "Service"
     },
     "src/core/relations.js": {
@@ -1880,7 +1880,7 @@
           "isAsync": false
         }
       ],
-      "size": 12753,
+      "size": 12789,
       "layer": "Service"
     },
     "src/core/self-improve.js": {
@@ -1934,6 +1934,13 @@
           "isAsync": true
         },
         {
+          "name": "resetState",
+          "params": [],
+          "returnType": null,
+          "doc": "Reset module-level state (for testing). Clears the analyzed error ID cache and project save counts so fresh DBs with reu",
+          "isAsync": false
+        },
+        {
           "name": "setSaveFunction",
           "params": [
             {
@@ -1962,7 +1969,7 @@
           "isAsync": true
         }
       ],
-      "size": 12026,
+      "size": 12411,
       "layer": "Service"
     },
     "src/core/session.js": {
@@ -2380,6 +2387,95 @@
       "size": 31739,
       "layer": "Service"
     },
+    "tests/cli.test.js": {
+      "path": "tests/cli.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseConflicts",
+          "params": [
+            {
+              "name": "args",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseEdit",
+          "params": [
+            {
+              "name": "args",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseEmbed",
+          "params": [
+            {
+              "name": "args",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseForget",
+          "params": [
+            {
+              "name": "args",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseSave",
+          "params": [
+            {
+              "name": "args",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseSearch",
+          "params": [
+            {
+              "name": "args",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 10653,
+      "layer": "Service"
+    },
     "tests/conflict.test.js": {
       "path": "tests/conflict.test.js",
       "role": "source",
@@ -2421,6 +2517,59 @@
       "imports": [],
       "functions": [],
       "size": 8340,
+      "layer": "Service"
+    },
+    "tests/export.test.js": {
+      "path": "tests/export.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "insertObs",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "type",
+              "type": null
+            },
+            {
+              "name": "title",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            },
+            {
+              "name": "confidence",
+              "type": null
+            },
+            {
+              "name": "tags",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 7364,
       "layer": "Service"
     },
     "tests/hooks.test.js": {
@@ -2491,6 +2640,87 @@
       "size": 15885,
       "layer": "Service"
     },
+    "tests/integration.test.js": {
+      "path": "tests/integration.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 15535,
+      "layer": "Service"
+    },
+    "tests/mcp.test.js": {
+      "path": "tests/mcp.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [],
+      "size": 7428,
+      "layer": "Service"
+    },
+    "tests/reflection.test.js": {
+      "path": "tests/reflection.test.js",
+      "role": "source",
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "insertObs",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "type",
+              "type": null
+            },
+            {
+              "name": "title",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            },
+            {
+              "name": "confidence",
+              "type": null
+            },
+            {
+              "name": "embedding",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 20892,
+      "layer": "Service"
+    },
     "tests/relations.test.js": {
       "path": "tests/relations.test.js",
       "role": "source",
@@ -2549,6 +2779,23 @@
       "size": 14361,
       "layer": "Service"
     },
+    "tests/self-improve.test.js": {
+      "path": "tests/self-improve.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 9402,
+      "layer": "Service"
+    },
     "tests/session.test.js": {
       "path": "tests/session.test.js",
       "role": "source",
@@ -2564,6 +2811,24 @@
         }
       ],
       "size": 8496,
+      "layer": "Service"
+    },
+    "tests/vscode-logic.test.js": {
+      "path": "tests/vscode-logic.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [],
+      "size": 5452,
+      "layer": "Service"
+    },
+    "tests/watcher.test.js": {
+      "path": "tests/watcher.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [],
+      "size": 4500,
       "layer": "Service"
     }
   }

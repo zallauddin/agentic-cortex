@@ -9,13 +9,15 @@
 
 'use strict';
 
-/** @type {Set<string>} Valid observation types (13 from Memanto + skill/procedure + legacy aliases) */
+/** @type {Set<string>} Valid observation types (13 from Memanto + skill/procedure + action + legacy aliases) */
 const VALID_TYPES = new Set([
   'instruction', 'fact', 'decision', 'goal', 'commitment', 'preference',
   'relationship', 'context', 'event', 'learning', 'observation',
   'artifact', 'error',
   // Skill/procedural memory types
   'skill', 'procedure',
+  // Intent → Action → Outcome tracking
+  'action',
   // Legacy aliases (backwards compatible)
   'architecture', 'bugfix', 'gotcha', 'codebase-graph',
 ]);
@@ -32,6 +34,8 @@ const VALID_RELATION_TYPES = new Set([
   'depends_on',    // Dependency chain
   'part_of',       // Hierarchical containment
   'refines',       // Improves upon or narrows
+  'achieves',      // Action achieves intent
+  'produces',      // Intent produces outcome
 ]);
 
 /** @type {string} Default embedding model identifier */

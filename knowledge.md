@@ -45,10 +45,10 @@ The context below is AUTO-INJECTED by git hooks (post-merge, post-checkout) or `
 Use this pre-computed knowledge to skip discovery. No need to re-read files you already know about.
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-03T15:32:02.230Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-03T22:03:24.155Z -->
 
 ## Codebase Graph
-*27 source files | 0 API routes | Generated 2026-07-03T15:32:02.209Z*
+*35 source files | 0 API routes | Generated 2026-07-03T22:03:24.127Z*
 
 ### Architecture
 **Patterns:** Event-Driven, CLI Tool
@@ -56,7 +56,7 @@ Use this pre-computed knowledge to skip discovery. No need to re-read files you 
 
 ### Data Flow
 `API → Service`
-Files per layer: UI=0 API=1 Service=24 Data=0
+Files per layer: UI=0 API=1 Service=32 Data=0
 **Hub files (most imported):** `scripts/inject-memory.mjs`, `scripts/generate-graph.mjs`, `cli.js`, `src/api/index.js`, `src/core/conflict.js`
 
 ### Core Libraries (14)
@@ -71,7 +71,7 @@ Files per layer: UI=0 API=1 Service=24 Data=0
 - `src/core/reflection.js` — fns: archiveSuperseded(db, opts), consolidateMemories(db, opts), findSimilarClusters(observations, threshold), generateConsolidatedSummary(cluster), getEmbeddedObservations(db, project, limit)
 - `src/core/relations.js` — fns: addRelation(db, opts), deleteRelation(db, relationId), getGraph(db, opts), getRelations(db, observationId), listRelationTypes(db)
 - `src/core/search.js` — fns: buildWhereClause(opts), hybridSearch(db, query, queryVec, opts), keywordSearch(db, opts), rerankResults(query, results), sanitizeDate(dateStr)
-- `src/core/self-improve.js` — fns: autoResolveConflicts(db, opts), initHooks(saveFn), learnFromError(db, errorObs), setSaveFunction(saveFn), verifyLearning(db, newObs)
+- `src/core/self-improve.js` — fns: autoResolveConflicts(db, opts), initHooks(saveFn), learnFromError(db, errorObs), resetState(), setSaveFunction(saveFn)
 
 ### Scripts
 - `scripts/generate-graph.mjs`

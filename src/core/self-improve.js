@@ -297,7 +297,57 @@ function initHooks(saveFn) {
     await verifyLearning(db, obs);
   });
 
-  // Hook 3: Periodically check for conflicts (every ~30 saves per project, approximate)
+  // Hook 3: Evidence-based confidence — when an action outcome is saved, compare to intent
+  // Gated by tag check to avoid expensive queries on every save
+  hooks.registerHook('post_save', async (obs, ctx, db) => {
+    if (!obs.id || !obs.project_path) return;
+    // Only run for observations that could be action outcomes
+    const obsTags = Array.isArray(obs.tags) ? obs.tags : [];
+    const hasActionTags = obsTags.some(t => t === 'outcome' || t === 'action-triplet');
+    if (!hasActionTags) return;
+
+    // Find linked actions via 'produces' relation (action → outcome)
+    const linkedActions = db.prepare(
+      `SELECT a.id, a.title, a.content, a.confidence
+       FROM observations a
+       JOIN memory_relations r ON r.source_id = a.id
+       WHERE r.target_id = ? AND r.relation_type = 'produces' AND a.type = 'action'`
+    ).all(obs.id);
+
+    for (const action of linkedActions) {
+      // Find the intent that led to this action
+      const intent = db.prepare(
+        `SELECT i.id, i.title, i.content, i.confidence
+         FROM observations i
+         JOIN memory_relations r ON r.source_id = i.id
+         WHERE r.target_id = ? AND r.relation_type = 'achieves' AND i.type = 'action'`
+      ).get(action.id);
+
+      if (!intent) continue;
+
+      // Compare outcome to intent using keyword matching (fast, no LLM needed)
+      const outcomeText = (obs.content || '').toLowerCase();
+      const successIndicators = ['pass', 'success', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated'];
+      const failureIndicators = ['fail', 'error', 'crash', 'broke', 'failed', 'rejected', 'timeout', 'rollback', 'revert'];
+
+      const succeeded = successIndicators.some(w => outcomeText.includes(w));
+      const failed = failureIndicators.some(w => outcomeText.includes(w));
+
+      if (succeeded && !failed) {
+        // Boost intent and action confidence — evidence of correctness
+        db.prepare('UPDATE observations SET confidence = MIN(confidence + 3, 100) WHERE id = ?').run(intent.id);
+        db.prepare('UPDATE observations SET confidence = MIN(confidence + 5, 100) WHERE id = ?').run(action.id);
+      } else if (failed) {
+        // Downgrade confidence — strategy didn't work
+        db.prepare('UPDATE observations SET confidence = MAX(confidence - 10, 10) WHERE id = ?').run(action.id);
+        if (intent.confidence > 50) {
+          db.prepare('UPDATE observations SET confidence = MAX(confidence - 5, 10) WHERE id = ?').run(intent.id);
+        }
+      }
+    }
+  });
+
+  // Hook 4: Periodically check for conflicts (every ~30 saves per project, approximate)
   hooks.registerHook('post_save', async (obs, ctx, db) => {
     if (!obs.project_path) return;
     const count = (_projectSaveCounts.get(obs.project_path) || 0) + 1;
