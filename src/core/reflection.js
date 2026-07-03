@@ -289,7 +289,8 @@ async function promotePatterns(db, opts = {}) {
 
   let promoted = 0;
   for (const p of patterns) {
-    // Check if we already promoted this pattern recently
+    // Check if we already promoted this pattern recently.
+    // SAFETY: p.theme comes from parsed DB tag/type values, not raw user input.
     const existing = db.prepare(
       'SELECT id FROM observations WHERE project_path = ? AND type = \'learning\' AND title LIKE \'%\' || ? || \'%\' AND created_at > datetime(\'now\', \'-7 days\')'
     ).get(project, p.theme);

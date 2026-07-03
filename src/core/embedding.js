@@ -66,7 +66,7 @@ async function getRerankPipeline() {
 // ─── LRU embedding cache ─────────────────────────────────────────
 
 /** @type {number} Maximum cache entries before eviction */
-const CACHE_MAX_SIZE = 500;
+const CACHE_MAX_SIZE = parseInt(process.env.AGENTIC_CORTEX_EMBED_CACHE_SIZE || '500', 10) || 500;
 
 /** @type {Map<string, number[]>} LRU cache: text → embedding vector */
 const _embedCache = new Map();
@@ -238,6 +238,18 @@ async function rerank(query, documents) {
   return scored.map((s, i) => ({ ...s, rank: i }));
 }
 
+/**
+ * Dispose all pipeline resources to free memory.
+ * Call this when shutting down the system.
+ */
+function disposePipelines() {
+  _embedPipeline = null;
+  _rerankPipeline = null;
+  _embedCache.clear();
+  _cacheStats.hits = 0;
+  _cacheStats.misses = 0;
+}
+
 module.exports = {
   getEmbedPipeline,
   getRerankPipeline,
@@ -246,4 +258,5 @@ module.exports = {
   rerank,
   clearEmbeddingCache,
   getEmbeddingCacheStats,
+  disposePipelines,
 };
