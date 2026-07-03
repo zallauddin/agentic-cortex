@@ -547,6 +547,8 @@ function health() {
   } catch (err) {
     console.warn('[agentic-cortex] Health dimension check failed: ' + (err && err.message ? err.message : err));
   }
+
+  return {
     status: 'ok',
     dbPath: core.db.getDbPath(),
     observations: { total: observations, active, embedded },
