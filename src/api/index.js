@@ -623,6 +623,8 @@ async function context(opts) {
 /** Initialize the database (idempotent) */
 function init() {
   _getDB();
+  // Initialize auto-maintenance scheduler on first init
+  initMaintenanceScheduler();
   return { status: 'initialized', dbPath: core.db.getDbPath() };
 }
 
@@ -1366,6 +1368,330 @@ function trail(observationId, opts) {
   return { trail, nodes, chain, startId: observationId, nodeCount: nodes.length };
 }
 
+// ─── #1 Freshness Scoring ──────────────────────────────────────────────
+
+/**
+ * Compute a freshness score (0-100) for an observation combining:
+ *   - access_count: recency/frequency of use (0-30)
+ *   - last_accessed_at: time since last access (0-25)
+ *   - confidence: how reliable this memory is (0-25)
+ *   - predicted_utility: how useful it proved to be (0-20)
+ *
+ * The score naturally decays over time — frequently accessed,
+ * high-confidence memories stay fresh; never-touched ones rot.
+ *
+ * @param {Object} obs - Observation row with access_count, last_accessed_at, confidence, predicted_utility, created_at
+ * @returns {number} Freshness score 0-100
+ */
+function computeFreshness(obs) {
+  // Access recency subscore: 0-30
+  let accessScore = 0;
+  if (obs.access_count > 0 && obs.last_accessed_at) {
+    const daysSinceAccess = Math.max(0, (Date.now() - new Date(obs.last_accessed_at + 'Z').getTime()) / 86400000);
+    accessScore = Math.max(0, 30 - daysSinceAccess) * Math.min(obs.access_count / 10, 1);
+  }
+
+  // Recency subscore: 0-25 (newer = higher, caps at 30 days)
+  const daysSinceCreation = Math.max(0, (Date.now() - new Date(obs.created_at + 'Z').getTime()) / 86400000);
+  const recencyScore = Math.max(0, 25 - (daysSinceCreation / 30) * 25);
+
+  // Confidence subscore: 0-25
+  const confidenceScore = (obs.confidence / 100) * 25;
+
+  // Utility subscore: 0-20      const utilityScore = Math.min(Math.max(obs.predicted_utility || 0, -10), 20);
+
+  return Math.round(Math.min(100, Math.max(0, accessScore + recencyScore + confidenceScore + utilityScore)));
+}
+
+/**
+ * Update freshness_score for all active observations in a project.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project
+ * @returns {number} Number of observations updated
+ */
+function updateFreshnessScores(db, project) {
+  const observations = db.prepare(
+    'SELECT id, access_count, last_accessed_at, confidence, predicted_utility, created_at FROM observations WHERE project_path = ? AND is_active = 1'
+  ).all(project);
+
+  const update = db.prepare('UPDATE observations SET freshness_score = ? WHERE id = ?');
+  let count = 0;
+  for (const obs of observations) {
+    const score = computeFreshness(obs);
+    update.run(score, obs.id);
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Auto-archive observations with freshness below threshold.
+ * Returns archived count and list of archived IDs.
+ *
+ * @param {Object} [opts] - { project?, threshold?: number, dryRun?: boolean }
+ * @returns {{ archived: number, ids: number[], dryRun: boolean }}
+ */
+function autoArchive(opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const threshold = opts.threshold ?? 15;
+  const dryRun = opts.dryRun || false;
+
+  // First update freshness scores
+  updateFreshnessScores(db, project);
+
+  // Find stale observations
+  const stale = db.prepare(
+    'SELECT id, title, freshness_score FROM observations WHERE project_path = ? AND is_active = 1 AND freshness_score < ? ORDER BY freshness_score ASC'
+  ).all(project, threshold);
+
+  if (dryRun) {
+    return { archived: 0, ids: stale.map(s => s.id), candidates: stale.length, dryRun: true };
+  }
+
+  const archivedIds = [];
+  for (const s of stale) {
+    db.prepare('UPDATE observations SET is_active = 0 WHERE id = ?').run(s.id);
+    archivedIds.push(s.id);
+  }
+
+  return { archived: archivedIds.length, ids: archivedIds, dryRun: false };
+}
+
+// ─── #2 Auto-Maintenance Scheduler ────────────────────────────────────
+
+// Track last maintenance check per project (in-memory, reset on restart)
+const _lastMaintenanceChecks = new Map();
+const MAINTENANCE_INTERVAL_SAVES = 50; // check every ~50 saves per project
+const MAINTENANCE_MIN_HOURS = 6;       // minimum hours between full maintenance runs
+
+/**
+ * Run the full maintenance cycle for a project:
+ *   1. Update freshness scores
+ *   2. Auto-archive stale observations
+ *   3. Run utility decay pass (archiveSuperseded)
+ *   4. Log the run to maintenance_log
+ *
+ * @param {Object} [opts] - { project?, dryRun?: boolean, maxAgeDays?: number }
+ * @returns {Promise<{freshnessUpdated: number, archived: number, decayed: number, dryRun: boolean}>}
+ */
+async function runMaintenance(opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const dryRun = opts.dryRun || false;
+  const maxAgeDays = opts.maxAgeDays || 30;
+
+  // 1. Update freshness scores
+  const freshnessUpdated = dryRun ? 0 : updateFreshnessScores(db, project);
+
+  // 2. Auto-archive stale observations
+  const archiveResult = autoArchive({ project, dryRun });
+
+  // 3. Run utility decay pass via archiveSuperseded
+  let decayed = 0;
+  try {
+    const archiveP = await archiveSuperseded({ project, dryRun, maxAgeDays });
+    decayed = archiveP.decayed || 0;
+  } catch {}
+
+  // 4. Log the maintenance run
+  if (!dryRun) {
+    const summary = JSON.stringify({ freshnessUpdated, archived: archiveResult.archived, decayed });
+    db.prepare(
+      'INSERT OR REPLACE INTO maintenance_log (project_path, task, result_summary, run_at) VALUES (?, ?, ?, datetime(\'now\'))'
+    ).run(project, 'full_maintenance', summary);
+  }
+
+  _lastMaintenanceChecks.set(project, Date.now());
+
+  return { freshnessUpdated, archived: archiveResult.archived, decayed, dryRun };
+}
+
+/**
+ * Check if maintenance is due and run it if needed.
+ * Called periodically from the post_save hook (every ~50 saves).
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project
+ */
+async function checkAndRunMaintenance(db, project) {
+  const lastCheck = _lastMaintenanceChecks.get(project) || 0;
+  const hoursSinceCheck = (Date.now() - lastCheck) / 3600000;
+
+  // Only run if enough time has passed since last check
+  const lastRun = db.prepare(
+    "SELECT run_at FROM maintenance_log WHERE project_path = ? AND task = 'full_maintenance' ORDER BY run_at DESC LIMIT 1"
+  ).get(project);
+
+  if (lastRun) {
+    const hoursSinceRun = (Date.now() - new Date(lastRun.run_at + 'Z').getTime()) / 3600000;
+    if (hoursSinceRun < MAINTENANCE_MIN_HOURS) return;
+  }
+
+  if (hoursSinceCheck < 1) return; // At most once per hour
+
+  try {
+    console.error('[agentic-cortex] Auto-maintenance triggered for %s', project);
+    await runMaintenance({ project, maxAgeDays: 30 });
+  } catch (err) {
+    console.warn('[agentic-cortex] Auto-maintenance failed:', err.message);
+  }
+}
+
+/**
+ * Initialize the maintenance scheduler hook.
+ * Registers a post_save hook that periodically checks if maintenance is due.
+ */
+function initMaintenanceScheduler() {
+  // Prevent double-registration (init() may be called multiple times in tests)
+  if (initMaintenanceScheduler._initialized) return;
+  initMaintenanceScheduler._initialized = true;
+
+  // Track save counts per project for maintenance scheduling
+  const _maintSaveCounts = new Map();
+
+  core.hooks.registerHook('post_save', async (obs, ctx, db) => {
+    if (!obs.project_path) return;
+    const count = (_maintSaveCounts.get(obs.project_path) || 0) + 1;
+    _maintSaveCounts.set(obs.project_path, count);
+
+    // Clean up old entries periodically
+    if (_maintSaveCounts.size > 100) {
+      const keys = [..._maintSaveCounts.keys()];
+      for (const k of keys.slice(0, 50)) _maintSaveCounts.delete(k);
+    }
+
+    if (count % MAINTENANCE_INTERVAL_SAVES === 0) {
+      await checkAndRunMaintenance(db, obs.project_path);
+    }
+  });
+
+  console.error('[agentic-cortex] Auto-maintenance scheduler initialized (every ~%d saves, min %dh between runs)', MAINTENANCE_INTERVAL_SAVES, MAINTENANCE_MIN_HOURS);
+}
+
+// ─── #3 Learning Loop Analytics ───────────────────────────────────────
+
+/**
+ * Surface insights about the self-improving loop's effectiveness.
+ * Measures RCA effectiveness, conflict health, utility distribution, and feedback ratio.
+ *
+ * @param {Object} [opts] - { project? }
+ * @returns {{ rca: Object, conflicts: Object, utility: Object, feedback: Object, freshness: Object }}
+ */
+function analytics(opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+
+  // RCA effectiveness: errors saved → learnings generated → learnings still active
+  const errorsSaved = db.prepare(
+    'SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND type = ? AND is_active = 1'
+  ).get(project, 'error').c;
+
+  const rcaLearnings = db.prepare(
+    "SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND type = ? AND is_active = 1 AND tags LIKE '%rca%'"
+  ).get(project, 'learning').c;
+
+  const totalLearnings = db.prepare(
+    'SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND type = ? AND is_active = 1'
+  ).get(project, 'learning').c;
+
+  // Learnings that got verified/reinforced (confidence > original)
+  const verifiedLearnings = db.prepare(
+    "SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND type = ? AND is_active = 1 AND confidence >= 85"
+  ).get(project, 'learning').c;
+
+  const rca = {
+    errorsSaved,
+    rcaLearnings,
+    totalLearnings,
+    verifiedLearnings,
+    rcaRate: errorsSaved > 0 ? Math.round((rcaLearnings / errorsSaved) * 100) : 0,
+    verificationRate: totalLearnings > 0 ? Math.round((verifiedLearnings / totalLearnings) * 100) : 0,
+  };
+
+  // Conflict health
+  const conflictLearnings = db.prepare(
+    "SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND type = ? AND is_active = 1 AND tags LIKE '%conflict-resolution%'"
+  ).get(project, 'learning').c;
+
+  const totalRelations = db.prepare(
+    'SELECT COUNT(*) as c FROM memory_relations r JOIN observations o ON (r.source_id = o.id OR r.target_id = o.id) WHERE o.project_path = ?'
+  ).get(project).c;
+
+  const supersedeRels = db.prepare(
+    'SELECT COUNT(*) as c FROM memory_relations r JOIN observations o ON r.source_id = o.id WHERE o.project_path = ? AND r.relation_type = ?'
+  ).get(project, 'supersedes').c;
+
+  const contradictions = db.prepare(
+    'SELECT COUNT(*) as c FROM memory_relations r JOIN observations o ON r.source_id = o.id WHERE o.project_path = ? AND r.relation_type = ?'
+  ).get(project, 'contradicts').c;
+
+  const conflicts = {
+    conflictLearnings,
+    totalRelations,
+    supersedeRels,
+    contradictions,
+    health: contradictions === 0 ? 'clean' : (contradictions <= 3 ? 'minor_issues' : 'needs_attention'),
+  };
+
+  // Utility distribution
+  const utilityRows = db.prepare(
+    'SELECT access_count, predicted_utility, freshness_score FROM observations WHERE project_path = ? AND is_active = 1'
+  ).all(project);
+
+  const totalActive = utilityRows.length;
+  const accessed = utilityRows.filter(r => r.access_count > 0).length;
+  const highUtil = utilityRows.filter(r => (r.predicted_utility || 0) >= 10).length;
+  const lowUtil = utilityRows.filter(r => (r.predicted_utility || 0) <= 0 && r.access_count === 0).length;
+  const avgFreshness = totalActive > 0
+    ? Math.round(utilityRows.reduce((s, r) => s + (r.freshness_score || 50), 0) / totalActive)
+    : 50;
+
+  const utility = {
+    totalActive,
+    accessed,
+    untouched: totalActive - accessed,
+    highUtility: highUtil,
+    lowUtility: lowUtil,
+    avgFreshness,
+    accessRate: totalActive > 0 ? Math.round((accessed / totalActive) * 100) : 0,
+  };
+
+  // Feedback ratio
+  const helpfulFeedback = db.prepare(
+    "SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE '%helpful%' AND tags LIKE '%feedback%'"
+  ).get(project).c;
+
+  const incorrectFeedback = db.prepare(
+    "SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE '%incorrect%' AND tags LIKE '%feedback%'"
+  ).get(project).c;
+
+  const totalFeedback = helpfulFeedback + incorrectFeedback;
+
+  const feedback = {
+    helpful: helpfulFeedback,
+    incorrect: incorrectFeedback,
+    total: totalFeedback,
+    ratio: totalFeedback > 0 ? Math.round((helpfulFeedback / totalFeedback) * 100) : null,
+  };
+
+  // Freshness distribution
+  const freshBuckets = { high: 0, medium: 0, low: 0, stale: 0 };
+  for (const r of utilityRows) {
+    const s = r.freshness_score || 50;
+    if (s >= 70) freshBuckets.high++;
+    else if (s >= 40) freshBuckets.medium++;
+    else if (s >= 15) freshBuckets.low++;
+    else freshBuckets.stale++;
+  }
+
+  const freshness = { ...freshBuckets, avg: avgFreshness };
+
+  return { rca, conflicts, utility, feedback, freshness };
+}
+
 // ─── Exports ───────────────────────────────────────────────────────────
 
 module.exports = {
@@ -1384,4 +1710,7 @@ module.exports = {
   searchSkills,
   recordAction, transferKnowledge, ingestTranscript, getUtilityStats,
   feedback, trail,
+  computeFreshness, updateFreshnessScores, autoArchive,
+  runMaintenance, checkAndRunMaintenance, initMaintenanceScheduler,
+  analytics,
 };
