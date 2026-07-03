@@ -45,10 +45,10 @@ The context below is AUTO-INJECTED by git hooks (post-merge, post-checkout) or `
 Use this pre-computed knowledge to skip discovery. No need to re-read files you already know about.
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-03T15:12:10.875Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-03T15:32:02.230Z -->
 
 ## Codebase Graph
-*27 source files | 0 API routes | Generated 2026-07-03T15:12:10.854Z*
+*27 source files | 0 API routes | Generated 2026-07-03T15:32:02.209Z*
 
 ### Architecture
 **Patterns:** Event-Driven, CLI Tool
