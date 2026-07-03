@@ -233,6 +233,10 @@ function ensureSchema(db) {
   // Phase 8: Cross-project knowledge transfer — project_scope
   try { db.exec(`ALTER TABLE observations ADD COLUMN project_scope TEXT DEFAULT 'local'`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_scope ON observations(project_scope)`); } catch {}
+
+  // Phase 9: Predictive context ranking — predicted_utility
+  try { db.exec(`ALTER TABLE observations ADD COLUMN predicted_utility INTEGER DEFAULT 0`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_utility ON observations(predicted_utility, is_active)`); } catch {}
 }
 
 /**

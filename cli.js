@@ -1022,6 +1022,63 @@ commands.ingest = {
   }
 };
 
+// ─── Feedback: Agent feedback on memory usefulness ───────────────
+
+commands.feedback = {
+  desc: 'Give feedback on a memory (helpful or incorrect)',
+  args: ['<id>', '--type helpful|incorrect', '[--reason TEXT]'],
+  parse(args) {
+    const opts = { id: parseInt(args[0], 10) };
+    for (let i = 1; i < args.length; i += 2) {
+      if (args[i] === '--type') opts.type = args[i + 1];
+      if (args[i] === '--reason') opts.reason = args.slice(i + 1).join(' ');
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    if (isNaN(opts.id) || !opts.type) {
+      console.error('Usage: feedback <id> --type helpful|incorrect [--reason TEXT]');
+      process.exit(1);
+    }
+    try {
+      const result = await api.feedback(opts.id, { type: opts.type, reason: opts.reason });
+      console.log(JSON.stringify(result));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+// ─── Trail: Memory relation trail ────────────────────────────────
+
+commands.trail = {
+  desc: 'Walk the memory relation graph to surface a narrative trail',
+  args: ['<id>', '[--depth N]', '[--direction forward|backward|both]'],
+  parse(args) {
+    const opts = { id: parseInt(args[0], 10), depth: 5, direction: 'both' };
+    for (let i = 1; i < args.length; i += 2) {
+      if (args[i] === '--depth') opts.depth = parseInt(args[i + 1], 10);
+      if (args[i] === '--direction') opts.direction = args[i + 1];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    if (isNaN(opts.id)) {
+      console.error('Usage: trail <id> [--depth N] [--direction forward|backward|both]');
+      process.exit(1);
+    }
+    try {
+      const result = api.trail(opts.id, { depth: opts.depth, direction: opts.direction });
+      console.log(result.trail);
+      console.log('\n' + JSON.stringify({ nodeCount: result.nodeCount, startId: result.startId }));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
 // ─── Utility: Memory utility stats ───────────────────────────────
 
 commands.utility = {

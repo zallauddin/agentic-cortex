@@ -361,9 +361,28 @@ function startSession(opts) {
   return core.session.startSession(_getDB(), opts || {});
 }
 
-/** End a session */
+/** End a session. On success, boosts predicted_utility for memories accessed during this session. */
 function endSession(sessionId, summary) {
-  return core.session.endSession(_getDB(), sessionId, summary);
+  const db = _getDB();
+  const result = core.session.endSession(db, sessionId, summary);
+
+  // #1 Predictive ranking: boost predicted_utility for memories accessed during successful sessions
+  if (summary) {
+    const successIndicators = ['success', 'completed', 'fixed', 'resolved', 'pass', 'works', 'done'];
+    const isSuccess = successIndicators.some(w => (summary || '').toLowerCase().includes(w));
+    if (isSuccess) {
+      try {
+        // Find all observations accessed during this session and boost their predicted_utility
+        db.prepare(
+          `UPDATE observations SET predicted_utility = predicted_utility + 5
+           WHERE project_path = (SELECT project_path FROM sessions WHERE session_id = ?)
+             AND is_active = 1 AND access_count > 0 AND last_accessed_at >= (SELECT started_at FROM sessions WHERE session_id = ?)`
+        ).run(sessionId, sessionId);
+      } catch { /* best-effort */ }
+    }
+  }
+
+  return result;
 }
 
 /** Summarize a session (async — calls LLM if available) */
@@ -497,7 +516,7 @@ function context(opts) {
   ).all(project);
 
   const observations = db.prepare(
-    'SELECT id, session_id, type, title, substr(content, 1, 200) as preview, tags, importance, created_at FROM observations WHERE project_path = ? AND is_active = 1 ORDER BY importance DESC, created_at DESC LIMIT 20'
+    'SELECT id, session_id, type, title, substr(content, 1, 200) as preview, tags, importance, predicted_utility, created_at FROM observations WHERE project_path = ? AND is_active = 1 ORDER BY (importance + predicted_utility) DESC, created_at DESC LIMIT 20'
   ).all(project);
 
   let pack = '# Agentic Cortex - Project Context\n\n';
@@ -1147,6 +1166,141 @@ function getUtilityStats(opts) {
   return { top, bottom, total };
 }
 
+// ─── Agent Feedback ────────────────────────────────────────────────────
+
+/**
+ * Record explicit agent feedback on a memory.
+ * 'helpful' boosts confidence + predicted_utility.
+ * 'incorrect' triggers confidence decay and flags for review.
+ *
+ * @param {number} id - Observation ID
+ * @param {Object} opts - { type: 'helpful'|'incorrect', reason?: string }
+ * @returns {Object} Updated observation info
+ */
+async function feedback(id, opts) {
+  const db = _getDB();
+  const obs = db.prepare('SELECT * FROM observations WHERE id = ? AND is_active = 1').get(id);
+  if (!obs) throw new Error('Active observation not found: ' + id);
+
+  const type = opts.type;
+  if (type !== 'helpful' && type !== 'incorrect') {
+    throw new Error('feedback type must be "helpful" or "incorrect"');
+  }
+
+  if (type === 'helpful') {
+    // Boost confidence and utility — this memory proved useful
+    db.prepare('UPDATE observations SET confidence = MIN(confidence + 5, 100), predicted_utility = predicted_utility + 10 WHERE id = ?').run(id);
+
+    // Append 'helpful' tag
+    const currentTags = JSON.parse(obs.tags || '[]');
+    if (!currentTags.includes('helpful')) {
+      currentTags.push('helpful');
+      db.prepare('UPDATE observations SET tags = ? WHERE id = ?').run(JSON.stringify(currentTags), id);
+    }
+  } else {
+    // Incorrect — significant confidence decay, flag for review
+    db.prepare('UPDATE observations SET confidence = MAX(confidence - 20, 10), predicted_utility = MAX(predicted_utility - 5, -10) WHERE id = ?').run(id);
+
+    const currentTags = JSON.parse(obs.tags || '[]');
+    if (!currentTags.includes('incorrect')) {
+      currentTags.push('incorrect');
+      db.prepare('UPDATE observations SET tags = ? WHERE id = ?').run(JSON.stringify(currentTags), id);
+    }
+  }
+
+  // Save the feedback itself as an observation for audit trail
+  if (opts.reason) {
+    await save({
+      title: `Feedback: ${type} — ${obs.title || '#' + id}`,
+      content: `Agent marked observation #${id} as ${type}. Reason: ${opts.reason}`,
+      type: 'observation',
+      project: obs.project_path,
+      confidence: 100,
+      provenance: 'explicit',
+      tags: ['feedback', type],
+    });
+  }
+
+  const updated = db.prepare('SELECT id, confidence, predicted_utility, tags FROM observations WHERE id = ?').get(id);
+  return { id, type, status: 'feedback_recorded', confidence: updated.confidence, predicted_utility: updated.predicted_utility };
+}
+
+// ─── Memory Trails ─────────────────────────────────────────────────────
+
+/**
+ * Walk the relation graph to surface a readable narrative trail.
+ * Follows relation chains (derives_from, produces, achieves, depends_on, supersedes)
+ * and formats them as a chronological story.
+ *
+ * @param {number} observationId - Starting observation ID
+ * @param {Object} [opts] - { depth?: number, direction?: 'forward'|'backward'|'both' }
+ * @returns {{ trail: string, nodes: Object[], chain: string[] }}
+ */
+function trail(observationId, opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const depth = Math.min(opts.depth || 5, 10);
+  const direction = ['forward', 'backward', 'both'].includes(opts.direction) ? opts.direction : 'both';
+
+  const startObs = db.prepare('SELECT * FROM observations WHERE id = ? AND is_active = 1').get(observationId);
+  if (!startObs) throw new Error('Active observation not found: ' + observationId);
+
+  const visited = new Set();
+  const nodes = [];
+  const chain = [];
+
+  // BFS walk following relation edges
+  const queue = [{ id: observationId, depth: 0, prefix: '' }];
+
+  const trailRelations = ['derives_from', 'produces', 'achieves', 'depends_on', 'supersedes', 'refines'];
+
+  while (queue.length > 0 && nodes.length < 50) {
+    const { id, depth: d, prefix } = queue.shift();
+    if (visited.has(id) || d > depth) continue;
+    visited.add(id);
+
+    const obs = db.prepare('SELECT id, type, title, content, confidence, created_at FROM observations WHERE id = ? AND is_active = 1').get(id);
+    if (!obs) continue;
+    nodes.push(obs);
+    chain.push(prefix + `[${obs.type.toUpperCase()}] ${obs.title || obs.content.slice(0, 80)} (${obs.confidence}%)`);
+
+    if (d < depth) {
+      // Get connected neighbors via trail-worthy relations
+      const placeholders = trailRelations.map(() => '?').join(',');
+      let neighbors;
+      if (direction === 'forward' || direction === 'both') {
+        neighbors = db.prepare(
+          `SELECT target_id as neighborId, relation_type FROM memory_relations WHERE source_id = ? AND relation_type IN (${placeholders})`
+        ).all(id, ...trailRelations);
+      }
+      if (direction === 'backward' || direction === 'both') {
+        const backward = db.prepare(
+          `SELECT source_id as neighborId, relation_type FROM memory_relations WHERE target_id = ? AND relation_type IN (${placeholders})`
+        ).all(id, ...trailRelations);
+        neighbors = (neighbors || []).concat(backward);
+      }
+
+      for (const n of (neighbors || [])) {
+        if (!visited.has(n.neighborId)) {
+          const arrow = n.relation_type === 'derives_from' ? '  └─ learned from → '
+            : n.relation_type === 'produces' ? '  └─ produced → '
+            : n.relation_type === 'achieves' ? '  └─ achieved by → '
+            : n.relation_type === 'depends_on' ? '  └─ depends on → '
+            : n.relation_type === 'refines' ? '  └─ refined by → '
+            : '  └─ ' + n.relation_type + ' → ';
+          queue.push({ id: n.neighborId, depth: d + 1, prefix: prefix + arrow });
+        }
+      }
+    }
+  }
+
+  // Build the narrative trail text
+  const trail = chain.join('\n');
+  _trackAccess(db, nodes.map(n => n.id));
+
+  return { trail, nodes, chain, startId: observationId, nodeCount: nodes.length };
+}
+
 // ─── Exports ───────────────────────────────────────────────────────────
 
 module.exports = {
@@ -1164,4 +1318,5 @@ module.exports = {
   startAgentSession, endAgentSession, listAgentSessions, shareMemory, getSharedMemories,
   searchSkills,
   recordAction, transferKnowledge, ingestTranscript, getUtilityStats,
+  feedback, trail,
 };
