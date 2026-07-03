@@ -1098,6 +1098,87 @@ commands.utility = {
   }
 };
 
+// ─── #1 Freshness: Memory freshness scoring & auto-archival ────────
+
+commands.freshness = {
+  desc: 'Show or update memory freshness scores, auto-archive stale memories',
+  args: ['[--project PATH]', '[--update]', '[--auto-archive]', '[--threshold N]', '[--dry-run]'],
+  parse(args) {
+    const opts = { update: false, autoArchive: false, threshold: 15, dryRun: false };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--update') opts.update = true;
+      if (args[i] === '--auto-archive') opts.autoArchive = true;
+      if (args[i] === '--threshold') opts.threshold = parseInt(args[++i], 10);
+      if (args[i] === '--dry-run') opts.dryRun = true;
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+
+    if (opts.update) {
+      const count = api.updateFreshnessScores(db, project);
+      console.log(JSON.stringify({ status: 'updated', count }));
+      return;
+    }
+
+    if (opts.autoArchive) {
+      const result = api.autoArchive({ project, threshold: opts.threshold, dryRun: opts.dryRun });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    // Default: show freshness analytics
+    const analytics = api.analytics({ project });
+    console.log('# Memory Freshness\n');
+    console.log('Average: ' + analytics.freshness.avg + '/100\n');
+    console.log('  High (70-100): ' + analytics.freshness.high);
+    console.log('  Medium (40-69): ' + analytics.freshness.medium);
+    console.log('  Low (15-39): ' + analytics.freshness.low);
+    console.log('  Stale (0-14): ' + analytics.freshness.stale);
+    console.log('\nUse --update to recompute scores, --auto-archive to clean up stale memories.');
+  }
+};
+
+// ─── #2 Maintenance: Auto-maintenance scheduler ────────────────────
+
+commands.maintenance = {
+  desc: 'Run the full maintenance cycle (freshness + auto-archive + utility decay)',
+  args: ['[--project PATH]', '[--dry-run]', '[--max-age-days N]'],
+  parse(args) {
+    const opts = { dryRun: false, maxAgeDays: 30 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--dry-run') opts.dryRun = true;
+      if (args[i] === '--max-age-days') opts.maxAgeDays = parseInt(args[++i], 10);
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    const result = await api.runMaintenance(opts);
+    console.log(JSON.stringify(result, null, 2));
+  }
+};
+
+// ─── #3 Analytics: Learning loop analytics ─────────────────────────
+
+commands.analytics = {
+  desc: 'Surface self-improving loop analytics (RCA, conflicts, utility, feedback, freshness)',
+  args: ['[--project PATH]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i += 2) {
+      if (args[i] === '--project') opts.project = args[i + 1];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const stats = api.analytics(opts);
+    console.log(JSON.stringify(stats, null, 2));
+  }
+};
+
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
 commands.inject = {

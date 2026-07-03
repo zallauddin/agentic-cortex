@@ -43,7 +43,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -547,6 +547,41 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'memory_freshness',
+    description: 'Show memory freshness scores or auto-archive stale memories below a threshold. Freshness combines access recency, confidence, and predicted utility into a 0-100 score that naturally decays over time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'What to do: scores (show distribution), update (recompute all scores), archive (auto-archive stale)', default: 'scores' },
+        project: { type: 'string', description: 'Project path' },
+        threshold: { type: 'integer', description: 'Freshness threshold for archiving (default 15)', default: 15 },
+        dryRun: { type: 'boolean', description: 'Preview without making changes', default: false },
+      },
+    },
+  },
+  {
+    name: 'memory_maintenance',
+    description: 'Run the full maintenance cycle: update freshness scores, auto-archive stale memories, and run utility decay. Can also run automatically via the post_save hook every ~50 saves.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        dryRun: { type: 'boolean', description: 'Preview without making changes', default: false },
+        maxAgeDays: { type: 'integer', description: 'Max age in days for decay (default 30)', default: 30 },
+      },
+    },
+  },
+  {
+    name: 'memory_analytics',
+    description: 'Surface self-improving loop analytics: RCA effectiveness, conflict health, utility distribution, feedback ratio, and freshness distribution. See how well the system is learning.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -768,6 +803,25 @@ async function callTool(name, args) {
 
     case 'memory_utility_stats':
       return api.getUtilityStats(args);
+
+    case 'memory_freshness': {
+      const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+      if (args.action === 'update') {
+        const count = api.updateFreshnessScores(require('../core/db').getDb(), project);
+        return { status: 'updated', count };
+      }
+      if (args.action === 'archive') {
+        return api.autoArchive({ project, threshold: args.threshold || 15, dryRun: args.dryRun });
+      }
+      // Default: return freshness analytics
+      return api.analytics({ project }).freshness;
+    }
+
+    case 'memory_maintenance':
+      return api.runMaintenance(args);
+
+    case 'memory_analytics':
+      return api.analytics(args);
 
     case 'memory_auto_capture': {
       const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();

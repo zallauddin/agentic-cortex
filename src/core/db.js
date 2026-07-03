@@ -237,6 +237,23 @@ function ensureSchema(db) {
   // Phase 9: Predictive context ranking — predicted_utility
   try { db.exec(`ALTER TABLE observations ADD COLUMN predicted_utility INTEGER DEFAULT 0`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_utility ON observations(predicted_utility, is_active)`); } catch {}
+
+  // Phase 10: Freshness scoring — auto-decaying composite score
+  try { db.exec(`ALTER TABLE observations ADD COLUMN freshness_score INTEGER DEFAULT 50`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_freshness ON observations(freshness_score, is_active)`); } catch {}
+
+  // Phase 11: Maintenance log — tracks last maintenance runs per project
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS maintenance_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      task TEXT NOT NULL,
+      result_summary TEXT,
+      run_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(project_path, task)
+    );
+    CREATE INDEX IF NOT EXISTS idx_maintenance_project ON maintenance_log(project_path);
+  `);
 }
 
 /**
