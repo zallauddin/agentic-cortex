@@ -43,7 +43,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -465,6 +465,88 @@ const TOOLS = [
       required: ['errorContent'],
     },
   },
+  {
+    name: 'memory_record_action',
+    description: 'Record an agent action as an intent→action→outcome triplet. Links all three via relations and runs evidence-based confidence scoring automatically.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        intent: { type: 'string', description: 'What the agent tried to accomplish' },
+        action: { type: 'string', description: 'What the agent actually did' },
+        outcome: { type: 'string', description: 'What happened as a result' },
+        project: { type: 'string', description: 'Project path' },
+        agentId: { type: 'string', description: 'Agent identifier' },
+        confidence: { type: 'integer', description: 'Initial confidence (default 90)', default: 90 },
+      },
+      required: ['intent', 'action', 'outcome'],
+    },
+  },
+  {
+    name: 'memory_transfer_knowledge',
+    description: 'Transfer high-confidence observations from one project to another with a confidence decay modifier. Useful for sharing battle-tested learnings across projects.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromProject: { type: 'string', description: 'Source project path' },
+        toProject: { type: 'string', description: 'Target project path' },
+        types: { type: 'array', items: { type: 'string' }, description: 'Filter by observation types (e.g., ["learning", "instruction"])' },
+        minConfidence: { type: 'integer', description: 'Minimum confidence to transfer (default 80)', default: 80 },
+        confidenceModifier: { type: 'number', description: 'Multiplier for transferred confidence (default 0.8)', default: 0.8 },
+      },
+      required: ['fromProject', 'toProject'],
+    },
+  },
+  {
+    name: 'memory_ingest_transcript',
+    description: 'Parse a conversation transcript and auto-extract structured observations (decisions, errors, learnings, preferences, facts). Uses regex with LLM fallback.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Raw transcript text to parse' },
+        project: { type: 'string', description: 'Project path' },
+        agentId: { type: 'string', description: 'Agent identifier' },
+        useLLM: { type: 'boolean', description: 'Use LLM for deeper extraction (default true)', default: true },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'memory_feedback',
+    description: 'Record explicit agent feedback on a memory. "helpful" boosts confidence and utility. "incorrect" decays confidence and flags for review.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'integer', description: 'Observation ID to give feedback on' },
+        type: { type: 'string', description: 'Feedback type: helpful or incorrect', enum: ['helpful', 'incorrect'] },
+        reason: { type: 'string', description: 'Why this feedback (saved as audit trail)' },
+      },
+      required: ['id', 'type'],
+    },
+  },
+  {
+    name: 'memory_trail',
+    description: 'Walk the memory relation graph to surface a readable narrative trail. Follows derives_from, produces, achieves, depends_on, supersedes, refines relations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        observationId: { type: 'integer', description: 'Starting observation ID' },
+        depth: { type: 'integer', description: 'Traversal depth (default 5, max 10)', default: 5 },
+        direction: { type: 'string', description: 'Walk direction: forward, backward, or both', default: 'both' },
+      },
+      required: ['observationId'],
+    },
+  },
+  {
+    name: 'memory_utility_stats',
+    description: 'Get the most and least useful memories for a project, ranked by access count. Helps identify which memories agents actually use.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        limit: { type: 'integer', description: 'Max results per category (default 10)', default: 10 },
+      },
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -492,7 +574,7 @@ async function callTool(name, args) {
       return api.forget(args.id, { hard: args.hard });
 
     case 'memory_context':
-      return api.context(args);
+      return api.context(args); // note: context is async but callTool handles async returns
 
     case 'memory_reflect': {
       const mapped = { ...args };
@@ -668,6 +750,24 @@ async function callTool(name, args) {
         note: 'The self-improving loop will analyze this error and generate a systemic learning/fix automatically.',
       };
     }
+
+    case 'memory_record_action':
+      return api.recordAction(args);
+
+    case 'memory_transfer_knowledge':
+      return api.transferKnowledge(args);
+
+    case 'memory_ingest_transcript':
+      return api.ingestTranscript(args.text, args);
+
+    case 'memory_feedback':
+      return api.feedback(args.id, { type: args.type, reason: args.reason });
+
+    case 'memory_trail':
+      return api.trail(args.observationId, { depth: args.depth, direction: args.direction });
+
+    case 'memory_utility_stats':
+      return api.getUtilityStats(args);
 
     case 'memory_auto_capture': {
       const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
