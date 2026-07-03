@@ -45,10 +45,10 @@ The context below is AUTO-INJECTED by git hooks (post-merge, post-checkout) or `
 Use this pre-computed knowledge to skip discovery. No need to re-read files you already know about.
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-02T19:22:55.176Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-03T15:12:10.875Z -->
 
 ## Codebase Graph
-*24 source files | 0 API routes | Generated 2026-07-02T19:22:54.642Z*
+*27 source files | 0 API routes | Generated 2026-07-03T15:12:10.854Z*
 
 ### Architecture
 **Patterns:** Event-Driven, CLI Tool
@@ -56,10 +56,10 @@ Use this pre-computed knowledge to skip discovery. No need to re-read files you 
 
 ### Data Flow
 `API → Service`
-Files per layer: UI=0 API=1 Service=21 Data=0
+Files per layer: UI=0 API=1 Service=24 Data=0
 **Hub files (most imported):** `scripts/inject-memory.mjs`, `scripts/generate-graph.mjs`, `cli.js`, `src/api/index.js`, `src/core/conflict.js`
 
-### Core Libraries (12)
+### Core Libraries (14)
 - `src/core/conflict.js` — fns: checkConflicts(db, opts)
 - `src/core/constants.js` — fns: getProjectDefault(opts)
 - `src/core/db-path.js` — fns: ensureDir(filePath), getDbDir(), getDbPath(), getLegacyDbPath(), getLegacyDbPathIfExists()
@@ -71,7 +71,7 @@ Files per layer: UI=0 API=1 Service=21 Data=0
 - `src/core/reflection.js` — fns: archiveSuperseded(db, opts), consolidateMemories(db, opts), findSimilarClusters(observations, threshold), generateConsolidatedSummary(cluster), getEmbeddedObservations(db, project, limit)
 - `src/core/relations.js` — fns: addRelation(db, opts), deleteRelation(db, relationId), getGraph(db, opts), getRelations(db, observationId), listRelationTypes(db)
 - `src/core/search.js` — fns: buildWhereClause(opts), hybridSearch(db, query, queryVec, opts), keywordSearch(db, opts), rerankResults(query, results), sanitizeDate(dateStr)
-- `src/core/session.js` — fns: callLLM(messages, opts), endSession(db, sessionId, summary), listSessions(db, opts), startSession(db, opts), summarizeSession(db, opts)
+- `src/core/self-improve.js` — fns: autoResolveConflicts(db, opts), initHooks(saveFn), learnFromError(db, errorObs), setSaveFunction(saveFn), verifyLearning(db, newObs)
 
 ### Scripts
 - `scripts/generate-graph.mjs`

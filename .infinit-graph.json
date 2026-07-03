@@ -1,7 +1,7 @@
 {
-  "generated": "2026-07-02T19:22:54.642Z",
-  "fingerprint": "7644860cf667b52d",
-  "fileCount": 24,
+  "generated": "2026-07-03T15:12:10.854Z",
+  "fingerprint": "6ca2d7902637ec52",
+  "fileCount": 27,
   "apiRoutes": [],
   "services": {},
   "prismaSchema": {
@@ -12,7 +12,7 @@
     "layerCounts": {
       "UI": 0,
       "API": 1,
-      "Service": 21,
+      "Service": 24,
       "Data": 0
     },
     "crossLayerEdges": {},
@@ -74,22 +74,6 @@
       "imports": [],
       "functions": [
         {
-          "name": "findRelated",
-          "params": [
-            {
-              "name": "obs",
-              "type": null
-            },
-            {
-              "name": "allObs",
-              "type": null
-            }
-          ],
-          "returnType": null,
-          "doc": null,
-          "isAsync": false
-        },
-        {
           "name": "getBody",
           "params": [],
           "returnType": null,
@@ -118,25 +102,9 @@
           "returnType": null,
           "doc": null,
           "isAsync": true
-        },
-        {
-          "name": "sanitizeFilename",
-          "params": [
-            {
-              "name": "title",
-              "type": null
-            },
-            {
-              "name": "id",
-              "type": null
-            }
-          ],
-          "returnType": null,
-          "doc": null,
-          "isAsync": false
         }
       ],
-      "size": 64798,
+      "size": 39420,
       "layer": "Service"
     },
     "scripts/generate-graph.mjs": {
@@ -400,7 +368,7 @@
           "isAsync": false
         }
       ],
-      "size": 33701,
+      "size": 33723,
       "layer": "Unknown"
     },
     "scripts/inject-memory.mjs": {
@@ -415,7 +383,7 @@
         "url"
       ],
       "functions": [],
-      "size": 4575,
+      "size": 4793,
       "layer": "Unknown"
     },
     "src/api/index.js": {
@@ -478,7 +446,7 @@
           "name": "close",
           "params": [],
           "returnType": null,
-          "doc": "Close the database connection",
+          "doc": "Close the database connection and release pipeline resources",
           "isAsync": false
         },
         {
@@ -994,7 +962,7 @@
           "isAsync": false
         }
       ],
-      "size": 31095,
+      "size": 32913,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1020,7 +988,7 @@
           "isAsync": true
         }
       ],
-      "size": 3989,
+      "size": 3686,
       "layer": "Service"
     },
     "src/core/constants.js": {
@@ -1042,7 +1010,7 @@
           "isAsync": false
         }
       ],
-      "size": 2420,
+      "size": 2505,
       "layer": "Service"
     },
     "src/core/db-path.js": {
@@ -1128,7 +1096,7 @@
           "isAsync": false
         }
       ],
-      "size": 9837,
+      "size": 10080,
       "layer": "Service"
     },
     "src/core/embedding.js": {
@@ -1146,7 +1114,7 @@
             }
           ],
           "returnType": null,
-          "doc": "@type {number} Maximum cache entries before eviction /\nconst CACHE_MAX_SIZE = 500;\n\n/  @type {Map<string, number[]>} LRU",
+          "doc": "@type {number} Maximum cache entries before eviction /\nconst CACHE_MAX_SIZE = parseInt(process.env.AGENTIC_CORTEX_EMBED_",
           "isAsync": false
         },
         {
@@ -1201,6 +1169,13 @@
           "isAsync": false
         },
         {
+          "name": "disposePipelines",
+          "params": [],
+          "returnType": null,
+          "doc": "Dispose all pipeline resources to free memory. Call this when shutting down the system.",
+          "isAsync": false
+        },
+        {
           "name": "getEmbeddingCacheStats",
           "params": [],
           "returnType": null,
@@ -1238,7 +1213,7 @@
           "isAsync": true
         }
       ],
-      "size": 8525,
+      "size": 8874,
       "layer": "Service"
     },
     "src/core/export.js": {
@@ -1332,7 +1307,7 @@
           "isAsync": false
         }
       ],
-      "size": 16086,
+      "size": 16314,
       "layer": "Service"
     },
     "src/core/hooks.js": {
@@ -1566,7 +1541,7 @@
           "isAsync": false
         }
       ],
-      "size": 9363,
+      "size": 9648,
       "layer": "Service"
     },
     "src/core/index.js": {
@@ -1709,7 +1684,7 @@
           "isAsync": true
         }
       ],
-      "size": 15090,
+      "size": 15172,
       "layer": "Service"
     },
     "src/core/relations.js": {
@@ -1908,6 +1883,88 @@
       "size": 12753,
       "layer": "Service"
     },
+    "src/core/self-improve.js": {
+      "path": "src/core/self-improve.js",
+      "role": "library",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "autoResolveConflicts",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Run conflict detection on a project and auto-resolve contradictions. Uses LLM to determine which observation is correct,",
+          "isAsync": true
+        },
+        {
+          "name": "initHooks",
+          "params": [
+            {
+              "name": "saveFn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Initialize the self-improving loop by registering hooks. Call once during API initialization. After this, every save tri",
+          "isAsync": false
+        },
+        {
+          "name": "learnFromError",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "errorObs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "self-improve.js — Self-improving agentic loop for agentic-cortex.  Detects shortcomings (errors, contradictions, gaps), ",
+          "isAsync": true
+        },
+        {
+          "name": "setSaveFunction",
+          "params": [
+            {
+              "name": "saveFn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Inject the save function (alternative to initHooks if hooks already set up). @param {Function} saveFn",
+          "isAsync": false
+        },
+        {
+          "name": "verifyLearning",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "newObs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "When a new observation is saved, check if it contradicts or reinforces existing learnings. Adjust confidence scores acco",
+          "isAsync": true
+        }
+      ],
+      "size": 12026,
+      "layer": "Service"
+    },
     "src/core/session.js": {
       "path": "src/core/session.js",
       "role": "library",
@@ -2018,12 +2075,279 @@
       "size": 8437,
       "layer": "Service"
     },
+    "src/core/watcher.js": {
+      "path": "src/core/watcher.js",
+      "role": "library",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "_flushBatch",
+          "params": [
+            {
+              "name": "onBatch",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Flush batched changes: save observation and reset.",
+          "isAsync": false
+        },
+        {
+          "name": "_onChange",
+          "params": [
+            {
+              "name": "eventType",
+              "type": null
+            },
+            {
+              "name": "filename",
+              "type": null
+            },
+            {
+              "name": "onBatch",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Internal: handle file change event.",
+          "isAsync": false
+        },
+        {
+          "name": "_walkForChanges",
+          "params": [
+            {
+              "name": "dir",
+              "type": null
+            },
+            {
+              "name": "prefix",
+              "type": null
+            },
+            {
+              "name": "since",
+              "type": null
+            },
+            {
+              "name": "onBatch",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Walk directory to find recently changed files.",
+          "isAsync": false
+        },
+        {
+          "name": "_watchWithPolling",
+          "params": [
+            {
+              "name": "dir",
+              "type": null
+            },
+            {
+              "name": "onBatch",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Polling-based alternative when fs.watch with recursive isn't available.",
+          "isAsync": false
+        },
+        {
+          "name": "getStatus",
+          "params": [],
+          "returnType": null,
+          "doc": "Get watcher status. @returns {{running: boolean, watching: string|null, pendingChanges: number, debounceMs: number}}",
+          "isAsync": false
+        },
+        {
+          "name": "setAPI",
+          "params": [
+            {
+              "name": "api",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "watcher.js — File watcher daemon for auto-capture.  Watches a directory recursively for file changes and auto-records ob",
+          "isAsync": false
+        },
+        {
+          "name": "startWatching",
+          "params": [
+            {
+              "name": "targetDir",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Start watching a directory for file changes. @param {string} targetDir - Directory to watch @param {Object} [opts] - Opt",
+          "isAsync": true
+        },
+        {
+          "name": "stopWatching",
+          "params": [],
+          "returnType": null,
+          "doc": "Stop watching all directories.",
+          "isAsync": false
+        }
+      ],
+      "size": 7451,
+      "layer": "Service"
+    },
+    "src/editor/vscode-logic.js": {
+      "path": "src/editor/vscode-logic.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "_flushPendingSaves",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_onDeactivate",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_onDocumentChange",
+          "params": [
+            {
+              "name": "e",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_onFileSave",
+          "params": [
+            {
+              "name": "doc",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_onWorkspaceOpen",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "init",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "vscode-logic.js — Core auto-capture logic for VS Code / Cursor extensions.  This module provides the core event handlers",
+          "isAsync": false
+        },
+        {
+          "name": "recordGitOperation",
+          "params": [
+            {
+              "name": "operation",
+              "type": null
+            },
+            {
+              "name": "details",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Record a git operation manually. Call from extension's git integration. @param {string} operation - e.g., 'commit', 'pus",
+          "isAsync": false
+        },
+        {
+          "name": "recordTerminalCommand",
+          "params": [
+            {
+              "name": "command",
+              "type": null
+            },
+            {
+              "name": "exitCode",
+              "type": null
+            },
+            {
+              "name": "output",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "@type {Map<number, string>} Terminal ID -> last command buffer /\nconst _terminalCommands = new Map();\n\nfunction _onTermi",
+          "isAsync": false
+        },
+        {
+          "name": "registerHandlers",
+          "params": [
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Register all auto-capture event handlers with VS Code. Call this from your extension's activate() function. @param {Obje",
+          "isAsync": false
+        },
+        {
+          "name": "saveMemory",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Manually save an observation from the editor. @param {Object} opts - Same as api.save() opts",
+          "isAsync": false
+        }
+      ],
+      "size": 9101,
+      "layer": "Service"
+    },
     "src/mcp/server.js": {
       "path": "src/mcp/server.js",
       "role": "source",
       "exports": [],
       "imports": [],
       "functions": [
+        {
+          "name": "_enqueueToolCall",
+          "params": [
+            {
+              "name": "toolName",
+              "type": null
+            },
+            {
+              "name": "toolArgs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "agentic-cortex MCP Server — stdio JSON-RPC 2.0 interface.  Exposes agentic-cortex as an MCP tool server over stdio. No H",
+          "isAsync": false
+        },
         {
           "name": "callTool",
           "params": [
@@ -2051,49 +2375,9 @@
           "returnType": null,
           "doc": null,
           "isAsync": true
-        },
-        {
-          "name": "rpcError",
-          "params": [
-            {
-              "name": "id",
-              "type": null
-            },
-            {
-              "name": "code",
-              "type": null
-            },
-            {
-              "name": "message",
-              "type": null
-            },
-            {
-              "name": "data",
-              "type": null
-            }
-          ],
-          "returnType": null,
-          "doc": null,
-          "isAsync": false
-        },
-        {
-          "name": "rpcResult",
-          "params": [
-            {
-              "name": "id",
-              "type": null
-            },
-            {
-              "name": "result",
-              "type": null
-            }
-          ],
-          "returnType": null,
-          "doc": null,
-          "isAsync": false
         }
       ],
-      "size": 24048,
+      "size": 31739,
       "layer": "Service"
     },
     "tests/conflict.test.js": {
