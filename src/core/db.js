@@ -214,6 +214,7 @@ function ensureSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent ON agent_sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_agent_sessions_project ON agent_sessions(project_path);
+    CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent_ended ON agent_sessions(agent_id, ended_at);
   `);
 
   // Phase 6: Skill/procedure fields — steps, triggers, preconditions, postconditions
@@ -222,6 +223,7 @@ function ensureSchema(db) {
   try { db.exec(`ALTER TABLE observations ADD COLUMN preconditions TEXT`); } catch {}
   try { db.exec(`ALTER TABLE observations ADD COLUMN postconditions TEXT`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_type_active ON observations(type, is_active)`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_project_active_type ON observations(project_path, is_active, type)`); } catch {}
 }
 
 /**

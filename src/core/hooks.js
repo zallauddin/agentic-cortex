@@ -12,6 +12,9 @@
 /** @type {Map<string, Array<Function>>} In-memory hook registry */
 const _hookRegistry = new Map();
 
+/** @type {number} Maximum callbacks per event before warning */
+const MAX_HOOKS_PER_EVENT = 50;
+
 // Inject save function to avoid circular dependency on src/api
 let _saveFn = null;  // (opts) => Promise<{id, status, ...}>
 
@@ -40,7 +43,11 @@ function registerHook(event, callback) {
   if (!_hookRegistry.has(event)) {
     _hookRegistry.set(event, []);
   }
-  _hookRegistry.get(event).push(callback);
+  const hooks = _hookRegistry.get(event);
+  if (hooks.length >= MAX_HOOKS_PER_EVENT) {
+    console.warn('[hooks] Hook registry for "' + event + '" has ' + hooks.length + ' callbacks — possible leak?');
+  }
+  hooks.push(callback);
   return () => unregisterHook(event, callback);
 }
 

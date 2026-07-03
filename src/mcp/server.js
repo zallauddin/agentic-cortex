@@ -31,6 +31,50 @@ const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
 const INTERNAL_ERROR = -32603;
 
+// ─── Per-project execution queue (prevents concurrent SQLite/NN contention) ─
+
+/** @type {Map<string, Promise>} Per-project execution chains */
+const _projectQueues = new Map();
+
+/**
+ * Execute a tool call with per-project serialization.
+ * Ensures only one concurrent tool call per project to avoid SQLite busy
+ * errors and overlapping LLM/embedding operations.
+ */
+function _enqueueToolCall(toolName, toolArgs) {
+  // Only serialize state-modifying tool calls; reads are concurrent-safe
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end']);
+  if (!stateModifyingTools.has(toolName)) {
+    return callTool(toolName, toolArgs);
+  }
+
+  const projectKey = toolArgs.project || '__default__';
+  const prev = _projectQueues.get(projectKey) || Promise.resolve();
+  const next = prev.then(() => callTool(toolName, toolArgs),
+    () => callTool(toolName, toolArgs)
+  );
+
+  const cleanup = next.then(() => {
+    if (_projectQueues.get(projectKey) === next) {
+      _projectQueues.delete(projectKey);
+    }
+  }, () => {
+    if (_projectQueues.get(projectKey) === next) {
+      _projectQueues.delete(projectKey);
+    }
+  });
+  cleanup.catch(() => {});
+
+  _projectQueues.set(projectKey, next);
+
+  if (_projectQueues.size > 100) {
+    const keys = [..._projectQueues.keys()];
+    for (const k of keys.slice(0, 50)) _projectQueues.delete(k);
+  }
+
+  return next;
+}
+
 // ─── Tool definitions ────────────────────────────────────────────────
 
 const TOOLS = [
@@ -381,6 +425,18 @@ const TOOLS = [
     },
   },
   {
+    name: 'memory_daily_summary',
+    description: 'Generate a daily summary of observations for a project. Uses LLM if available, falls back to template.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+        date: { type: 'string', description: 'Date to summarize (YYYY-MM-DD, defaults to yesterday)' },
+        force: { type: 'boolean', description: 'Force regeneration even if cached', default: false },
+      },
+    },
+  },
+  {
     name: 'memory_auto_capture',
     description: 'Declare what you are working on. Auto-starts a session if needed and saves a context observation. Use this at the start of every significant task so memories are automatically associated with the right session.',
     inputSchema: {
@@ -551,6 +607,50 @@ async function callTool(name, args) {
     case 'memory_skill_search':
       return api.searchSkills(args);
 
+    case 'memory_daily_summary': {
+      const db = require('../core/db').getDb();
+      const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+      const targetDate = args.date || new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+      if (!args.force) {
+        const existing = db.prepare('SELECT summary FROM daily_summaries WHERE project_path = ? AND summary_date = ?').get(project, targetDate);
+        if (existing) return { date: targetDate, summary: existing.summary, cached: true };
+      }
+
+      const obs = db.prepare(
+        "SELECT id, type, title, content, importance, confidence FROM observations WHERE project_path = ? AND is_active = 1 AND date(created_at) = ? ORDER BY importance DESC LIMIT 50"
+      ).all(project, targetDate);
+
+      if (obs.length === 0) {
+        return { date: targetDate, summary: 'No observations recorded on ' + targetDate, observationCount: 0 };
+      }
+
+      const obsText = obs.map((o, i) =>
+        `${i + 1}. [${o.type}] ${o.title || '(untitled)'}: ${o.content.slice(0, 300)}`
+      ).join('\n');
+
+      let summary;
+      try {
+        const { callLLM } = require('../core/session');
+        summary = await callLLM([
+          { role: 'system', content: 'You summarize a day\'s worth of coding agent observations. Be concise (2-4 sentences). Focus on what was accomplished, key decisions, and problems solved. Use past tense.' },
+          { role: 'user', content: 'Date: ' + targetDate + '\n\nObservations:\n' + obsText },
+        ], { temperature: 0.2, maxTokens: 300 });
+      } catch {}
+
+      if (!summary) {
+        const types = {};
+        for (const o of obs) { types[o.type] = (types[o.type] || 0) + 1; }
+        summary = obs.length + ' observations — ' + Object.entries(types).map(([t, c]) => c + ' ' + t).join(', ');
+      }
+
+      db.prepare(
+        'INSERT OR REPLACE INTO daily_summaries (project_path, summary_date, summary, observation_count) VALUES (?,?,?,?)'
+      ).run(project, targetDate, summary, obs.length);
+
+      return { date: targetDate, summary, observationCount: obs.length, status: 'summarized' };
+    }
+
     case 'memory_learn_from_error': {
       // Save the error observation — the post-save hook in self-improve.js
       // will automatically trigger root cause analysis
@@ -642,7 +742,7 @@ async function handleRequest(msg) {
     }
 
     try {
-      const result = await callTool(toolName, toolArgs);
+      const result = await _enqueueToolCall(toolName, toolArgs);
       return rpcResult(id, {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       });
