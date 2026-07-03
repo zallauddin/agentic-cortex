@@ -38,6 +38,10 @@ let _saveFn = null;
 const _analyzedErrorIds = new Set();
 const MAX_ANALYZED_CACHE = 200;
 
+// Track save counts per project for periodic conflict checks (every ~30 saves)
+const _projectSaveCounts = new Map();
+const MAX_SAVE_COUNTS = 50;
+
 // ─── 1. Root Cause Analysis from Errors ──────────────────────────────
 
 /**
@@ -294,13 +298,12 @@ function initHooks(saveFn) {
   });
 
   // Hook 3: Periodically check for conflicts (every ~30 saves per project, approximate)
-  const _projectSaveCounts = new Map();
   hooks.registerHook('post_save', async (obs, ctx, db) => {
     if (!obs.project_path) return;
     const count = (_projectSaveCounts.get(obs.project_path) || 0) + 1;
     _projectSaveCounts.set(obs.project_path, count);
     // Clean up old entries periodically
-    if (_projectSaveCounts.size > 50) {
+    if (_projectSaveCounts.size > MAX_SAVE_COUNTS) {
       const keys = [..._projectSaveCounts.keys()];
       for (const k of keys.slice(0, 20)) _projectSaveCounts.delete(k);
     }
@@ -321,6 +324,15 @@ function setSaveFunction(saveFn) {
   _saveFn = saveFn;
 }
 
+/**
+ * Reset module-level state (for testing). Clears the analyzed error ID cache
+ * and project save counts so fresh DBs with reused row IDs don't get skipped.
+ */
+function resetState() {
+  _analyzedErrorIds.clear();
+  _projectSaveCounts.clear();
+}
+
 // ─── Exports ──────────────────────────────────────────────────────────
 
 module.exports = {
@@ -329,4 +341,5 @@ module.exports = {
   verifyLearning,
   initHooks,
   setSaveFunction,
+  resetState,
 };

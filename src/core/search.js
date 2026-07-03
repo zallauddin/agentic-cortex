@@ -207,7 +207,7 @@ function hybridSearch(db, query, queryVec, opts) {
   if (ftsResults.length > 0) {
     const ftsIds = ftsResults.map(r => r.id);
     const moreLimit = Math.max(limit * 3, 50);
-    let moreSql = 'SELECT id FROM observations WHERE embedding IS NOT NULL AND id NOT IN (' +
+    let moreSql = 'SELECT id FROM observations WHERE is_active = 1 AND embedding IS NOT NULL AND id NOT IN (' +
       ftsIds.map(() => '?').join(',') + ')';
     const moreParams = [...ftsIds];
     if (opts.project) { moreSql += ' AND project_path = ?'; moreParams.push(opts.project); }
@@ -217,7 +217,7 @@ function hybridSearch(db, query, queryVec, opts) {
     const moreIds = db.prepare(moreSql).all(...moreParams).map(r => r.id);
     candidateIds = [...ftsIds, ...moreIds];
   } else {
-    let fallbackSql = 'SELECT id FROM observations WHERE embedding IS NOT NULL';
+    let fallbackSql = 'SELECT id FROM observations WHERE is_active = 1 AND embedding IS NOT NULL';
     const fallbackParams = [];
     if (opts.project) { fallbackSql += ' AND project_path = ?'; fallbackParams.push(opts.project); }
     if (opts.agentId) { fallbackSql += ' AND agent_id = ?'; fallbackParams.push(opts.agentId); }

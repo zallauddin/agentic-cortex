@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-03T15:12:10.854Z",
-  "fingerprint": "6ca2d7902637ec52",
+  "generated": "2026-07-03T15:32:02.209Z",
+  "fingerprint": "e23c2280e4833d0d",
   "fileCount": 27,
   "apiRoutes": [],
   "services": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 39420,
+      "size": 39450,
       "layer": "Service"
     },
     "scripts/generate-graph.mjs": {
