@@ -429,5 +429,9 @@ module.exports = {
   promotePatterns,
   archiveSuperseded,
   reflect,
+  findSimilarClusters,
+  pickCanonical,
+  generateConsolidatedSummary,
+  getEmbeddedObservations,
   setSaveFunction: (fn) => { _saveFn = fn; },
 };

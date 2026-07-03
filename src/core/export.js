@@ -413,4 +413,4 @@ function exportMarkdown(db, opts) {
   };
 }
 
-module.exports = { exportJSON, exportMarkdown, importJSON };
+module.exports = { exportJSON, exportMarkdown, importJSON, sanitizeFilename, findRelated };
