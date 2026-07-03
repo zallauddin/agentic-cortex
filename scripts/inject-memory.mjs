@@ -31,7 +31,12 @@ const globalCliPath = execSync('npm root -g', { encoding: 'utf-8' }).trim()
 const homedirCliPath = join(homedir(), '.agentic-cortex', 'cli.js');
 const memCli = existsSync(localCliPath) ? localCliPath
   : existsSync(globalCliPath) ? globalCliPath
-  : homedirCliPath;
+  : (() => {
+    try {
+      const whichPath = execSync('which agentic-cortex 2>/dev/null || where agentic-cortex 2>nul', { encoding: 'utf-8' }).trim();
+      return whichPath || localCliPath;
+    } catch { return localCliPath; }
+  })();
 const knowledgePath = join(rawPath, 'knowledge.md');
 const graphScript = join(__dirname, 'generate-graph.mjs');
 

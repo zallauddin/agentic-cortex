@@ -63,7 +63,7 @@ async function learnFromError(db, errorObs) {
   _analyzedErrorIds.add(errorObs.id);
 
   if (!_saveFn) {
-    console.warn('[self-improve] No save function injected — skipping error RCA');
+    console.warn('[self-improve] No save function injected — cannot save. Call initHooks(saveFn) or setSaveFunction(saveFn) first.');
     return null;
   }
 
