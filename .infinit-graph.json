@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-03T22:03:24.127Z",
-  "fingerprint": "1c64fee399e50934",
+  "generated": "2026-07-03T22:19:31.588Z",
+  "fingerprint": "1d995fec65e54746",
   "fileCount": 35,
   "apiRoutes": [],
   "services": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 39450,
+      "size": 43621,
       "layer": "Service"
     },
     "scripts/generate-graph.mjs": {
@@ -407,6 +407,22 @@
           "isAsync": false
         },
         {
+          "name": "_trackAccess",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "ids",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Batch-update access_count and last_accessed_at for observation IDs. Debounces writes — only updates if last access was >",
+          "isAsync": false
+        },
+        {
           "name": "addRelation",
           "params": [
             {
@@ -674,6 +690,18 @@
           "isAsync": false
         },
         {
+          "name": "getUtilityStats",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get the most and least useful memories for a project, ranked by access_count. Useful for understanding which memories th",
+          "isAsync": false
+        },
+        {
           "name": "health",
           "params": [],
           "returnType": null,
@@ -694,6 +722,22 @@
           ],
           "returnType": null,
           "doc": "Import observations from JSON data",
+          "isAsync": true
+        },
+        {
+          "name": "ingestTranscript",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Parse a conversation transcript (agent chat log, code review, meeting notes) and auto-extract structured observations. U",
           "isAsync": true
         },
         {
@@ -779,6 +823,18 @@
           ],
           "returnType": null,
           "doc": "Promote recurring patterns only",
+          "isAsync": true
+        },
+        {
+          "name": "recordAction",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Record an agent action as a linked triplet of observations:   intent (what the agent tried to do)   action (what the age",
           "isAsync": true
         },
         {
@@ -930,6 +986,18 @@
           "isAsync": true
         },
         {
+          "name": "transferKnowledge",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Transfer high-confidence observations from one project to another. Applies a confidence decay modifier (default 0.8) and",
+          "isAsync": true
+        },
+        {
           "name": "unregisterHook",
           "params": [
             {
@@ -962,7 +1030,7 @@
           "isAsync": false
         }
       ],
-      "size": 32913,
+      "size": 45535,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1010,7 +1078,7 @@
           "isAsync": false
         }
       ],
-      "size": 2505,
+      "size": 2657,
       "layer": "Service"
     },
     "src/core/db-path.js": {
@@ -1096,7 +1164,7 @@
           "isAsync": false
         }
       ],
-      "size": 10080,
+      "size": 10747,
       "layer": "Service"
     },
     "src/core/embedding.js": {
@@ -1684,7 +1752,7 @@
           "isAsync": true
         }
       ],
-      "size": 15270,
+      "size": 19285,
       "layer": "Service"
     },
     "src/core/relations.js": {
@@ -1969,7 +2037,7 @@
           "isAsync": true
         }
       ],
-      "size": 12411,
+      "size": 14932,
       "layer": "Service"
     },
     "src/core/session.js": {
