@@ -9,13 +9,12 @@ const path = require('path');
 const fs = require('fs');
 
 // ─── Core Modules ────────────────────────────────────────────────
-const { VALID_TYPES, EMBED_MODEL, DB_FILENAME, PORT, LLAMA_URL } = require('./src/core/constants');
-const { getDb, ensureSchema, getDbPath } = require('./src/core/db');
+const { VALID_TYPES, EMBED_MODEL, PORT, LLAMA_URL } = require('./src/core/constants');
+const { getDb } = require('./src/core/db');
 const { getEmbedPipeline, computeEmbedding, cosineSimilarity } = require('./src/core/embedding');
-const { sanitizeDate, buildWhereClause, keywordSearch, semanticSearch, hybridSearch } = require('./src/core/search');
-const { startSession, endSession, listSessions, callLLM, templateSummary, summarizeSession } = require('./src/core/session');
+const { sanitizeDate } = require('./src/core/search');
+const { startSession, endSession, callLLM, templateSummary, summarizeSession } = require('./src/core/session');
 const { checkConflicts } = require('./src/core/conflict');
-const { exportJSON, exportMarkdown, importJSON } = require('./src/core/export');
 const api = require('./src/api');
 
 // ─── Core functions imported from src/core/ modules above ───────
@@ -73,7 +72,7 @@ commands.save = {
 
 commands.search = {
   desc: 'Search observations (keyword, semantic, or temporal)',
-  args: ['<query>', '[--project PATH]', '[--limit N]', '[--semantic]', '[--type TYPE]', '[--as-of DATE]', '[--changed-since DATE]', '[--min-confidence N]'],
+  args: ['<query>', '[--project PATH]', '[--limit N]', '[--semantic]', '[--type TYPE]', '[--as-of DATE]', '[--changed-since DATE]', '[--min-confidence N]', '[--agent-id ID]'],
   parse(args) {
     const opts = { query: '', limit: 10, semantic: false, minConfidence: 0 };
     for (let i = 0; i < args.length; i++) {
@@ -84,140 +83,24 @@ commands.search = {
       else if (args[i] === '--as-of') opts.asOf = args[++i];
       else if (args[i] === '--changed-since') opts.changedSince = args[++i];
       else if (args[i] === '--min-confidence') opts.minConfidence = parseInt(args[++i], 10);
+      else if (args[i] === '--agent-id') opts.agentId = args[++i];
       else opts.query += (opts.query ? ' ' : '') + args[i];
     }
     return opts;
   },
   async run(db, opts) {
     if (!opts.query && !opts.type && !opts.asOf && !opts.changedSince) {
-      console.error('Usage: search <query> [--project PATH] [--limit N] [--semantic] [--type TYPE] [--as-of DATE] [--changed-since DATE] [--min-confidence N]');
+      console.error('Usage: search <query> [--project PATH] [--limit N] [--semantic] [--type TYPE] [--as-of DATE] [--changed-since DATE] [--min-confidence N] [--agent-id ID]');
       process.exit(1);
     }
-
-    // Build WHERE clause for temporal/confidence/type filters
-    const conditions = ['o.is_active = 1'];
-    const params = [];
-    if (opts.project) { conditions.push('o.project_path = ?'); params.push(opts.project); }
-    if (opts.type) { conditions.push('o.type = ?'); params.push(opts.type); }
-    if (opts.minConfidence > 0) { conditions.push('o.confidence >= ?'); params.push(opts.minConfidence); }
-    if (opts.changedSince) { conditions.push("o.created_at >= ?"); params.push(sanitizeDate(opts.changedSince) + ' 00:00:00'); }
-    if (opts.asOf) {
-      conditions.push("o.created_at <= ?"); params.push(sanitizeDate(opts.asOf) + ' 23:59:59');
+    try {
+      const results = await api.search(opts.query, opts);
+      const embeddedCount = db.prepare('SELECT COUNT(*) as c FROM observations WHERE embedding IS NOT NULL').get().c;
+      console.log(JSON.stringify({ results, count: results.length, mode: opts.semantic ? 'hybrid' : 'keyword', embedded: embeddedCount }, null, 2));
+    } catch (err) {
+      console.error('Search error:', err.message);
+      process.exit(1);
     }
-    const whereClause = conditions.join(' AND ');
-
-    // Phase 1: FTS5 keyword search
-    const safe = (opts.query || '').replace(/["']/g, '').trim();
-    let ftsResults = [];
-    if (safe) {
-      const ftsQuery = safe.split(' ').map(w => '"' + w + '"').join(' OR ');
-      const sql = 'SELECT o.id, o.project_path, o.type, o.title, substr(o.content, 1, 300) as preview, o.tags, o.importance, o.confidence, o.provenance, o.created_at, o.embedding IS NOT NULL as has_embedding, rank FROM observations_fts fts JOIN observations o ON o.id = fts.rowid WHERE observations_fts MATCH ? AND ' + whereClause + ' ORDER BY rank LIMIT ?';
-      try {
-        ftsResults = db.prepare(sql).all(ftsQuery, ...params, opts.limit * 2);
-      } catch (err) { console.error('FTS5 search error:', err.message); }
-    } else {
-      // No query text — just apply filters (e.g., --changed-since alone)
-      const colOrder = 'o.id, o.project_path, o.type, o.title, substr(o.content, 1, 300) as preview, o.tags, o.importance, o.confidence, o.provenance, o.created_at';
-      try {
-        ftsResults = db.prepare('SELECT ' + colOrder + ' FROM observations o WHERE ' + whereClause + ' ORDER BY o.created_at DESC LIMIT ?').all(...params, opts.limit * 2);
-      } catch (err) { console.error('Filter search error:', err.message); }
-    }
-
-    // Phase 2: Semantic reranking (if --semantic and embeddings exist)
-    if (opts.semantic) {
-      const embeddedCount = db.prepare(
-        'SELECT COUNT(*) as c FROM observations WHERE embedding IS NOT NULL'
-      ).get().c;
-
-      if (embeddedCount === 0) {
-        console.error('No embeddings found. Run: node cli.js embed');
-        console.error('Falling back to keyword search only.');
-      } else {
-        // Warn about dimension mismatch (stored vs current model)
-        try {
-          const sample = db.prepare('SELECT embedding FROM observations WHERE embedding IS NOT NULL LIMIT 1').get();
-          const meta = db.prepare('SELECT * FROM embedding_meta WHERE id = 1').get();
-          if (sample) {
-            const storedDim = JSON.parse(sample.embedding).length;
-            if (meta && storedDim !== meta.dimension) {
-              console.error('Note: Stored embeddings are ' + storedDim + '-dim but current model (' + EMBED_MODEL + ') produces ' + (meta?.dimension || '?') + '-dim.');
-              console.error('Run: node cli.js embed --force  to upgrade all embeddings to the current model.');
-              console.error('Search will still work (using min-length similarity) but results may be suboptimal.');
-            }
-          }
-        } catch {}
-        try {
-          const queryVec = await computeEmbedding(opts.query);
-
-          let candidateIds;
-          if (ftsResults.length > 0) {
-            const ftsIds = ftsResults.map(r => r.id);
-            const moreLimit = Math.max(opts.limit * 3, 50);
-            const moreIds = db.prepare(
-              "SELECT id FROM observations WHERE embedding IS NOT NULL AND id NOT IN (" +
-              ftsIds.map(() => '?').join(',') + ") ORDER BY created_at DESC LIMIT ?"
-            ).all(...ftsIds, moreLimit).map(r => r.id);
-            candidateIds = [...ftsIds, ...moreIds];
-          } else {
-            const all = opts.project
-              ? db.prepare("SELECT id FROM observations WHERE embedding IS NOT NULL AND project_path = ? ORDER BY created_at DESC").all(opts.project)
-              : db.prepare("SELECT id FROM observations WHERE embedding IS NOT NULL ORDER BY created_at DESC").all();
-            candidateIds = all.map(r => r.id);
-          }
-
-          const scores = [];
-          const placeholders = candidateIds.map(() => '?').join(',');
-          const rows = db.prepare(
-            "SELECT id, project_path, type, title, substr(content, 1, 300) as preview, tags, importance, created_at, embedding " +
-            "FROM observations WHERE id IN (" + placeholders + ")"
-          ).all(...candidateIds);
-
-          for (const row of rows) {
-            try {
-              const vec = JSON.parse(row.embedding);
-              const sim = cosineSimilarity(queryVec, vec);
-              scores.push({ ...row, semantic_score: sim });
-            } catch {}
-          }
-
-          const ftsMap = new Map(ftsResults.map(r => [r.id, r]));
-          const merged = scores.map(s => {
-            const fts = ftsMap.get(s.id);
-            const ftsRank = fts ? Math.abs(fts.rank) : 0;
-            const combined = fts
-              ? (0.4 * (1 / (1 + ftsRank)) + 0.6 * s.semantic_score)
-              : s.semantic_score;
-            return {
-              id: s.id, project_path: s.project_path, type: s.type,
-              title: s.title, preview: s.preview, tags: s.tags,
-              importance: s.importance, confidence: s.confidence, provenance: s.provenance,
-              created_at: s.created_at,
-              semantic_score: Math.round(s.semantic_score * 1000) / 1000,
-              fts_rank: fts?.rank || null,
-              combined_score: Math.round(combined * 1000) / 1000,
-            };
-          });
-
-          merged.sort((a, b) => b.combined_score - a.combined_score);
-          const results = merged.slice(0, opts.limit);
-          console.log(JSON.stringify({
-            results, count: results.length, mode: 'hybrid', embedded: embeddedCount
-          }, null, 2));
-          return;
-        } catch (err) {
-          console.error('Semantic search failed:', err.message);
-          console.error('Falling back to keyword search only.');
-        }
-      }
-    }
-
-    const results = ftsResults.map(r => ({
-      id: r.id, project_path: r.project_path, type: r.type, title: r.title,
-      preview: r.preview, tags: r.tags, importance: r.importance,
-      confidence: r.confidence, provenance: r.provenance,
-      created_at: r.created_at, rank: r.rank,
-    }));
-    console.log(JSON.stringify({ results, count: results.length, mode: 'keyword' }, null, 2));
   }
 };
 
@@ -319,41 +202,7 @@ commands.context = {
     return { project: args[0] || process.env.AGENTIC_CORTEX_PROJECT || process.cwd() };
   },
   run(db, opts) {
-    const sessions = db.prepare(
-      'SELECT id, session_id, project_name, user_prompt, summary, started_at, ended_at FROM sessions WHERE project_path = ? ORDER BY started_at DESC LIMIT 5'
-    ).all(opts.project);
-    const observations = db.prepare(
-      "SELECT id, session_id, type, title, substr(content, 1, 200) as preview, tags, importance, created_at FROM observations WHERE project_path = ? ORDER BY importance DESC, created_at DESC LIMIT 20"
-    ).all(opts.project);
-
-    let pack = '# Agentic Cortex - Project Context\n\n';
-    if (sessions.length) {
-      pack += '## Recent Sessions\n';
-      for (const s of sessions) {
-        const d = s.started_at ? new Date(s.started_at).toLocaleDateString() : '?';
-        const st = s.ended_at ? 'done' : 'active';
-        pack += '- **' + d + '** (' + st + '): ' + (s.summary || s.user_prompt || 'No summary') + '\n';
-      }
-      pack += '\n';
-    }
-    if (observations.length) {
-      pack += '## Key Observations\n';
-      const byType = {};
-      for (const o of observations) { (byType[o.type] = byType[o.type] || []).push(o); }
-      for (const [t, obs] of Object.entries(byType)) {
-        pack += '### ' + t.charAt(0).toUpperCase() + t.slice(1) + '\n';
-        for (const o of obs.slice(0, 5)) {
-          let tags = '';
-          try { const arr = JSON.parse(o.tags); if (arr.length) tags = ' [' + arr.join(', ') + ']'; } catch {}
-          pack += '- ' + (o.title || o.preview) + tags + '\n';
-        }
-        pack += '\n';
-      }
-    }
-    if (!sessions.length && !observations.length) {
-      pack += '_No previous memory for this project yet._\n';
-    }
-    console.log(pack);
+    console.log(api.context(opts));
   }
 };
 
@@ -391,7 +240,8 @@ commands.session = {
       const result = endSession(db, sid, opts.summary);
       console.log(JSON.stringify(result));
     } else if (opts.action === 'summarize') {
-      await summarizeSession(db, opts);
+      const result = await api.summarizeSession(opts);
+      console.log(JSON.stringify(result));
     } else {
       console.error('Usage: session <start|end|summarize>');
       process.exit(1);
@@ -427,43 +277,8 @@ commands.bulk = {
       console.error('Invalid JSON on stdin'); process.exit(1);
     }
     if (!Array.isArray(items)) items = items.observations || [items];
-
-    let pipe;
-    try { pipe = await getEmbedPipeline(); } catch {}
-
-    const insert = db.transaction((arr) => {
-      const ids = [];
-      for (const item of arr) {
-        const r = db.prepare(
-          'INSERT INTO observations (session_id, project_path, type, title, content, tags, importance, confidence, provenance) VALUES (?,?,?,?,?,?,?,?,?)'
-        ).run(
-          item.session_id || null, item.project_path || process.cwd(),
-          item.type || 'context', item.title || null, item.content,
-          JSON.stringify(item.tags || []), item.importance || 5,
-          item.confidence ?? 100, item.provenance || 'observed'
-        );
-        ids.push(Number(r.lastInsertRowid));
-      }
-      return ids;
-    });
-    const ids = insert(items);
-
-    if (pipe) {
-      console.error('Computing embeddings for ' + ids.length + ' observations...');
-      for (const id of ids) {
-        const obs = db.prepare('SELECT title, content FROM observations WHERE id = ?').get(id);
-        if (obs) {
-          try {
-            const text = [obs.title || '', obs.content].filter(Boolean).join('. ');
-            const result = await pipe(text, { pooling: 'mean', normalize: true });
-            db.prepare('UPDATE observations SET embedding = ? WHERE id = ?')
-              .run(JSON.stringify(Array.from(result.data)), id);
-          } catch {}
-        }
-      }
-    }
-
-    console.log(JSON.stringify({ saved: ids.length, ids, embedded: !!pipe }));
+    const result = await api.importJSON(items);
+    console.log(JSON.stringify(result));
   }
 };
 
@@ -501,72 +316,50 @@ commands.serve = {
       });
       try {
         if (p === '/health') {
-          const s = db.prepare('SELECT COUNT(*) as c FROM sessions').get().c;
-          const o = db.prepare('SELECT COUNT(*) as c FROM observations').get().c;
-          const e = db.prepare('SELECT COUNT(*) as c FROM observations WHERE embedding IS NOT NULL').get().c;
-          return json({ status: 'ok', sessions: s, observations: o, embedded: e });
+          return json(api.health());
         }
         if (p === '/search') {
           const q = url.searchParams.get('q');
           const proj = url.searchParams.get('project');
           const lim = parseInt(url.searchParams.get('limit') || '10', 10);
+          const typ = url.searchParams.get('type');
           if (!q) return json({ error: 'q required' }, 400);
-          const safe = q.replace(/["']/g, '').trim();
-          const fts = safe.split(' ').map(w => '"' + w + '"').join(' OR ');
-          let r;
-          if (proj) {
-            r = db.prepare(
-              "SELECT o.id, o.project_path, o.type, o.title, substr(o.content,1,200) as preview, o.tags, o.importance, o.confidence, o.provenance, o.created_at, rank FROM observations_fts fts JOIN observations o ON o.id=fts.rowid WHERE observations_fts MATCH ? AND o.project_path=? AND o.is_active=1 ORDER BY rank LIMIT ?"
-            ).all(fts, proj, lim);
-          } else {
-            r = db.prepare(
-              "SELECT o.id, o.project_path, o.type, o.title, substr(o.content,1,200) as preview, o.tags, o.importance, o.confidence, o.provenance, o.created_at, rank FROM observations_fts fts JOIN observations o ON o.id=fts.rowid WHERE observations_fts MATCH ? AND o.is_active=1 ORDER BY rank LIMIT ?"
-            ).all(fts, lim);
+          try {
+            const results = await api.search(q, { project: proj, limit: lim, type: typ });
+            return json({ results, count: results.length });
+          } catch (err) {
+            return json({ error: err.message }, 500);
           }
-          return json({ results: r, count: r.length });
         }
         if (p === '/observation' && req.method === 'POST') {
           const b = await getBody();
           if (!b.content) return json({ error: 'content required' }, 400);
-          let embedding = null;
           try {
-            const text = [b.title || '', b.content].filter(Boolean).join('. ');
-            const vec = await computeEmbedding(text);
-            embedding = JSON.stringify(vec);
-          } catch {}
-          const r = db.prepare(
-            'INSERT INTO observations (session_id, project_path, type, title, content, tags, importance, confidence, provenance, embedding) VALUES (?,?,?,?,?,?,?,?,?,?)'
-          ).run(b.session_id||null, b.project_path||process.cwd(), b.type||'observation',
-            b.title||null, b.content, JSON.stringify(b.tags||[]), b.importance||5, b.confidence??100, b.provenance||'observed', embedding);
-          return json({ id: Number(r.lastInsertRowid), status: 'saved', embedded: !!embedding });
+            const result = await api.save(b);
+            return json(result);
+          } catch (err) {
+            return json({ error: err.message }, 400);
+          }
         }
         if (p === '/session/start' && req.method === 'POST') {
           const b = await getBody();
-          const sid = b.session_id || 'session-' + Date.now();
-          db.prepare('INSERT INTO sessions (session_id, project_path, project_name, user_prompt) VALUES (?,?,?,?)')
-            .run(sid, b.project_path||process.cwd(), b.project_name||'unknown', b.user_prompt||'');
-          return json({ session_id: sid, status: 'started' });
+          const result = api.startSession(b);
+          return json(result);
         }
         if (p === '/session/end' && req.method === 'POST') {
           const b = await getBody();
-          const existing = db.prepare('SELECT session_id FROM sessions WHERE session_id = ?').get(b.session_id);
-          if (!existing) return json({ error: 'Session not found: ' + b.session_id }, 404);
-          db.prepare("UPDATE sessions SET ended_at=datetime('now'), summary=? WHERE session_id=?")
-            .run(b.summary||'', b.session_id);
-          return json({ session_id: b.session_id, status: 'ended' });
+          if (!b.session_id) return json({ error: 'session_id required' }, 400);
+          const result = api.endSession(b.session_id, b.summary);
+          return json(result);
         }
         if (p === '/context') {
           const proj = url.searchParams.get('project');
           if (!proj) return json({ error: 'project required' }, 400);
-          const s = db.prepare('SELECT * FROM sessions WHERE project_path=? ORDER BY started_at DESC LIMIT 5').all(proj);
-          const o = db.prepare(
-            "SELECT id, type, title, substr(content,1,200) as preview, tags, importance, confidence, provenance, created_at FROM observations WHERE project_path=? AND is_active=1 ORDER BY importance DESC, created_at DESC LIMIT 20"
-          ).all(proj);
-          return json({ sessions: s, observations: o });
+          return json({ context: api.context({ project: proj }) });
         }
         if (p === '/shutdown') {
           json({ status: 'shutting down' });
-          setTimeout(() => { db.close(); process.exit(0); }, 100);
+          setTimeout(() => { api.close(); process.exit(0); }, 100);
           return;
         }
         json({ error: 'not found' }, 404);
@@ -575,8 +368,8 @@ commands.serve = {
     server.listen(opts.port, '127.0.0.1', () => {
       console.log('[agentic-cortex] HTTP server on http://127.0.0.1:' + opts.port);
     });
-    process.on('SIGINT', () => { db.close(); process.exit(0); });
-    process.on('SIGTERM', () => { db.close(); process.exit(0); });
+    process.on('SIGINT', () => { api.close(); process.exit(0); });
+    process.on('SIGTERM', () => { api.close(); process.exit(0); });
   }
 };
 
@@ -648,47 +441,13 @@ commands.conflicts = {
     return opts;
   },
   async run(db, opts) {
-    const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
-    const embedded = db.prepare('SELECT id, type, title, content, confidence, provenance, embedding FROM observations WHERE project_path = ? AND is_active = 1 AND embedding IS NOT NULL ORDER BY id DESC LIMIT ?').all(project, 100);
-    if (embedded.length < 2) { console.log(JSON.stringify({ conflicts: [], note: 'Need at least 2 embedded observations to detect conflicts' })); return; }
-
-    const conflicts = [];
-    for (let i = 0; i < embedded.length; i++) {
-      for (let j = i + 1; j < embedded.length; j++) {
-        try {
-          const vecA = JSON.parse(embedded[i].embedding);
-          const vecB = JSON.parse(embedded[j].embedding);
-          const sim = cosineSimilarity(vecA, vecB);
-          // High similarity but potentially conflicting types (e.g., two decisions/goals about the same topic)
-          if (sim > 0.65) {
-            conflicts.push({
-              a: { id: embedded[i].id, type: embedded[i].type, title: embedded[i].title, confidence: embedded[i].confidence, preview: embedded[i].content.slice(0, 150) },
-              b: { id: embedded[j].id, type: embedded[j].type, title: embedded[j].title, confidence: embedded[j].confidence, preview: embedded[j].content.slice(0, 150) },
-              similarity: Math.round(sim * 1000) / 1000,
-            });
-          }
-        } catch {}
-      }
+    try {
+      const result = await api.checkConflicts(opts);
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error('Conflict detection error:', err.message);
+      process.exit(1);
     }
-
-    conflicts.sort((a, b) => b.similarity - a.similarity);
-    const top = conflicts.slice(0, opts.limit);
-
-    // Optional LLM check for each conflict pair
-    if (top.length > 0) {
-      console.error('Found ' + conflicts.length + ' potential conflicts. Top ' + top.length + ':');
-      for (const c of top) {
-        try {
-          const llmCheck = await callLLM([
-            { role: 'system', content: 'You detect contradictions between two pieces of information. Answer ONLY "YES" or "NO".' },
-            { role: 'user', content: 'Do these two observations contradict each other?\nA: ' + c.a.preview + '\nB: ' + c.b.preview },
-          ], { temperature: 0, maxTokens: 10, timeout: 30000 });
-          c.llm_contradiction = llmCheck && llmCheck.toUpperCase().startsWith('YES');
-        } catch { c.llm_contradiction = null; }
-      }
-    }
-
-    console.log(JSON.stringify({ conflicts: top, totalFound: conflicts.length, project }, null, 2));
   }
 };
 
@@ -711,33 +470,9 @@ commands.answer = {
     const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
 
     // 1. Retrieve relevant memories (hybrid search)
-    const safe = opts.question.replace(/["']/g, '').trim();
-    const ftsQuery = safe.split(' ').map(w => '"' + w + '"').join(' OR ');
-
-    let ftsResults = [];
-    try {
-      ftsResults = db.prepare(
-        "SELECT o.id, o.type, o.title, o.content, o.confidence, o.provenance, o.importance, o.created_at, rank FROM observations_fts fts JOIN observations o ON o.id = fts.rowid WHERE observations_fts MATCH ? AND o.project_path = ? AND o.is_active = 1 ORDER BY rank LIMIT ?"
-      ).all(ftsQuery, project, opts.topK * 3);
-    } catch { /* FTS5 might throw on special chars */ }
-
-    // Semantic reranking if embeddings exist
-    let finalResults = ftsResults;
-    try {
-      const queryVec = await computeEmbedding(opts.question);
-      const scored = [];
-      for (const r of ftsResults) {
-        const embRow = db.prepare('SELECT embedding FROM observations WHERE id = ? AND embedding IS NOT NULL').get(r.id);
-        if (embRow) {
-          try {
-            const vec = JSON.parse(embRow.embedding);
-            scored.push({ ...r, semantic_score: cosineSimilarity(queryVec, vec) });
-          } catch { scored.push(r); }
-        } else { scored.push(r); }
-      }
-      scored.sort((a, b) => (b.semantic_score || 0) - (a.semantic_score || 0));
-      finalResults = scored.slice(0, opts.topK);
-    } catch { finalResults = ftsResults.slice(0, opts.topK); }
+    let finalResults;
+    try { finalResults = await api.search(opts.question, { project, limit: opts.topK }); }
+    catch { finalResults = []; }
 
     if (finalResults.length === 0) {
       console.log(JSON.stringify({ answer: 'No relevant memories found for this question.', sources: [] }));
@@ -746,7 +481,7 @@ commands.answer = {
 
     // 2. Build RAG prompt
     const memoryContext = finalResults.map((r, i) =>
-      `[${i + 1}] (${r.type}, confidence: ${r.confidence}%, source: ${r.provenance}) ${r.title || ''}: ${r.content}`
+      `[${i + 1}] (${r.type}, confidence: ${r.confidence}%, source: ${r.provenance}) ${r.title || ''}: ${r.preview || r.content}`
     ).join('\n\n');
 
     // 3. LLM-grounded answer
@@ -764,7 +499,7 @@ commands.answer = {
     } catch (err) {
       console.log(JSON.stringify({
         answer: 'LLM unavailable. Retrieved relevant memories below.',
-        sources: finalResults.map(r => ({ id: r.id, type: r.type, title: r.title, content: r.content.slice(0, 300) })),
+        sources: finalResults.map(r => ({ id: r.id, type: r.type, title: r.title, content: (r.preview || r.content || '').slice(0, 300) })),
         sourceCount: finalResults.length,
       }, null, 2));
     }
@@ -807,11 +542,9 @@ commands.upload = {
 
     const chunks = [];
     if (ext === '.json') {
-      // JSON: store as single object (compact)
       try { content = JSON.stringify(JSON.parse(content), null, 2); } catch {}
       chunks.push({ title, content: content.slice(0, 12000) });
     } else if (ext === '.csv') {
-      // CSV: each row as an observation
       const lines = content.split('\n').filter(Boolean);
       if (lines.length > 1 && lines[0].includes(',')) {
         const headers = lines[0].split(',');
@@ -822,7 +555,6 @@ commands.upload = {
         chunks.push({ title, content: content.slice(0, 12000) });
       }
     } else {
-      // Text/Markdown: chunk by 10K char segments
       for (let i = 0; i < content.length; i += 10000) {
         const chunk = content.slice(i, i + 10000);
         const chunkTitle = content.length > 12000 ? title + ' (part ' + Math.floor(i / 10000 + 1) + ')' : title;
@@ -836,7 +568,6 @@ commands.upload = {
       process.exit(1);
     }
 
-    // Bulk insert
     const pipe = await getEmbedPipeline().catch(() => null);
     const ids = [];
     for (const chunk of chunks) {
@@ -879,7 +610,6 @@ commands['daily-summary'] = {
     const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
     const targetDate = opts.date || new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
-    // Check for existing summary
     if (!opts.force) {
       const existing = db.prepare('SELECT summary FROM daily_summaries WHERE project_path = ? AND summary_date = ?').get(project, targetDate);
       if (existing) {
@@ -943,286 +673,15 @@ commands.export = {
   run(db, opts) {
     if (!opts.vaultPath) {
       console.error('Usage: export <vault-path> [--project PATH] [--force]');
-      console.error('  vault-path: Path to the Obsidian vault directory');
-      console.error('  --project:  Export only observations from a specific project');
-      console.error('  --force:    Overwrite existing files');
       process.exit(1);
     }
-
-    const vaultPath = path.resolve(opts.vaultPath);
-    const mkdirOpts = { recursive: true };
-
-    // Create vault directory structure
-    const dirs = ['sessions', 'decisions', 'context', 'gotchas', 'bugs', 'architecture', 'preferences', 'misc', '_tags'];
-    for (const dir of dirs) {
-      try { fs.mkdirSync(path.join(vaultPath, dir), mkdirOpts); } catch {}
+    try {
+      const result = api.exportMarkdown({ vaultPath: opts.vaultPath, project: opts.project, force: opts.force });
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error('Export error:', err.message);
+      process.exit(1);
     }
-
-    // Fetch all sessions
-    const sessions = opts.project
-      ? db.prepare('SELECT * FROM sessions WHERE project_path = ? ORDER BY started_at DESC').all(opts.project)
-      : db.prepare('SELECT * FROM sessions ORDER BY started_at DESC').all();
-
-    // Fetch all observations
-    const observations = opts.project
-      ? db.prepare('SELECT id, session_id, project_path, type, title, content, tags, importance, created_at FROM observations WHERE project_path = ? ORDER BY created_at DESC').all(opts.project)
-      : db.prepare('SELECT id, session_id, project_path, type, title, content, tags, importance, created_at FROM observations ORDER BY created_at DESC').all();
-
-    if (observations.length === 0 && sessions.length === 0) {
-      console.log(JSON.stringify({ status: 'empty', message: 'No observations or sessions to export.' }));
-      return;
-    }
-
-    // ── Helper: sanitize filename ──
-    function sanitizeFilename(title, id) {
-      const base = (title || 'untitled')
-        .replace(/[^a-zA-Z0-9\s\-]/g, '')
-        .replace(/\s+/g, '-')
-        .toLowerCase()
-        .slice(0, 60);
-      return (base || 'obs-' + id) + '.md';
-    }
-
-    // ── Helper: generate wikilinks for related observations ──
-    function findRelated(obs, allObs) {
-      // Simple tag-based relatedness
-      let obsTags;
-      try { obsTags = JSON.parse(obs.tags || '[]'); } catch { obsTags = []; }
-      if (obsTags.length === 0) return [];
-
-      const related = [];
-      for (const other of allObs) {
-        if (other.id === obs.id) continue;
-        let otherTags;
-        try { otherTags = JSON.parse(other.tags || '[]'); } catch { otherTags = []; }
-        const shared = obsTags.filter(t => otherTags.includes(t));
-        if (shared.length > 0) {
-          related.push({ id: other.id, title: other.title, shared: shared.length });
-        }
-      }
-      related.sort((a, b) => b.shared - a.shared);
-      return related.slice(0, 5);
-    }
-
-    // ── Export sessions ──
-    let sessionsExported = 0;
-    for (const session of sessions) {
-      const date = session.started_at ? session.started_at.replace(' ', 'T').split('T')[0] : 'unknown';
-      const name = session.project_name || 'unknown';
-      const filename = (date + '-' + name).replace(/[^a-zA-Z0-9\-]/g, '-').replace(/-+/g, '-').toLowerCase() + '.md';
-      const filepath = path.join(vaultPath, 'sessions', filename);
-
-      // Get observations for this session
-      const sessionObs = observations.filter(o => o.session_id === session.session_id);
-
-      let content = '---\n';
-      content += 'type: session\n';
-      content += 'session_id: ' + session.session_id + '\n';
-      content += 'project: ' + (session.project_path || '') + '\n';
-      content += 'project_name: ' + (session.project_name || '') + '\n';
-      content += 'started: ' + (session.started_at || '') + '\n';
-      content += 'ended: ' + (session.ended_at || 'active') + '\n';
-      content += 'observations: ' + sessionObs.length + '\n';
-      content += '---\n\n';
-      content += '# Session: ' + (session.user_prompt || session.project_name || 'Unknown') + '\n\n';
-
-      if (session.summary) {
-        content += '## Summary\n' + session.summary + '\n\n';
-      }
-
-      if (sessionObs.length > 0) {
-        content += '## Observations\n';
-        for (const obs of sessionObs) {
-          const typeEmoji = { decision: '\u2705', bugfix: '\ud83d\udc1b', context: '\ud83d\udcca', gotcha: '\u26a0\ufe0f', architecture: '\ud83c\udfd7\ufe0f', preference: '\u2b50', bug: '\ud83d\udc1b' };
-          const emoji = typeEmoji[obs.type] || '\ud83d\udccc';
-          content += '- ' + emoji + ' **' + (obs.title || 'Untitled') + '** (ID: ' + obs.id + ', importance: ' + obs.importance + ')\n';
-          content += '  ' + obs.content.slice(0, 200) + (obs.content.length > 200 ? '...' : '') + '\n';
-        }
-        content += '\n';
-      }
-
-      // Wikilinks to related observations
-      if (sessionObs.length > 0) {
-        content += '## Related\n';
-        for (const obs of sessionObs.slice(0, 5)) {
-          content += '- [[' + sanitizeFilename(obs.title, obs.id).replace('.md', '') + ']]\n';
-        }
-        content += '\n';
-      }
-
-      if (!fs.existsSync(filepath) || opts.force) { if (opts.force && fs.existsSync(filepath)) console.error('Overwriting: ' + filepath);
-        fs.writeFileSync(filepath, content, 'utf-8');
-        sessionsExported++;
-      }
-    }
-
-    // ── Export observations by type ──
-    const typeFolders = {
-      decision: 'decisions',
-      bugfix: 'bugs',
-      context: 'context',
-      gotcha: 'gotchas',
-      architecture: 'architecture',
-      preference: 'preferences',
-
-    };
-
-    let observationsExported = 0;
-    const tagCounts = {};
-
-    for (const obs of observations) {
-      const folder = typeFolders[obs.type] || 'misc';
-      const filename = sanitizeFilename(obs.title, obs.id);
-      const filepath = path.join(vaultPath, folder, filename);
-
-      // Parse tags
-      let tags;
-      try { tags = JSON.parse(obs.tags || '[]'); } catch { tags = []; }
-
-      // Count tags for index
-      for (const tag of tags) {
-        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-      }
-
-      // Find related observations
-      const related = findRelated(obs, observations);
-
-      let content = '---\n';
-      content += 'id: ' + obs.id + '\n';
-      content += 'type: ' + obs.type + '\n';
-      content += 'importance: ' + obs.importance + '\n';
-      content += 'project: ' + (obs.project_path || '') + '\n';
-      content += 'created: ' + (obs.created_at || '') + '\n';
-      if (obs.session_id) content += 'session: ' + obs.session_id + '\n';
-      if (tags.length > 0) content += 'tags: [' + tags.join(', ') + ']\n';
-      content += '---\n\n';
-      content += '# ' + (obs.title || 'Untitled') + '\n\n';
-      content += '> **Type:** ' + obs.type + ' | **Importance:** ' + obs.importance + '/10 | **ID:** ' + obs.id + '\n\n';
-      content += obs.content + '\n';
-
-      // Add wikilinks to related observations
-      if (related.length > 0) {
-        content += '\n## Related Observations\n';
-        for (const r of related) {
-          content += '- [[' + sanitizeFilename(r.title, r.id).replace('.md', '') + ']] (shared tags: ' + r.shared + ')\n';
-        }
-        content += '\n';
-      }
-
-      // Backlink to session
-      if (obs.session_id) {
-        const session = sessions.find(s => s.session_id === obs.session_id);
-        if (session) {
-          const date = session.started_at ? session.started_at.replace(' ', 'T').split('T')[0] : 'unknown';
-          const name = session.project_name || 'unknown';
-          const sessionFile = (date + '-' + name).replace(/[^a-zA-Z0-9\-]/g, '-').replace(/-+/g, '-').toLowerCase();
-          content += '## Session\n';
-          content += '- [[' + sessionFile + ']]\n\n';
-        }
-      }
-
-      if (!fs.existsSync(filepath) || opts.force) { if (opts.force && fs.existsSync(filepath)) console.error('Overwriting: ' + filepath);
-        fs.writeFileSync(filepath, content, 'utf-8');
-        observationsExported++;
-      }
-    }
-
-    // ── Generate tag index pages ──
-    for (const [tag, count] of Object.entries(tagCounts)) {
-      const tagObs = observations.filter(o => {
-        let t; try { t = JSON.parse(o.tags || '[]'); } catch { t = []; }
-        return t.includes(tag);
-      });
-
-      let content = '---\n';
-      content += 'type: tag-index\n';
-      content += 'tag: ' + tag + '\n';
-      content += 'count: ' + count + '\n';
-      content += '---\n\n';
-      content += '# Tag: ' + tag + '\n\n';
-      content += '> ' + count + ' observations tagged with **' + tag + '**\n\n';
-
-      for (const obs of tagObs) {
-        const folder = typeFolders[obs.type] || 'misc';
-        content += '- [[' + sanitizeFilename(obs.title, obs.id).replace('.md', '') + ']] (' + obs.type + ', importance: ' + obs.importance + ')\n';
-      }
-      content += '\n';
-
-      const tagFile = path.join(vaultPath, '_tags', tag.replace(/[^a-zA-Z0-9\-]/g, '-').toLowerCase() + '.md');
-      fs.writeFileSync(tagFile, content, 'utf-8');
-    }
-
-    // ── Generate master index ──
-    const typeCounts = {};
-    for (const obs of observations) {
-      typeCounts[obs.type] = (typeCounts[obs.type] || 0) + 1;
-    }
-
-    const projectSet = new Set(observations.map(o => o.project_path).filter(Boolean));
-
-    let index = '---\n';
-    index += 'type: index\n';
-    index += 'generated: ' + new Date().toISOString() + '\n';
-    index += 'total_observations: ' + observations.length + '\n';
-    index += 'total_sessions: ' + sessions.length + '\n';
-    index += '---\n\n';
-    index += '# Agentic Cortex Memory Index\n\n';
-    index += '> Auto-generated by agentic-cortex. ' + observations.length + ' observations across ' + projectSet.size + ' projects.\n\n';
-
-    index += '## Stats\n';
-    index += '| Metric | Value |\n';
-    index += '|--------|-------|\n';
-    index += '| Observations | ' + observations.length + ' |\n';
-    index += '| Sessions | ' + sessions.length + ' |\n';
-    index += '| Projects | ' + projectSet.size + ' |\n';
-    index += '| Tags | ' + Object.keys(tagCounts).length + ' |\n\n';
-
-    index += '## By Type\n';
-    for (const [type, count] of Object.entries(typeCounts).sort((a, b) => b[1] - a[1])) {
-      index += '- **' + type + '**: ' + count + ' observations\n';
-    }
-    index += '\n';
-
-    index += '## Top Tags\n';
-    const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 20);
-    for (const [tag, count] of topTags) {
-      index += '- [[' + tag.replace(/[^a-zA-Z0-9\-]/g, '-').toLowerCase() + '|' + tag + ']] (' + count + ')\n';
-    }
-    index += '\n';
-
-    index += '## Recent Sessions\n';
-    for (const session of sessions.slice(0, 10)) {
-      const date = session.started_at ? session.started_at.split('T')[0] : '?';
-      const st = session.ended_at ? 'done' : 'active';
-      const name = session.project_name || 'unknown';
-      const sessionFile = (date + '-' + name).replace(/[^a-zA-Z0-9\-]/g, '-').replace(/-+/g, '-').toLowerCase();
-      index += '- [[' + sessionFile + '|' + date + ' ' + name + ']] (' + st + ')\n';
-    }
-    index += '\n';
-
-    index += '## Recent Observations\n';
-    for (const obs of observations.slice(0, 20)) {
-      const folder = typeFolders[obs.type] || 'misc';
-      index += '- [[' + sanitizeFilename(obs.title, obs.id).replace('.md', '') + '|' + (obs.title || 'Untitled') + ']] (' + obs.type + ', \u2b50' + obs.importance + ')\n';
-    }
-    index += '\n';
-
-    fs.writeFileSync(path.join(vaultPath, '_index.md'), index, 'utf-8');
-
-    // ── Summary ──
-    console.log(JSON.stringify({
-      status: 'done',
-      vault: vaultPath,
-      exported: {
-        sessions: sessionsExported,
-        observations: observationsExported,
-        tags: Object.keys(tagCounts).length,
-      },
-      total: {
-        sessions: sessions.length,
-        observations: observations.length,
-      },
-    }, null, 2));
   }
 };
 
@@ -1350,7 +809,6 @@ commands.hook = {
       }
       console.log(JSON.stringify({ status: 'uninstalled', hooks: removed }));
     } else {
-      // status
       const installed = [];
       for (const name of hookNames) {
         const hp = path.join(hookDir, name);
@@ -1456,7 +914,6 @@ commands.watch = {
 
     console.error('[agentic-cortex:watch] Daemon running. Press Ctrl+C to stop.');
 
-    // Keep process alive
     process.on('SIGINT', () => {
       watcher.stopWatching();
       process.exit(0);
@@ -1495,7 +952,6 @@ commands.inject = {
       });
       process.stdout.write(result);
     } catch (err) {
-      // inject-memory.mjs writes to stderr, capture stdout even on error
       if (err.stdout) process.stdout.write(err.stdout.toString());
       if (err.stderr) process.stderr.write(err.stderr.toString());
       if (!err.stdout && !err.stderr) {

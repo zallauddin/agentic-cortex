@@ -36,8 +36,9 @@ let _projectPath = null;
 /** @type {string|null} Active session ID */
 let _activeSessionId = null;
 
-/** @type {Map<string, number>} File change debounce timers */
+/** @type {Map<string, number>} File change debounce timers (auto-cleaned) */
 const _saveDebounceTimers = new Map();
+const MAX_DEBOUNCE_TIMERS = 200;
 
 /** @type {string[]} Batched file saves pending flush */
 let _pendingSaves = [];
@@ -142,6 +143,15 @@ function _onFileSave(doc) {
 
   // Skip files outside the project
   if (!filePath.startsWith(_projectPath)) return;
+
+  // Prune stale debounce timers periodically to prevent memory leak
+  if (_saveDebounceTimers.size > MAX_DEBOUNCE_TIMERS) {
+    const keys = [..._saveDebounceTimers.keys()];
+    for (const k of keys.slice(0, 100)) {
+      clearTimeout(_saveDebounceTimers.get(k));
+      _saveDebounceTimers.delete(k);
+    }
+  }
 
   // Batch saves: debounce to avoid spamming observations
   _pendingSaves.push(filePath);

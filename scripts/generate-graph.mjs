@@ -440,7 +440,7 @@ function detectParadigms(files, graph) {
   // CLI tool detection
   const hasCliEntry = files.some(f => {
     const name = basename(f);
-    return name === 'cli.js' || name === 'cli.ts' || name === 'main.py' || name === 'index.js';
+    return name === 'cli.js' || name === 'cli.ts' || name === 'cli.mjs' || name === 'main.py' || name === 'index.js';
   });
   if (hasCliEntry) {
     paradigms.push('CLI Tool');

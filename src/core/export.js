@@ -114,10 +114,17 @@ async function importJSON(db, data, opts) {
 const TYPE_FOLDERS = {
   decision: 'decisions',
   bugfix: 'bugs',
+  bug: 'bugs',
   context: 'context',
   gotcha: 'gotchas',
   architecture: 'architecture',
   preference: 'preferences',
+  learning: 'learnings',
+  error: 'errors',
+  event: 'events',
+  instruction: 'instructions',
+  skill: 'skills',
+  procedure: 'procedures',
 };
 
 /**
@@ -183,7 +190,7 @@ function exportMarkdown(db, opts) {
   const mkdirOpts = { recursive: true };
 
   // Create vault directory structure
-  const dirs = ['sessions', 'decisions', 'context', 'gotchas', 'bugs', 'architecture', 'preferences', 'misc', '_tags'];
+  const dirs = ['sessions', 'decisions', 'learnings', 'errors', 'events', 'instructions', 'skills', 'procedures', 'context', 'gotchas', 'bugs', 'architecture', 'preferences', 'misc', '_tags'];
   for (const dir of dirs) {
     try { fs.mkdirSync(path.join(vaultPath, dir), mkdirOpts); } catch { /* exists */ }
   }

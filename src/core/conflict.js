@@ -79,7 +79,7 @@ async function checkConflicts(db, opts) {
   const top = conflicts.slice(0, limit);
 
   // Optional LLM verification for each conflict pair (parallelized)
-  const verificationResults = await Promise.allSettled(
+  await Promise.allSettled(
     top.map(async (c) => {
       try {
         const llmCheck = await callLLM([
@@ -88,20 +88,10 @@ async function checkConflicts(db, opts) {
         ], { temperature: 0, maxTokens: 10, timeout: 30000 });
         c.llm_contradiction = llmCheck && llmCheck.toUpperCase().startsWith('YES');
       } catch {
-        c.llm_contradiction = null;
+        c.llm_contradiction = null; // LLM unavailable — treat as inconclusive
       }
-      return c;
     })
   );
-  // Mark any failed verifications as inconclusive
-  for (const result of verificationResults) {
-    if (result.status === 'rejected') {
-      const conflict = result.reason;
-      if (conflict && conflict.llm_contradiction === undefined) {
-        conflict.llm_contradiction = null;
-      }
-    }
-  }
 
   return { conflicts: top, totalFound: conflicts.length, project };
 }

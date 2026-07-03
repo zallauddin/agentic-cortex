@@ -35,10 +35,10 @@ const VALID_RELATION_TYPES = new Set([
 ]);
 
 /** @type {string} Default embedding model identifier */
-const EMBED_MODEL = 'Xenova/bge-base-en-v1.5';
+const EMBED_MODEL = process.env.AGENTIC_CORTEX_EMBED_MODEL || 'Xenova/bge-base-en-v1.5';
 
 /** @type {string} Default cross-encoder reranking model identifier */
-const RERANK_MODEL = 'Xenova/ms-marco-MiniLM-L-6-v2';
+const RERANK_MODEL = process.env.AGENTIC_CORTEX_RERANK_MODEL || 'Xenova/ms-marco-MiniLM-L-6-v2';
 
 /** @type {string} Database filename */
 const DB_FILENAME = 'agentic-cortex.db';

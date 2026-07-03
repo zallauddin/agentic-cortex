@@ -28,7 +28,9 @@ function _checkEmbeddingMismatch() {
         _dimensionMismatchWarning = 'Embedding dimension mismatch: stored=' + storedDim + ' current=' + meta.dimension + '. Run embedAll() or "embed --force" to upgrade.';
       }
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[agentic-cortex] Dimension mismatch check failed: ' + (err && err.message ? err.message : err));
+  }
   return _dimensionMismatchWarning;
 }
 
@@ -87,7 +89,9 @@ async function save(opts) {
     const text = [opts.title || '', opts.content].filter(Boolean).join('. ');
     const vec = await core.embedding.computeEmbedding(text);
     embedding = JSON.stringify(vec);
-  } catch {}
+  } catch (err) {
+    console.warn('[agentic-cortex] Embedding failed for save: ' + (err && err.message ? err.message : err));
+  }
 
   // Pre-save hooks
   const preSaveObs = { title: opts.title, content: opts.content, type, tags: opts.tags || [], importance: imp, confidence, provenance, project_path: project, session_id: session, agent_id: agentId };
@@ -119,10 +123,10 @@ function get(id) {
   const { embedding, ...rest } = obs;
   rest.has_embedding = !!embedding;
   // Parse skill/procedure JSON fields
-  if (rest.steps) try { rest.steps = JSON.parse(rest.steps); } catch {}
-  if (rest.triggers) try { rest.triggers = JSON.parse(rest.triggers); } catch {}
-  if (rest.preconditions) try { rest.preconditions = JSON.parse(rest.preconditions); } catch {}
-  if (rest.postconditions) try { rest.postconditions = JSON.parse(rest.postconditions); } catch {}
+  if (rest.steps) try { rest.steps = JSON.parse(rest.steps); } catch (e) { console.warn('[agentic-cortex] Failed to parse steps for #' + id + ': ' + e.message); }
+  if (rest.triggers) try { rest.triggers = JSON.parse(rest.triggers); } catch (e) { console.warn('[agentic-cortex] Failed to parse triggers for #' + id + ': ' + e.message); }
+  if (rest.preconditions) try { rest.preconditions = JSON.parse(rest.preconditions); } catch (e) { console.warn('[agentic-cortex] Failed to parse preconditions for #' + id + ': ' + e.message); }
+  if (rest.postconditions) try { rest.postconditions = JSON.parse(rest.postconditions); } catch (e) { console.warn('[agentic-cortex] Failed to parse postconditions for #' + id + ': ' + e.message); }
   return rest;
 }
 
@@ -174,7 +178,9 @@ async function edit(id, opts) {
       try {
         const vec = await core.embedding.computeEmbedding(text);
         db.prepare('UPDATE observations SET embedding = ? WHERE id = ?').run(JSON.stringify(vec), id);
-      } catch {}
+      } catch (err) {
+        console.warn('[agentic-cortex] Re-embedding failed for edit #' + id + ': ' + (err && err.message ? err.message : err));
+      }
     }
   }
 
@@ -182,10 +188,10 @@ async function edit(id, opts) {
   const { embedding, ...rest } = updated;
   rest.has_embedding = !!embedding;
   // Parse skill/procedure JSON fields
-  if (rest.steps) try { rest.steps = JSON.parse(rest.steps); } catch {}
-  if (rest.triggers) try { rest.triggers = JSON.parse(rest.triggers); } catch {}
-  if (rest.preconditions) try { rest.preconditions = JSON.parse(rest.preconditions); } catch {}
-  if (rest.postconditions) try { rest.postconditions = JSON.parse(rest.postconditions); } catch {}
+  if (rest.steps) try { rest.steps = JSON.parse(rest.steps); } catch (e) { console.warn('[agentic-cortex] Failed to parse steps for #' + id + ': ' + e.message); }
+  if (rest.triggers) try { rest.triggers = JSON.parse(rest.triggers); } catch (e) { console.warn('[agentic-cortex] Failed to parse triggers for #' + id + ': ' + e.message); }
+  if (rest.preconditions) try { rest.preconditions = JSON.parse(rest.preconditions); } catch (e) { console.warn('[agentic-cortex] Failed to parse preconditions for #' + id + ': ' + e.message); }
+  if (rest.postconditions) try { rest.postconditions = JSON.parse(rest.postconditions); } catch (e) { console.warn('[agentic-cortex] Failed to parse postconditions for #' + id + ': ' + e.message); }
   rest.versionCount = db.prepare('SELECT COUNT(*) as c FROM observation_versions WHERE observation_id = ?').get(id).c;
   rest.status = 'edited';
 
@@ -389,7 +395,9 @@ async function embedAll(opts) {
       const vec = await core.embedding.computeEmbedding(text);
       db.prepare('UPDATE observations SET embedding = ? WHERE id = ?').run(JSON.stringify(vec), row.id);
       embedded++;
-    } catch {}
+    } catch (err) {
+      console.warn('[agentic-cortex] embedAll failed for #' + row.id + ': ' + (err && err.message ? err.message : err));
+    }
   }
   return { total: rows.length, embedded, skipped: rows.length - embedded };
 }
@@ -503,11 +511,16 @@ function init() {
   return { status: 'initialized', dbPath: core.db.getDbPath() };
 }
 
-/** Close the database connection */
+/** Close the database connection and release pipeline resources */
 function close() {
   if (_apiDb) {
     _apiDb.close();
     _apiDb = null;
+  }
+  try {
+    core.embedding.disposePipelines();
+  } catch (err) {
+    console.warn('[agentic-cortex] Pipeline disposal failed: ' + (err && err.message ? err.message : err));
   }
 }
 
@@ -531,9 +544,9 @@ function health() {
         dimensionWarning = 'Embedding dimension mismatch: stored=' + storedDim + ' current=' + meta.dimension + '. Run embed --force to upgrade all embeddings.';
       }
     }
-  } catch {}
-
-  return {
+  } catch (err) {
+    console.warn('[agentic-cortex] Health dimension check failed: ' + (err && err.message ? err.message : err));
+  }
     status: 'ok',
     dbPath: core.db.getDbPath(),
     observations: { total: observations, active, embedded },
