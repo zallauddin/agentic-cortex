@@ -201,8 +201,8 @@ commands.context = {
   parse(args) {
     return { project: args[0] || process.env.AGENTIC_CORTEX_PROJECT || process.cwd() };
   },
-  run(db, opts) {
-    console.log(api.context(opts));
+  async run(db, opts) {
+    console.log(await api.context(opts));
   }
 };
 

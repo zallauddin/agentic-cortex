@@ -133,7 +133,7 @@ describe('Save Search Reflect Pipeline', () => {
 
   it('should generate context markdown from saved observations', async () => {
     await api.save({ title: 'Important Decision', content: 'Chose SQLite for persistent storage', project: '/int-test', importance: 10, type: 'decision' });
-    const ctx = api.context({ project: '/int-test' });
+    const ctx = await api.context({ project: '/int-test' });
     assert.ok(typeof ctx === 'string');
     assert.ok(ctx.includes('SQLite') || ctx.includes('Important Decision'));
   });

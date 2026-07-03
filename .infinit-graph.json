@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-03T22:19:31.588Z",
-  "fingerprint": "1d995fec65e54746",
+  "generated": "2026-07-03T22:31:11.977Z",
+  "fingerprint": "d7907aec0649d303",
   "fileCount": 35,
   "apiRoutes": [],
   "services": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 43621,
+      "size": 45574,
       "layer": "Service"
     },
     "scripts/generate-graph.mjs": {
@@ -594,7 +594,7 @@
             }
           ],
           "returnType": null,
-          "doc": "End a session",
+          "doc": "End a session. On success, boosts predicted_utility for memories accessed during this session.",
           "isAsync": false
         },
         {
@@ -620,6 +620,22 @@
           "returnType": null,
           "doc": "Export to Obsidian-compatible markdown. opts.vaultPath required.",
           "isAsync": false
+        },
+        {
+          "name": "feedback",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Record explicit agent feedback on a memory. 'helpful' boosts confidence + predicted_utility. 'incorrect' triggers confid",
+          "isAsync": true
         },
         {
           "name": "forget",
@@ -986,6 +1002,22 @@
           "isAsync": true
         },
         {
+          "name": "trail",
+          "params": [
+            {
+              "name": "observationId",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Walk the relation graph to surface a readable narrative trail. Follows relation chains (derives_from, produces, achieves",
+          "isAsync": false
+        },
+        {
           "name": "transferKnowledge",
           "params": [
             {
@@ -1030,7 +1062,7 @@
           "isAsync": false
         }
       ],
-      "size": 45535,
+      "size": 52279,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1164,7 +1196,7 @@
           "isAsync": false
         }
       ],
-      "size": 10747,
+      "size": 11041,
       "layer": "Service"
     },
     "src/core/embedding.js": {
