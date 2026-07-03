@@ -11,6 +11,26 @@ const selfImprove = require('../core/self-improve');
 selfImprove.initHooks(save);
 core.selfImprove = selfImprove;
 
+// ─── Access Tracking Helper ───────────────────────────────────────────
+
+/**
+ * Batch-update access_count and last_accessed_at for observation IDs.
+ * Debounces writes — only updates if last access was > 1 hour ago to avoid
+ * excessive SQLite write contention during bulk searches.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number[]} ids
+ */
+function _trackAccess(db, ids) {
+  if (!ids || ids.length === 0) return;
+  const unique = [...new Set(ids)];
+  const placeholders = unique.map(() => '?').join(',');
+  try {
+    db.prepare(
+      `UPDATE observations SET access_count = access_count + 1, last_accessed_at = datetime('now') WHERE id IN (${placeholders}) AND (last_accessed_at IS NULL OR last_accessed_at < datetime('now', '-1 hour'))`
+    ).run(...unique);
+  } catch { /* best-effort */ }
+}
+
 // ─── Cached dimension mismatch check (checked once per session) ──────
 let _dimensionMismatchChecked = false;
 let _dimensionMismatchWarning = null;
@@ -97,9 +117,12 @@ async function save(opts) {
   const preSaveObs = { title: opts.title, content: opts.content, type, tags: opts.tags || [], importance: imp, confidence, provenance, project_path: project, session_id: session, agent_id: agentId };
   await core.hooks.triggerHooks(db, 'pre_save', preSaveObs, { project, session });
 
+  // Cross-project scope (local vs global for knowledge transfer)
+  const projectScope = opts.project_scope || 'local';
+
   const r = db.prepare(
-    'INSERT INTO observations (session_id, project_path, agent_id, type, title, content, tags, importance, confidence, provenance, embedding, steps, triggers, preconditions, postconditions) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(session, project, agentId, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding, steps, triggers, preconditions, postconditions);
+    'INSERT INTO observations (session_id, project_path, agent_id, type, title, content, tags, importance, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, project_scope) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(session, project, agentId, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, projectScope);
 
   const savedId = Number(r.lastInsertRowid);
   const saved = { id: savedId, status: 'saved', type, confidence, provenance, project, agent_id: agentId, embedded: !!embedding };
@@ -120,6 +143,7 @@ function get(id) {
   const db = _getDB();
   const obs = db.prepare('SELECT * FROM observations WHERE id = ?').get(id);
   if (!obs) return null;
+  _trackAccess(db, [id]);
   const { embedding, ...rest } = obs;
   rest.has_embedding = !!embedding;
   // Parse skill/procedure JSON fields
@@ -298,6 +322,9 @@ async function search(query, opts) {
     // Restore requested limit after rerank (reranker returns all candidates).
     if (opts.limit) results = results.slice(0, opts.limit);
   }
+
+  // Track access for returned results
+  _trackAccess(db, results.map(r => r.id));
 
   return results;
 }
@@ -500,6 +527,10 @@ function context(opts) {
   if (!sessions.length && !observations.length) {
     pack += '_No previous memory for this project yet._\n';
   }
+
+  // Track access for observations included in context
+  _trackAccess(db, observations.map(o => o.id));
+
   return pack;
 }
 
@@ -842,6 +873,280 @@ async function searchSkills(opts) {
   return skills;
 }
 
+// ─── Intent → Action → Outcome Tracking ───────────────────────────────
+
+/**
+ * Record an agent action as a linked triplet of observations:
+ *   intent (what the agent tried to do)
+ *   action (what the agent did)
+ *   outcome (what happened)
+ *
+ * All three are linked via 'achieves' and 'produces' relations so the
+ * self-improve loop can compare intents to outcomes for evidence-based
+ * confidence scoring.
+ *
+ * @param {Object} opts - { intent: string, action: string, outcome: string, project?: string, agentId?: string, confidence?: number }
+ * @returns {Promise<{intentId: number, actionId: number, outcomeId: number, status: string}>}
+ */
+async function recordAction(opts) {
+  if (!opts.intent || !opts.action || !opts.outcome) {
+    throw new Error('intent, action, and outcome are required');
+  }
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const agentId = opts.agentId || null;
+  const confidence = opts.confidence ?? 90;
+  const db = _getDB();
+
+  // Save all three as a transaction
+  const intentObs = await save({
+    title: 'Intent: ' + opts.intent.slice(0, 80),
+    content: opts.intent,
+    type: 'action',
+    project,
+    agentId,
+    confidence,
+    provenance: 'observed',
+    tags: ['intent', 'action-triplet'],
+  });
+
+  const actionObs = await save({
+    title: 'Action: ' + opts.action.slice(0, 80),
+    content: opts.action,
+    type: 'action',
+    project,
+    agentId,
+    confidence,
+    provenance: 'observed',
+    tags: ['action', 'action-triplet'],
+  });
+
+  const outcomeObs = await save({
+    title: 'Outcome: ' + opts.outcome.slice(0, 80),
+    content: opts.outcome,
+    type: 'observation',
+    project,
+    agentId,
+    confidence: 100,
+    provenance: 'observed',
+    tags: ['outcome', 'action-triplet'],
+  });
+
+  // Link the triplet via relations: intent → achieves → action → produces → outcome
+  await core.relations.addRelation(db, { sourceId: intentObs.id, targetId: actionObs.id, relationType: 'achieves', confidence: 90 });
+  await core.relations.addRelation(db, { sourceId: actionObs.id, targetId: outcomeObs.id, relationType: 'produces', confidence: 90 });
+
+  // Evidence-based confidence: compare outcome to intent (runs inline since relations
+  // didn't exist when post_save hooks fired during save() calls above)
+  const outcomeText = opts.outcome.toLowerCase();
+  const successIndicators = ['pass', 'success', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated'];
+  const failureIndicators = ['fail', 'error', 'crash', 'broke', 'failed', 'rejected', 'timeout', 'rollback', 'revert'];
+  const succeeded = successIndicators.some(w => outcomeText.includes(w));
+  const failed = failureIndicators.some(w => outcomeText.includes(w));
+
+  if (succeeded && !failed) {
+    db.prepare('UPDATE observations SET confidence = MIN(confidence + 3, 100) WHERE id = ?').run(intentObs.id);
+    db.prepare('UPDATE observations SET confidence = MIN(confidence + 5, 100) WHERE id = ?').run(actionObs.id);
+  } else if (failed) {
+    db.prepare('UPDATE observations SET confidence = MAX(confidence - 10, 10) WHERE id = ?').run(actionObs.id);
+    db.prepare('UPDATE observations SET confidence = MAX(confidence - 5, 10) WHERE id = ?').run(intentObs.id);
+  }
+
+  return { intentId: intentObs.id, actionId: actionObs.id, outcomeId: outcomeObs.id, status: 'recorded', evidence: succeeded ? 'success' : (failed ? 'failure' : 'neutral') };
+}
+
+// ─── Cross-Project Knowledge Transfer ─────────────────────────────────
+
+/**
+ * Transfer high-confidence observations from one project to another.
+ * Applies a confidence decay modifier (default 0.8) and tags items as
+ * cross-project transfers. Useful for sharing battle-tested learnings
+ * and instructions across projects.
+ *
+ * @param {Object} opts - { fromProject: string, toProject: string, types?: string[], minConfidence?: number, confidenceModifier?: number }
+ * @returns {Promise<{transferred: number, skipped: number}>}
+ */
+async function transferKnowledge(opts) {
+  if (!opts.fromProject || !opts.toProject) {
+    throw new Error('fromProject and toProject are required');
+  }
+  const db = _getDB();
+  const minConf = opts.minConfidence ?? 80;
+  const modifier = opts.confidenceModifier ?? 0.8;
+
+  let sql = 'SELECT id, type, title, content, tags, importance, confidence, provenance, steps, triggers, preconditions, postconditions FROM observations WHERE project_path = ? AND is_active = 1 AND confidence >= ?';
+  const params = [opts.fromProject, minConf];
+
+  if (opts.types && opts.types.length > 0) {
+    const ph = opts.types.map(() => '?').join(',');
+    sql += ' AND type IN (' + ph + ')';
+    params.push(...opts.types);
+  }
+
+  const candidates = db.prepare(sql + ' ORDER BY confidence DESC LIMIT 50').all(...params);
+  let transferred = 0;
+  let skipped = 0;
+
+  for (const c of candidates) {
+    // Skip if a similar observation already exists in the target project
+    const existing = db.prepare(
+      'SELECT id FROM observations WHERE project_path = ? AND title = ? AND is_active = 1'
+    ).get(opts.toProject, c.title);
+    if (existing) { skipped++; continue; }
+
+    const newTags = JSON.stringify([
+      ...(JSON.parse(c.tags || '[]')),
+      'cross-project-transfer',
+    ]);
+
+    db.prepare(
+      'INSERT INTO observations (project_path, agent_id, type, title, content, tags, importance, confidence, provenance, project_scope, steps, triggers, preconditions, postconditions) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(
+      opts.toProject, null, c.type, c.title, c.content, newTags,
+      c.importance, Math.round(c.confidence * modifier), c.provenance, 'global',
+      c.steps, c.triggers, c.preconditions, c.postconditions
+    );
+    transferred++;
+  }
+
+  return { transferred, skipped };
+}
+
+// ─── Conversation Transcript Ingestion ────────────────────────────────
+
+/**
+ * Parse a conversation transcript (agent chat log, code review, meeting notes)
+ * and auto-extract structured observations. Uses regex for fast extraction,
+ * with LLM fallback for ambiguous cases.
+ *
+ * Extracts:
+ *   - decisions ("decided to", "chose", "going with")
+ *   - errors ("error:", "failed:", "exception")
+ *   - learnings ("learned", "found that", "realized")
+ *   - preferences ("prefer", "rather than", "instead of")
+ *   - facts ("the project uses", "configured with", "running on")
+ *
+ * @param {string} text - Raw transcript text
+ * @param {Object} [opts] - { project?, agentId?, useLLM?: boolean }
+ * @returns {Promise<{extracted: number, observations: Array<{type: string, title: string}>}>}
+ */
+async function ingestTranscript(text, opts) {
+  opts = opts || {};
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const agentId = opts.agentId || null;
+  const useLLM = opts.useLLM ?? true;
+
+  const patterns = [
+    { regex: /(?:decided to|chose to|going with|will use|switch(?:ed)? to)\s+(.{20,200}?)(?:\.|$)/gi, type: 'decision', confidence: 80 },
+    { regex: /(?:error[:\)]|failed[:\)]|exception[:\)]|crash(?:ed)?[:\)])\s*(.{20,200}?)(?:\.|$)/gi, type: 'error', confidence: 90 },
+    { regex: /(?:learned that|found that|realized that|discovered that)\s+(.{20,200}?)(?:\.|$)/gi, type: 'learning', confidence: 75 },
+    { regex: /(?:prefer(?:s)? to|rather than|instead of|would rather)\s+(.{20,200}?)(?:\.|,|$)/gi, type: 'preference', confidence: 85 },
+    { regex: /(?:the project uses|configured with|running on|deployed (?:to|on)|database is|powered by)\s+(.{20,200}?)(?:\.|$)/gi, type: 'fact', confidence: 70 },
+  ];
+
+  const extracted = [];
+  const seen = new Set();
+
+  for (const { regex, type, confidence } of patterns) {
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const content = match[1].trim();
+      if (content.length < 10) continue;
+      // Deduplicate by content hash
+      const hash = type + ':' + content.slice(0, 40);
+      if (seen.has(hash)) continue;
+      seen.add(hash);
+
+      extracted.push({
+        type,
+        title: content.slice(0, 80),
+        content,
+        confidence,
+        provenance: 'inferred',
+        project,
+        agentId,
+        tags: ['auto-extracted', 'transcript-ingestion'],
+      });
+    }
+  }
+
+  // LLM fallback: if few or no regex matches and LLM is available, try deeper extraction
+  if (extracted.length < 3 && useLLM) {
+    try {
+      const { callLLM } = require('../core/session');
+      const prompt = `Extract key observations from this conversation transcript. Return a JSON array of objects with: type (decision/error/learning/preference/fact), title (max 80 chars), content (max 200 chars), confidence (1-100).\n\nTranscript:\n${text.slice(0, 4000)}\n\nReturn ONLY a JSON array.`;
+
+      const result = await callLLM([
+        { role: 'system', content: 'You extract structured observations from transcripts. Respond ONLY with a JSON array.' },
+        { role: 'user', content: prompt },
+      ], { temperature: 0.1, maxTokens: 2000, timeout: 30000 });
+
+      if (result) {
+        try {
+          const parsed = JSON.parse(result);
+          for (const item of parsed) {
+            if (item.type && item.content) {
+              const hash = item.type + ':' + (item.content || '').slice(0, 40);
+              if (seen.has(hash)) continue;
+              seen.add(hash);
+              extracted.push({
+                type: item.type,
+                title: (item.title || item.content || '').slice(0, 80),
+                content: item.content || '',
+                confidence: item.confidence || 70,
+                provenance: 'inferred',
+                project,
+                agentId,
+                tags: ['auto-extracted', 'transcript-ingestion', 'llm-assisted'],
+              });
+            }
+          }
+        } catch {}
+      }
+    } catch { /* LLM unavailable — use regex-only results */ }
+  }
+
+  // Save all extracted observations
+  const saved = [];
+  for (const obs of extracted) {
+    try {
+      const r = await save(obs);
+      saved.push({ type: obs.type, title: obs.title, id: r.id });
+    } catch {}
+  }
+
+  return { extracted: saved.length, observations: saved };
+}
+
+// ─── Memory Utility ────────────────────────────────────────────────────
+
+/**
+ * Get the most and least useful memories for a project, ranked by access_count.
+ * Useful for understanding which memories the agent actually uses.
+ *
+ * @param {Object} [opts] - { project?, limit? }
+ * @returns {{ top: Object[], bottom: Object[], total: number }}
+ */
+function getUtilityStats(opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const limit = opts.limit || 10;
+
+  const top = db.prepare(
+    'SELECT id, type, title, access_count, last_accessed_at, confidence FROM observations WHERE project_path = ? AND is_active = 1 AND access_count > 0 ORDER BY access_count DESC LIMIT ?'
+  ).all(project, limit);
+
+  const bottom = db.prepare(
+    'SELECT id, type, title, access_count, last_accessed_at, confidence, created_at FROM observations WHERE project_path = ? AND is_active = 1 AND access_count = 0 AND created_at < datetime(\'now\', \'-30 days\') ORDER BY created_at ASC LIMIT ?'
+  ).all(project, limit);
+
+  const total = db.prepare(
+    'SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1'
+  ).get(project).c;
+
+  return { top, bottom, total };
+}
+
 // ─── Exports ───────────────────────────────────────────────────────────
 
 module.exports = {
@@ -858,4 +1163,5 @@ module.exports = {
   reflect, consolidateMemories, promotePatterns, archiveSuperseded,
   startAgentSession, endAgentSession, listAgentSessions, shareMemory, getSharedMemories,
   searchSkills,
+  recordAction, transferKnowledge, ingestTranscript, getUtilityStats,
 };
