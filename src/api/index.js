@@ -113,6 +113,43 @@ async function save(opts) {
     console.warn('[agentic-cortex] Embedding failed for save: ' + (err && err.message ? err.message : err));
   }
 
+  // #1 Save-time deduplication: check for highly similar existing observations
+  let dedupResult = null;
+  if (embedding) {
+    try {
+      const vec = JSON.parse(embedding);
+      const existing = db.prepare(
+        'SELECT id, type, title, content, tags, confidence, embedding FROM observations WHERE project_path = ? AND is_active = 1 AND embedding IS NOT NULL ORDER BY created_at DESC LIMIT 50'
+      ).all(project);
+
+      for (const e of existing) {
+        try {
+          const eVec = JSON.parse(e.embedding);
+          const sim = core.embedding.cosineSimilarity(vec, eVec);
+          if (sim >= 0.97) {
+            // Found a near-duplicate — reinforce instead of creating new
+            const mergedTags = [...new Set([...JSON.parse(e.tags || '[]'), ...(opts.tags || [])])];
+            db.prepare('UPDATE observations SET confidence = MIN(confidence + 5, 100), predicted_utility = predicted_utility + 3, tags = ?, last_accessed_at = datetime(\'now\') WHERE id = ?')
+              .run(JSON.stringify(mergedTags), e.id);
+
+            // Track access on the reinforced observation
+            _trackAccess(db, [e.id]);
+
+            dedupResult = { id: e.id, status: 'reinforced', type: e.type, confidence: Math.min(e.confidence + 5, 100), project, agent_id: agentId, embedded: true, similarity: Math.round(sim * 1000) / 1000 };
+            break;
+          }
+        } catch { /* skip unparseable embeddings */ }
+      }
+    } catch { /* embedding parse failed — skip dedup */ }
+  }
+
+  if (dedupResult) {
+    // Skip insertion — observation was deduplicated. Still fire post_save hooks with the reinforced obs.
+    const reinforcedObs = db.prepare('SELECT * FROM observations WHERE id = ?').get(dedupResult.id);
+    await core.hooks.triggerHooks(db, 'post_save', { ...reinforcedObs, tags: JSON.parse(reinforcedObs.tags || '[]') }, { project, session });
+    return dedupResult;
+  }
+
   // Pre-save hooks
   const preSaveObs = { title: opts.title, content: opts.content, type, tags: opts.tags || [], importance: imp, confidence, provenance, project_path: project, session_id: session, agent_id: agentId };
   await core.hooks.triggerHooks(db, 'pre_save', preSaveObs, { project, session });
@@ -503,10 +540,13 @@ async function importJSON(data, opts) {
 
 /**
  * Generate a formatted markdown context pack for AI system prompts.
- * @param {Object} [opts] - { project? }
- * @returns {string} Markdown context
+ * If opts.query is provided, performs adaptive context: semantic match +
+ * utility ranking + trails + incorrect warnings tailored to the query.
+ *
+ * @param {Object} [opts] - { project?, query?: string }
+ * @returns {Promise<string>} Markdown context
  */
-function context(opts) {
+async function context(opts) {
   opts = opts || {};
   const db = _getDB();
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
@@ -529,8 +569,33 @@ function context(opts) {
     }
     pack += '\n';
   }
+  // #2 Adaptive context: if query provided, semantic-match + warnings
+  if (opts.query) {
+    try {
+      const relevant = await search(opts.query, { project, limit: 10 });
+      if (relevant.length > 0) {
+        pack += '## Relevant Memories (matched: "' + opts.query + '")\n';
+        for (const r of relevant.slice(0, 10)) {
+          pack += '- [' + r.type.toUpperCase() + '] ' + (r.title || r.preview) + ' (utility: ' + (r.predicted_utility || 0) + ')\n';
+        }
+        pack += '\n';
+      }
+    } catch {}
+
+    const warnings = db.prepare(
+      "SELECT id, type, title, content FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE '%incorrect%' ORDER BY created_at DESC LIMIT 5"
+    ).all(project);
+    if (warnings.length > 0) {
+      pack += '## ⚠️ Previously Incorrect / Unreliable\n';
+      for (const w of warnings) {
+        pack += '- [' + w.type.toUpperCase() + '] ' + (w.title || w.content.slice(0, 80)) + '\n';
+      }
+      pack += '\n';
+    }
+  }
+
   if (observations.length) {
-    pack += '## Key Observations\n';
+    pack += '## Key Observations (ranked by utility)\n';
     const byType = {};
     for (const o of observations) { (byType[o.type] = byType[o.type] || []).push(o); }
     for (const [t, obs] of Object.entries(byType)) {
@@ -538,7 +603,7 @@ function context(opts) {
       for (const o of obs.slice(0, 5)) {
         let tags = '';
         try { const arr = JSON.parse(o.tags); if (arr.length) tags = ' [' + arr.join(', ') + ']'; } catch {}
-        pack += '- ' + (o.title || o.preview) + tags + '\n';
+        pack += '- ' + (o.title || o.preview) + tags + ' (★' + o.predicted_utility + ')\n';
       }
       pack += '\n';
     }
