@@ -685,6 +685,10 @@ commands.export = {
   }
 };
 
+// ─── Helper: Create multi-agent discovery files ───────────────────
+// Delegates to the shared module: scripts/create-discovery-files.js
+const { createDiscoveryFiles } = require('./scripts/create-discovery-files');
+
 // --- Setup: One-command init (install & forget) ---
 
 commands.setup = {
@@ -737,6 +741,7 @@ commands.setup = {
     }
 
     // Step 4: Git hooks (unless --no-hooks)
+    let hooksInstalled = 0;
     const gitDir = path.join(cwd, '.git');
     if (!opts.noHooks && fs.existsSync(gitDir) && fs.statSync(gitDir).isDirectory()) {
       try {
@@ -747,6 +752,7 @@ commands.setup = {
           const hookPath = path.join(hookDir, hookName);
           if (!fs.existsSync(hookPath)) {
             fs.writeFileSync(hookPath, hookContent, { mode: 0o755 });
+            hooksInstalled++;
             console.error('[agentic-cortex]   installed .git/hooks/' + hookName);
           }
         }
@@ -755,11 +761,29 @@ commands.setup = {
       }
     }
 
-    console.log('\n[agentic-cortex] Setup complete! Your agent now has full context.');
-    if (!opts.noHooks && fs.existsSync(path.join(cwd, '.git'))) {
-      console.log('[agentic-cortex] Context auto-refreshes on git checkout/merge/pull.');
+    // Step 5: Multi-agent discovery files
+    const discoveryFiles = createDiscoveryFiles(cwd);
+    for (const f of discoveryFiles) {
+      console.error('[agentic-cortex]   created ' + f);
     }
-    console.log('[agentic-cortex] Run "agentic-cortex help" to see all commands.');
+
+    // ── Structured output for agent consumption ──
+    console.log(JSON.stringify({
+      status: 'setup_complete',
+      project: cwd,
+      knowledgeMd: targetPath,
+      created: fs.existsSync(targetPath) ? 'already_existed' : 'new',
+      graphGenerated: fs.existsSync(path.join(__dirname, 'scripts', 'generate-graph.mjs')),
+      contextInjected: true,
+      gitHooksInstalled: hooksInstalled,
+      discoveryFilesCreated: discoveryFiles.length,
+      discoveryFiles: discoveryFiles,
+      nextSteps: [
+        'agents will auto-discover agentic-cortex via .claude/CLAUDE.md, .cursor/rules/agentic-cortex.mdc, .opencode/agentic-cortex.md',
+        'context auto-refreshes on git checkout/merge/pull',
+        'run "agentic-cortex help" to see all commands',
+      ],
+    }));
   }
 };
 
