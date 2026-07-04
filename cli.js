@@ -1179,6 +1179,64 @@ commands.analytics = {
   }
 };
 
+// ─── Standards: Pre-loaded coding standards ────────────────────────
+
+commands.standards = {
+  desc: 'List or seed pre-loaded coding standards (DRY, KISS, SOLID, Clean Code, Karpathy). Auto-seeded on init — this command is for inspection only.',
+  args: ['[--list]', '[--search QUERY]', '[--seed]', '[--phase PHASE]', '[--category CAT]', '[--limit N]'],
+  parse(args) {
+    const opts = { action: 'list', limit: 20 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--seed') opts.action = 'seed';
+      if (args[i] === '--search') { opts.action = 'search'; opts.query = args[++i]; }
+      if (args[i] === '--phase') opts.phase = args[++i];
+      if (args[i] === '--category') opts.category = args[++i];
+      if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+
+    if (opts.action === 'seed') {
+      const result = await api.ensureStandardsExist(db, project, api.save);
+      console.log(JSON.stringify(result));
+      return;
+    }
+
+    if (opts.action === 'search' && opts.query) {
+      const results = api.searchStandards(db, project, opts.query, opts.limit);
+      console.log(JSON.stringify({ results, count: results.length, query: opts.query }));
+      return;
+    }
+
+    // Default: list standards
+    const results = api.listStandards(db, project, { phase: opts.phase, category: opts.category, limit: opts.limit });
+    if (results.length === 0) {
+      console.log('No coding standards found. Run "agentic-cortex standards --seed" to pre-load them.');
+      return;
+    }
+
+    // Pretty-print as markdown-like output for readability
+    console.log('# Coding Standards (' + results.length + ' active)\n');
+    const byPhase = {};
+    for (const s of results) {
+      const tags = JSON.parse(s.tags || '[]');
+      const phase = tags.find(t => ['planning', 'implementation', 'review', 'all'].includes(t)) || 'other';
+      (byPhase[phase] = byPhase[phase] || []).push(s);
+    }
+    for (const [phase, standards] of Object.entries(byPhase)) {
+      console.log('## ' + phase.charAt(0).toUpperCase() + phase.slice(1) + ' Phase\n');
+      for (const s of standards) {
+        console.log('- ' + s.title + ' (★' + (s.predicted_utility || 0) + ', confidence: ' + s.confidence + '%)');
+      }
+      console.log('');
+    }
+    console.log('\n' + JSON.stringify({ totalActive: results.length, byPhase: Object.fromEntries(Object.entries(byPhase).map(([k, v]) => [k, v.length])) }));
+  }
+};
+
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
 commands.inject = {
