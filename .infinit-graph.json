@@ -1,7 +1,7 @@
 {
-  "generated": "2026-07-03T22:48:55.589Z",
-  "fingerprint": "e1b63ee158021f4c",
-  "fileCount": 35,
+  "generated": "2026-07-04T21:25:03.078Z",
+  "fingerprint": "eb9c86a79a0b717c",
+  "fileCount": 36,
   "apiRoutes": [],
   "services": {},
   "prismaSchema": {
@@ -12,7 +12,7 @@
     "layerCounts": {
       "UI": 0,
       "API": 1,
-      "Service": 32,
+      "Service": 33,
       "Data": 0
     },
     "crossLayerEdges": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 48620,
+      "size": 51250,
       "layer": "Service"
     },
     "scripts/generate-graph.mjs": {
@@ -813,7 +813,7 @@
           "params": [],
           "returnType": null,
           "doc": "Initialize the database (idempotent)",
-          "isAsync": false
+          "isAsync": true
         },
         {
           "name": "initMaintenanceScheduler",
@@ -1149,7 +1149,7 @@
           "isAsync": false
         }
       ],
-      "size": 68075,
+      "size": 68999,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -2269,6 +2269,99 @@
       "size": 8437,
       "layer": "Service"
     },
+    "src/core/standards.js": {
+      "path": "src/core/standards.js",
+      "role": "library",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "ensureStandardsExist",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "saveFn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Check if coding standards exist in the project and seed them if not. Called automatically by init() — no user action req",
+          "isAsync": true
+        },
+        {
+          "name": "getStandardsAsObservations",
+          "params": [
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get all standards as structured instruction observation data, ready to be saved via the API's save() function.  @param {",
+          "isAsync": false
+        },
+        {
+          "name": "getStandardsContext",
+          "params": [],
+          "returnType": null,
+          "doc": "standards.js — Canonical Coding Standards for agentic-cortex.  Pre-loaded, always-injected, phase-aware coding standards",
+          "isAsync": true
+        },
+        {
+          "name": "listStandards",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List all active coding standards for a project.  @param {import('better-sqlite3').Database} db @param {string} project @",
+          "isAsync": false
+        },
+        {
+          "name": "searchStandards",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "limit",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Search coding standards by query text.  @param {import('better-sqlite3').Database} db @param {string} project @param {st",
+          "isAsync": false
+        }
+      ],
+      "size": 38998,
+      "layer": "Service"
+    },
     "src/core/watcher.js": {
       "path": "src/core/watcher.js",
       "role": "library",
@@ -2571,7 +2664,7 @@
           "isAsync": true
         }
       ],
-      "size": 38932,
+      "size": 40474,
       "layer": "Service"
     },
     "tests/cli.test.js": {
@@ -2841,7 +2934,7 @@
           "isAsync": false
         }
       ],
-      "size": 15541,
+      "size": 15599,
       "layer": "Service"
     },
     "tests/mcp.test.js": {
