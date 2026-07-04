@@ -45,10 +45,10 @@ The context below is AUTO-INJECTED by git hooks (post-merge, post-checkout) or `
 Use this pre-computed knowledge to skip discovery. No need to re-read files you already know about.
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-03T22:48:55.613Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-04T21:25:03.107Z -->
 
 ## Codebase Graph
-*35 source files | 0 API routes | Generated 2026-07-03T22:48:55.589Z*
+*36 source files | 0 API routes | Generated 2026-07-04T21:25:03.078Z*
 
 ### Architecture
 **Patterns:** Event-Driven, CLI Tool
@@ -56,10 +56,10 @@ Use this pre-computed knowledge to skip discovery. No need to re-read files you 
 
 ### Data Flow
 `API → Service`
-Files per layer: UI=0 API=1 Service=32 Data=0
+Files per layer: UI=0 API=1 Service=33 Data=0
 **Hub files (most imported):** `scripts/inject-memory.mjs`, `scripts/generate-graph.mjs`, `cli.js`, `src/api/index.js`, `src/core/conflict.js`
 
-### Core Libraries (14)
+### Core Libraries (15)
 - `src/core/conflict.js` — fns: checkConflicts(db, opts)
 - `src/core/constants.js` — fns: getProjectDefault(opts)
 - `src/core/db-path.js` — fns: ensureDir(filePath), getDbDir(), getDbPath(), getLegacyDbPath(), getLegacyDbPathIfExists()
