@@ -11,6 +11,10 @@ const selfImprove = require('../core/self-improve');
 selfImprove.initHooks(save);
 core.selfImprove = selfImprove;
 
+// Initialize coding standards module (pre-loaded, always-injected, phase-aware)
+const standards = require('../core/standards');
+core.standards = standards;
+
 // ─── Access Tracking Helper ───────────────────────────────────────────
 
 /**
@@ -556,10 +560,15 @@ async function context(opts) {
   ).all(project);
 
   const observations = db.prepare(
-    'SELECT id, session_id, type, title, substr(content, 1, 200) as preview, tags, importance, predicted_utility, created_at FROM observations WHERE project_path = ? AND is_active = 1 ORDER BY (importance + predicted_utility) DESC, created_at DESC LIMIT 20'
+    "SELECT id, session_id, type, title, substr(content, 1, 200) as preview, tags, importance, predicted_utility, created_at FROM observations WHERE project_path = ? AND is_active = 1 AND tags NOT LIKE '%coding-standard%' ORDER BY (importance + predicted_utility) DESC, created_at DESC LIMIT 20"
   ).all(project);
 
   let pack = '# Agentic Cortex - Project Context\n\n';
+
+  // #3 Coding standards: always injected, phase-aware, pre-loaded
+  pack += standards.getStandardsContext();
+  pack += '\n---\n\n';
+
   if (sessions.length) {
     pack += '## Recent Sessions\n';
     for (const s of sessions) {
@@ -621,10 +630,19 @@ async function context(opts) {
 // ─── Lifecycle ────────────────────────────────────────────────────────
 
 /** Initialize the database (idempotent) */
-function init() {
+async function init() {
   _getDB();
   // Initialize auto-maintenance scheduler on first init
   initMaintenanceScheduler();
+
+  // Auto-seed coding standards on first init (zero user action needed)
+  try {
+    const project = process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+    await standards.ensureStandardsExist(_getDB(), project, save);
+  } catch (err) {
+    console.warn('[agentic-cortex] Standards seeding failed:', err.message);
+  }
+
   return { status: 'initialized', dbPath: core.db.getDbPath() };
 }
 
@@ -1713,4 +1731,9 @@ module.exports = {
   computeFreshness, updateFreshnessScores, autoArchive,
   runMaintenance, checkAndRunMaintenance, initMaintenanceScheduler,
   analytics,
+  getStandardsContext: standards.getStandardsContext,
+  ensureStandardsExist: standards.ensureStandardsExist,
+  listStandards: standards.listStandards,
+  searchStandards: standards.searchStandards,
+  getStandardsAsObservations: standards.getStandardsAsObservations,
 };

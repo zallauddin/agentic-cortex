@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-03T22:42:21.501Z",
-  "fingerprint": "bfa8a995e489d5ae",
+  "generated": "2026-07-03T22:48:55.589Z",
+  "fingerprint": "e1b63ee158021f4c",
   "fileCount": 35,
   "apiRoutes": [],
   "services": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 45586,
+      "size": 48620,
       "layer": "Service"
     },
     "scripts/generate-graph.mjs": {
@@ -435,6 +435,18 @@
           "isAsync": true
         },
         {
+          "name": "analytics",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Surface insights about the self-improving loop's effectiveness. Measures RCA effectiveness, conflict health, utility dis",
+          "isAsync": false
+        },
+        {
           "name": "archiveSuperseded",
           "params": [
             {
@@ -444,6 +456,34 @@
           ],
           "returnType": null,
           "doc": "Archive superseded observations only",
+          "isAsync": true
+        },
+        {
+          "name": "autoArchive",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Auto-archive observations with freshness below threshold. Returns archived count and list of archived IDs.  @param {Obje",
+          "isAsync": false
+        },
+        {
+          "name": "checkAndRunMaintenance",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Check if maintenance is due and run it if needed. Called periodically from the post_save hook (every ~50 saves). @param ",
           "isAsync": true
         },
         {
@@ -463,6 +503,18 @@
           "params": [],
           "returnType": null,
           "doc": "Close the database connection and release pipeline resources",
+          "isAsync": false
+        },
+        {
+          "name": "computeFreshness",
+          "params": [
+            {
+              "name": "obs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Compute a freshness score (0-100) for an observation combining:   - access_count: recency/frequency of use (0-30)   - la",
           "isAsync": false
         },
         {
@@ -764,6 +816,13 @@
           "isAsync": false
         },
         {
+          "name": "initMaintenanceScheduler",
+          "params": [],
+          "returnType": null,
+          "doc": "Initialize the maintenance scheduler hook. Registers a post_save hook that periodically checks if maintenance is due.",
+          "isAsync": false
+        },
+        {
           "name": "keywordSearch",
           "params": [
             {
@@ -880,6 +939,18 @@
           "returnType": null,
           "doc": "Register an in-memory hook callback. @param {string} event @param {Function} callback",
           "isAsync": false
+        },
+        {
+          "name": "runMaintenance",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Run the full maintenance cycle for a project:   1. Update freshness scores   2. Auto-archive stale observations   3. Run",
+          "isAsync": true
         },
         {
           "name": "save",
@@ -1046,6 +1117,22 @@
           "isAsync": false
         },
         {
+          "name": "updateFreshnessScores",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Update freshness_score for all active observations in a project. @param {import('better-sqlite3').Database} db @param {s",
+          "isAsync": false
+        },
+        {
           "name": "updateHook",
           "params": [
             {
@@ -1062,7 +1149,7 @@
           "isAsync": false
         }
       ],
-      "size": 55399,
+      "size": 68075,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1196,7 +1283,7 @@
           "isAsync": false
         }
       ],
-      "size": 11041,
+      "size": 11794,
       "layer": "Service"
     },
     "src/core/embedding.js": {
@@ -2484,7 +2571,7 @@
           "isAsync": true
         }
       ],
-      "size": 36466,
+      "size": 38932,
       "layer": "Service"
     },
     "tests/cli.test.js": {
