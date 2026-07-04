@@ -39,8 +39,9 @@ agentic-cortex save "Short title" "Detailed content with context" --type <type> 
 
 The context below is AUTO-INJECTED by git hooks (post-merge, post-checkout) or `agentic-cortex inject`. It contains:
 
-1. **Session memories** — what was built, decided, fixed, discovered (with confidence scores)
-2. **Codebase graph** — every source file, API route, import, and export
+1. **Coding Standards** — Pre-loaded best practices (DRY, KISS, SOLID, Clean Code, Karpathy). Always active. No command needed.
+2. **Session memories** — what was built, decided, fixed, discovered (with confidence scores)
+3. **Codebase graph** — every source file, API route, import, and export
 
 Use this pre-computed knowledge to skip discovery. No need to re-read files you already know about.
 

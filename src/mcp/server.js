@@ -43,7 +43,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -582,6 +582,21 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'memory_standards',
+    description: 'Access pre-loaded coding standards (DRY, KISS, SOLID, Clean Code, Karpathy). Standards are auto-seeded on init and always injected into context — no command needed. This tool is for explicit querying only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'What to do: list (show all), search (find by query), seed (force re-seed)', default: 'list' },
+        query: { type: 'string', description: 'Search query (for action=search)' },
+        phase: { type: 'string', description: 'Filter by phase: planning, implementation, review, all' },
+        category: { type: 'string', description: 'Filter by category: karpathy, solid, dry, kiss, yagni, clean-code, general' },
+        project: { type: 'string', description: 'Project path' },
+        limit: { type: 'integer', description: 'Max results', default: 20 },
+      },
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -822,6 +837,17 @@ async function callTool(name, args) {
 
     case 'memory_analytics':
       return api.analytics(args);
+
+    case 'memory_standards': {
+      const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+      if (args.action === 'seed') {
+        return api.ensureStandardsExist(require('../core/db').getDb(), project, api.save);
+      }
+      if (args.action === 'search' && args.query) {
+        return api.searchStandards(require('../core/db').getDb(), project, args.query, args.limit || 10);
+      }
+      return api.listStandards(require('../core/db').getDb(), project, { phase: args.phase, category: args.category, limit: args.limit || 20 });
+    }
 
     case 'memory_auto_capture': {
       const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
