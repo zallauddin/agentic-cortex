@@ -1,10 +1,39 @@
-# agentic-cortex
+# agentic-cortex v4.7.0
 
-Persistent typed memory for AI coding agents (Codebuff, Claude Code, Cursor, Codex, etc.). Three-layer context system inspired by Memanto's memory architecture.
+Persistent, self-improving memory for AI coding agents (Codebuff, Claude Code, Cursor, Codex, OpenCode). Install & forget — auto-injects context via git hooks, infers what you're working on, and prevents the same mistakes from repeating across projects.
 
-1. **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error
-2. **Confidence & provenance** — every memory tracks how sure you are (0-100) and where it came from (explicit, inferred, observed)
-3. **Codebase graph** — deterministic structural map of the entire codebase (zero LLM cost, SHA-256 cached)
+## Features
+
+- **Zero-arg bootstrap** — `agentic-cortex bootstrap` with no arguments. Infers your task from session prompt, git branch, or recent activity. Returns structured XML context.
+- **Auto type detection** — `save "title" "content"` detects the right memory type from content patterns. No `--type` flag needed.
+- **Machine-wide global vault** — battle-tested learnings auto-promoted across projects. If you learned it once, you never make the mistake again on this machine.
+- **Auto-promotion with relative thresholds** — top 20% confidence + 2× median utility auto-promote to global vault during reflection. Self-tunes as your project grows.
+- **XML codebase graph** — deterministic static analysis, SHA-256 cached, zero LLM cost. Injected as structured XML, not markdown.
+- **Agent-optimized knowledge.md** — XML-structured, 4× token reduction vs markdown. Built for LLM consumption, not human skimming.
+- **39+ MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, and more. Stdio JSON-RPC.
+- **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error.
+- **Hybrid search** — FTS5 keyword + BGE semantic embeddings (768-dim) + cross-encoder reranking. Falls back gracefully when embeddings unavailable.
+- **Confidence & provenance tracking** — every memory scores 0-100 confidence and source (explicit, inferred, observed).
+- **Self-improving loop** — error RCA generates systemic learnings. Conflict detection finds contradictions. Evidence-based confidence scoring.
+- **Save-time deduplication** — cosine similarity ≥ 0.97 reinforces existing memories instead of creating duplicates.
+- **Freshness scoring** — 0-100 score combining access recency, confidence, and utility. Auto-archives stale memories.
+- **Auto-maintenance scheduler** — runs freshness updates and archival every ~50 saves, minimum 6 hours between full cycles.
+- **Intent → Action → Outcome tracking** — linked triplets with relations for evidence-based learning verification.
+- **Multi-agent sharing** — namespaced agent sessions with shared memory discovery.
+- **Skill/procedure extraction** — structured fields (steps, triggers, preconditions, postconditions) with dedicated search.
+- **Pre-loaded coding standards** — DRY, KISS, SOLID, Clean Code, Karpathy guidelines auto-seeded on init. Always injected into context.
+- **Conversation transcript ingestion** — regex + LLM fallback extracts decisions, errors, learnings, preferences, and facts from chat logs.
+- **Grounded QA** — retrieve relevant memories + LLM answer with source citations.
+- **Git hook auto-injection** — context auto-refreshes on checkout, merge, pull, and commit.
+- **Multi-agent discovery files** — auto-creates `.claude/CLAUDE.md`, `.cursor/rules/agentic-cortex.mdc`, `.opencode/agentic-cortex.md`.
+- **Temporal queries** — search as-of specific dates or filter by changes since.
+- **Daily summaries** — LLM-generated or template-fallback summaries of each day's observations.
+- **Obsidian export** — one-way read-only mirror to an Obsidian vault with wikilinks and tag indexes.
+- **File upload** — chunk and embed .md, .txt, .json, .csv, .py, .ts, .prisma, and more into memory.
+- **HTTP API server** — optional REST interface on port 37777 for external tool integration.
+- **Multi-agent discovery** — auto-creates discovery files for Claude Code, Cursor, and OpenCode on setup.
+- **BGE embeddings** — Xenova/bge-base-en-v1.5 with in-memory LRU cache.
+- **Embedding dimension mismatch detection** — warns when stored embeddings don't match current model dimensions.
 
 ## Install
 
@@ -15,107 +44,108 @@ npm install -g agentic-cortex
 ## Quick Start
 
 ```bash
-# 1. Initialize a project (creates knowledge.md with memory markers)
 cd your-project
-agentic-cortex init
 
-# 2. Generate the codebase structure graph
-agentic-cortex graph
+# One command: init + graph + inject + discovery files + git hooks
+agentic-cortex setup
 
-# 3. Inject context before starting your agent
-agentic-cortex inject
+# At session start, just run:
+agentic-cortex bootstrap
 ```
 
-## Commands
+## Core Commands
 
-### Core Memory
 | Command | Description |
 |---|---|
-| `agentic-cortex save <title> <content>` | Save a memory with type, confidence, provenance |
-| `agentic-cortex search <query>` | Search with keyword, semantic (`--semantic`), or temporal (`--as-of`, `--changed-since`) filters |
-| `agentic-cortex get <id>` | View full memory by ID |
-| `agentic-cortex edit <id>` | Edit memory (creates version history) |
-| `agentic-cortex forget <id>` | Soft-delete a memory (`--hard` for permanent) |
-| `agentic-cortex bulk` | Bulk import JSON from stdin |
+| `bootstrap` | 🔑 Bootstrap task context — zero args, auto-inferring |
+| `save <title> <content>` | Save observation — type auto-detected |
+| `search <query>` | Hybrid search (FTS5 + semantic) with optional `--rerank` |
+| `machine-search <query>` | Search across ALL projects on this machine |
+| `machine-memory` | View/search the machine-wide global vault |
+| `promote-global <id>` | Promote a memory to machine-wide scope |
+| `feedback <id> --type helpful\|incorrect` | Reinforce or flag a memory |
+| `forget <id>` | Soft-delete (`--hard` for permanent) |
+| `get <id>` | View full memory with structured fields |
+| `edit <id>` | Edit memory (version history preserved) |
+
+## How It Works
+
+### Zero-Arg Bootstrap
+
+`bootstrap` infers your task and returns structured XML context:
+
+```xml
+<agentic_cortex_context project="/my/project" task="fix login bug">
+  <session_started id="sess_abc123"/>
+  <actionable_insights>...</actionable_insights>
+  <relevant_memories>
+    <tier priority="critical">...</tier>
+    <tier priority="important">...</tier>
+  </relevant_memories>
+  <recent_sessions>...</recent_sessions>
+  <warnings>...</warnings>
+  <coding_standards collapsed="true">...</coding_standards>
+  <global_vault>...</global_vault>
+  <codebase_graph>...</codebase_graph>
+</agentic_cortex_context>
+```
+
+### Machine-Wide Global Vault
+
+Auto-promote uses relative thresholds — the system gets stricter as your project grows:
+
+```bash
+# View cross-project analytics
+agentic-cortex machine-memory --analytics
+
+# Search across all projects
+agentic-cortex machine-search "Windows path normalization"
+
+# Manually promote
+agentic-cortex promote-global 42
+```
+
+### Auto-Detect Memory Types
+
+| Pattern | Type | Example |
+|---|---|---|
+| "error", "bug", "crash", "failed" | `error` | `save "Null ptr" "Error in auth.ts:42"` |
+| "chose", "decided", "going with" | `decision` | `save "DB" "Chose SQLite over Postgres"` |
+| "learned", "realized", "found that" | `learning` | `save "Paths" "Windows needs forward-slash"` |
+| "prefer", "rather than" | `preference` | `save "Style" "Prefer async/await"` |
+| "project uses", "configured with" | `fact` | `save "Stack" "Uses Prisma with PostgreSQL"` |
+| "step", "procedure", "how to" | `instruction` | `save "Deploy" "Step 1: build, step 2: push"` |
+| "published", "released", "deployed" | `event` | `save "Release" "Published v4.7.0 to npm"` |
+| "goal", "objective", "milestone" | `goal` | `save "Target" "Need to achieve 95% coverage"` |
+
+## All Commands
+
+### Core
+`bootstrap` `save` `search` `get` `edit` `forget` `list` `bulk`
 
 ### Intelligence
-| Command | Description |
-|---|---|
-| `agentic-cortex conflicts` | Detect contradictory memories (semantic similarity + LLM check) |
-| `agentic-cortex answer <question>` | Grounded QA — retrieve relevant memories + LLM answer |
-| `agentic-cortex daily-summary` | Summarize yesterday's observations |
-| `agentic-cortex upload <file>` | Upload files (.md, .txt, .json, .csv, .py, .ts, etc.) into memory |
+`conflicts` `answer` `analytics` `daily-summary` `reflect` `maintenance` `freshness`
 
-### Project Setup
-| Command | Description |
-|---|---|
-| `agentic-cortex init` | Create knowledge.md template in current directory |
-| `agentic-cortex graph` | Generate/update the codebase structure graph |
-| `agentic-cortex inject` | Inject memories + codebase graph into knowledge.md |
-| `agentic-cortex embed` | Generate BGE embeddings for all observations |
-| `agentic-cortex session` | Start/end/summarize coding sessions |
-| `agentic-cortex export <vault-path>` | Export to Obsidian vault (wikilinks, tag indexes) |
-| `agentic-cortex serve [port]` | Start HTTP API server |
+### Cross-Project
+`machine-memory` `machine-search` `promote-global` `transfer` `feedback`
 
-### System
-| Command | Description |
-|---|---|
-| `agentic-cortex health` | Database statistics |
-| `agentic-cortex timeline` | Recent sessions for a project |
-| `agentic-cortex projects` | List all known projects |
+### Setup
+`setup` `init` `graph` `inject` `hook` `embed`
 
-## Memory Types (13 from Memanto)
+### Advanced
+`upload` `watch` `action` `trail` `utility` `ingest` `export` `serve` `standards` `context` `session` `timeline`
+
+## MCP Server
+
+```bash
+agentic-cortex-mcp
+```
+
+39+ tools over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
+
+## 13 Memory Types
 
 `instruction` `fact` `decision` `goal` `commitment` `preference` `relationship` `context` `event` `learning` `observation` `artifact` `error`
-
-Plus backwards-compatible aliases: `architecture`, `bugfix`, `gotcha`, `codebase-graph`
-
-## Save with Confidence & Provenance
-
-```bash
-agentic-cortex save "API key rotation schedule" "Rotate all keys every 90 days" \
-  --type instruction --confidence 95 --provenance explicit --importance 9
-```
-
-## Temporal Queries
-
-```bash
-# What changed since last week?
-agentic-cortex search --changed-since 2026-06-21 --project /my/project
-
-# What did we know as of a specific date?
-agentic-cortex search "port configuration" --as-of 2026-06-01
-```
-
-## Conflict Detection
-
-```bash
-# Find potentially contradictory memories
-agentic-cortex conflicts --project /my/project --limit 5
-```
-
-## Grounded Q&A
-
-```bash
-agentic-cortex answer "What database credentials are we using for production?" \
-  --project /my/project --top-k 5
-```
-
-## File Upload
-
-```bash
-agentic-cortex upload docs/api-spec.md --type artifact --title "API Specification"
-agentic-cortex upload data/export.csv --type observation
-```
-
-## Fresh Machine Setup
-
-```bash
-npm install -g agentic-cortex
-git clone <your-repo> && cd <your-repo>
-agentic-cortex init && agentic-cortex graph && agentic-cortex inject
-# Your agent now has full context
-```
 
 ## Environment
 
@@ -128,4 +158,10 @@ agentic-cortex init && agentic-cortex graph && agentic-cortex inject
 
 ## License
 
-Apache 2.0
+MIT © 2026 zallauddin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
