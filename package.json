@@ -12,6 +12,7 @@
     "semantic-memory"
   ],
   "license": "MIT",
+  "author": "zallauddin",
   "bin": {
     "agentic-cortex": "cli.js",
     "agentic-cortex-mcp": "src/mcp/server.js"

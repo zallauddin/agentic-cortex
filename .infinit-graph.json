@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-04T21:33:27.281Z",
-  "fingerprint": "873c34d638b8e3f0",
+  "generated": "2026-07-07T04:51:54.168Z",
+  "fingerprint": "592f492e4f37b23e",
   "fileCount": 38,
   "apiRoutes": [],
   "services": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 52173,
+      "size": 57763,
       "layer": "Service"
     },
     "scripts/auto-setup.js": {
@@ -135,7 +135,7 @@
           "isAsync": false
         }
       ],
-      "size": 5268,
+      "size": 7394,
       "layer": "Unknown"
     },
     "scripts/generate-graph.mjs": {
@@ -272,6 +272,18 @@
           "isAsync": false
         },
         {
+          "name": "formatGraphAsXML",
+          "params": [
+            {
+              "name": "output",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
           "name": "main",
           "params": [],
           "returnType": null,
@@ -397,9 +409,21 @@
           "returnType": null,
           "doc": null,
           "isAsync": false
+        },
+        {
+          "name": "xmlEscape",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
         }
       ],
-      "size": 33723,
+      "size": 38852,
       "layer": "Unknown"
     },
     "scripts/inject-memory.mjs": {
@@ -414,7 +438,7 @@
         "url"
       ],
       "functions": [],
-      "size": 4793,
+      "size": 5659,
       "layer": "Unknown"
     },
     "src/api/index.js": {
@@ -424,10 +448,50 @@
       "imports": [],
       "functions": [
         {
+          "name": "_buildBootstrapContext",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "workingOn",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Build a structured, token-budget-aware context optimized for LLM consumption. Uses XML-style tagging for hierarchical pa",
+          "isAsync": true
+        },
+        {
           "name": "_checkEmbeddingMismatch",
           "params": [],
           "returnType": null,
           "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_detectType",
+          "params": [
+            {
+              "name": "title",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Auto-detect observation type from title + content patterns. Falls back to 'observation' if no patterns match.  @param {s",
           "isAsync": false
         },
         {
@@ -436,6 +500,81 @@
           "returnType": null,
           "doc": null,
           "isAsync": false
+        },
+        {
+          "name": "_getGraphSummary",
+          "params": [
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "tokenBudget",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get a structured XML codebase graph summary limited to a token budget. Reads from .infinit-graph.json cache if available",
+          "isAsync": false
+        },
+        {
+          "name": "_getStandardsSummary",
+          "params": [],
+          "returnType": null,
+          "doc": "Get a condensed summary of coding standards (titles + categories only). Saves ~2000 tokens vs the full standards block. ",
+          "isAsync": false
+        },
+        {
+          "name": "_inferTask",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Infer what the agent is currently working on. Tries multiple signals in priority order:   1. Active session's user_promp",
+          "isAsync": false
+        },
+        {
+          "name": "_safeJsonParse",
+          "params": [
+            {
+              "name": "json",
+              "type": null
+            },
+            {
+              "name": "defaultVal",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Parse JSON safely, returning a default on failure. @param {string} json @param { } defaultVal @returns { }",
+          "isAsync": false
+        },
+        {
+          "name": "_summarizeMemories",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "workingOn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Summarize task-relevant memories into actionable insights using LLM. Falls back to template-based summary if LLM is unav",
+          "isAsync": true
         },
         {
           "name": "_trackAccess",
@@ -451,6 +590,34 @@
           ],
           "returnType": null,
           "doc": "Batch-update access_count and last_accessed_at for observation IDs. Debounces writes — only updates if last access was >",
+          "isAsync": false
+        },
+        {
+          "name": "_truncateContent",
+          "params": [
+            {
+              "name": "content",
+              "type": null
+            },
+            {
+              "name": "maxChars",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Truncate content to maxChars while preserving word boundaries. @param {string} content @param {number} maxChars @returns",
+          "isAsync": false
+        },
+        {
+          "name": "_xmlEscape",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Escape text for safe inclusion in XML content. @param {string} text @returns {string}",
           "isAsync": false
         },
         {
@@ -500,6 +667,34 @@
           "returnType": null,
           "doc": "Auto-archive observations with freshness below threshold. Returns archived count and list of archived IDs.  @param {Obje",
           "isAsync": false
+        },
+        {
+          "name": "autoPromoteGlobal",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Auto-promote eligible high-quality learnings and instructions to global scope. Called during reflection to automatically",
+          "isAsync": false
+        },
+        {
+          "name": "bootstrap",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Bootstrap context for an agent session — the main entry point for agents. Auto-starts a session, retrieves task-relevant",
+          "isAsync": true
         },
         {
           "name": "checkAndRunMaintenance",
@@ -749,6 +944,18 @@
           "isAsync": false
         },
         {
+          "name": "getGlobalVault",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get the machine-wide global vault — all observations promoted to global scope. These are battle-tested learnings, instru",
+          "isAsync": true
+        },
+        {
           "name": "getGraph",
           "params": [
             {
@@ -920,6 +1127,13 @@
           "isAsync": false
         },
         {
+          "name": "machineAnalytics",
+          "params": [],
+          "returnType": null,
+          "doc": "Get machine-wide analytics — insights across all projects. Shows: top repeated errors, most useful global learnings, pro",
+          "isAsync": false
+        },
+        {
           "name": "promotePatterns",
           "params": [
             {
@@ -929,6 +1143,22 @@
           ],
           "returnType": null,
           "doc": "Promote recurring patterns only",
+          "isAsync": true
+        },
+        {
+          "name": "promoteToGlobal",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Automatically promote a high-confidence, high-utility observation to machine-wide (global) scope. Called during reflecti",
           "isAsync": true
         },
         {
@@ -1009,6 +1239,22 @@
           ],
           "returnType": null,
           "doc": "Hybrid search (FTS5 + semantic). Auto-computes embedding for the query. Falls back to keyword-only if embedding pipeline",
+          "isAsync": true
+        },
+        {
+          "name": "searchAllProjects",
+          "params": [
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Search across ALL projects (not just current) on this machine. Uses hybrid search when embeddings are available, falls b",
           "isAsync": true
         },
         {
@@ -1180,7 +1426,7 @@
           "isAsync": false
         }
       ],
-      "size": 68999,
+      "size": 105060,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1898,11 +2144,11 @@
             }
           ],
           "returnType": null,
-          "doc": "Run a full reflection cycle: consolidate, promote, archive.  @param {import('better-sqlite3').Database} db @param {Objec",
+          "doc": "Run a full reflection cycle: consolidate, promote, archive. Additionally runs auto-promotion of high-quality learnings t",
           "isAsync": true
         }
       ],
-      "size": 19285,
+      "size": 19796,
       "layer": "Service"
     },
     "src/core/relations.js": {
@@ -2695,7 +2941,7 @@
           "isAsync": true
         }
       ],
-      "size": 40474,
+      "size": 44663,
       "layer": "Service"
     },
     "tests/cli.test.js": {
