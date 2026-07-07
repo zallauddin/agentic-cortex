@@ -1,7 +1,7 @@
 {
   "name": "agentic-cortex",
-  "version": "4.6.0",
-  "description": "Persistent typed memory for AI coding agents — install & forget: auto-inject context via git hooks, 13 memory types, confidence tracking, conflict detection, grounded QA, codebase graphs",
+  "version": "4.7.0",
+  "description": "Persistent self-improving agent memory — install & forget: auto-inject context via git hooks, zero-arg bootstrap, machine-wide global vault, 13 memory types, confidence tracking, XML codebase graphs",
   "keywords": [
     "ai-agent",
     "memory",

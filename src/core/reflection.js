@@ -493,12 +493,14 @@ async function archiveSuperseded(db, opts = {}) {
 
 /**
  * Run a full reflection cycle: consolidate, promote, archive.
+ * Additionally runs auto-promotion of high-quality learnings to global scope
+ * so the machine-wide immune system grows automatically.
  *
  * @param {import('better-sqlite3').Database} db
  * @param {Object} opts
  * @param {string} [opts.project] - Project path
  * @param {boolean} [opts.dryRun=false] - If true, only report
- * @returns {Promise<{consolidate: Object, promote: Object, archive: Object}>}
+ * @returns {Promise<{consolidate: Object, promote: Object, archive: Object, globalPromote: Object}>}
  */
 async function reflect(db, opts = {}) {
   const dryRun = opts.dryRun ?? false;
@@ -510,7 +512,17 @@ async function reflect(db, opts = {}) {
     archiveSuperseded(db, { ...opts, project, dryRun }),
   ]);
 
-  return { consolidate, promote, archive };
+  // Auto-promote high-quality learnings to machine-wide global vault
+  let globalPromote = { promoted: 0, candidates: 0 };
+  if (!dryRun) {
+    try {
+      // Lazy-load api to avoid circular dependency
+      const api = require('../api');
+      globalPromote = api.autoPromoteGlobal(db, project);
+    } catch { /* best-effort */ }
+  }
+
+  return { consolidate, promote, archive, globalPromote };
 }
 
 module.exports = {

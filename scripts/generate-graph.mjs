@@ -648,6 +648,132 @@ function detectServices(graph) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// XML FORMATTER — agent-optimized, token-efficient
+// ═══════════════════════════════════════════════════════════════════
+
+function formatGraphAsXML(output) {
+  let xml = `<codebase_graph files="${output.fileCount}" api_routes="${output.apiRoutes.length}" generated="${output.generated}">\n`;
+
+  // Architecture
+  if (output.paradigms && output.paradigms.length > 0) {
+    xml += `  <architecture patterns="${xmlEscape(output.paradigms.join(', '))}"`;
+    if (output.techStack) {
+      const ts = output.techStack;
+      const parts = [];
+      if (ts.runtime.length) parts.push(`Language: ${ts.runtime.join(', ')}`);
+      if (ts.frameworks.length) parts.push(`Frameworks: ${ts.frameworks.join(', ')}`);
+      if (ts.databases.length) parts.push(`Databases: ${ts.databases.join(', ')}`);
+      if (ts.tools.length) parts.push(`Tools: ${ts.tools.join(', ')}`);
+      if (parts.length) xml += ` stack="${xmlEscape(parts.join(' | '))}"`;
+    }
+    xml += `/>\n`;
+  }
+
+  // Data flow layers
+  if (output.layerMap && output.layerMap.requestPath) {
+    const lc = output.layerMap.layerCounts;
+    xml += `  <layers dataflow="${xmlEscape(output.layerMap.requestPath)}" ui="${lc.UI}" api="${lc.API}" service="${lc.Service}" data="${lc.Data}"/>\n`;
+    if (output.layerMap.hubFiles && output.layerMap.hubFiles.length > 0) {
+      xml += `  <hub_files>${output.layerMap.hubFiles.slice(0, 8).map(h => xmlEscape(h.path)).join(', ')}</hub_files>\n`;
+    }
+  }
+
+  // API Routes
+  if (output.apiRoutes.length > 0) {
+    xml += `  <api_routes>\n`;
+    for (const route of output.apiRoutes.sort((a, b) => (a.path || '').localeCompare(b.path || '')).slice(0, 15)) {
+      const fileAttr = route.file ? ` file="${xmlEscape(route.file)}"` : '';
+      xml += `    <route methods="${route.methods.join(',')}" path="${xmlEscape(route.path)}"${fileAttr}/>\n`;
+    }
+    xml += `  </api_routes>\n`;
+  }
+
+  // Database Schema
+  if (output.prismaSchema && output.prismaSchema.models.length > 0) {
+    xml += `  <schema>\n`;
+    for (const model of output.prismaSchema.models) {
+      xml += `    <model name="${xmlEscape(model.name)}">\n`;
+      for (const field of model.fields) {
+        const attrs = [];
+        if (field.isId) attrs.push('pk');
+        if (!field.isRequired) attrs.push('optional');
+        if (field.isList) attrs.push('list');
+        if (field.isUnique) attrs.push('unique');
+        const attrStr = attrs.length ? ` attrs="${attrs.join(',')}"` : '';
+        const relStr = field.relation ? ` ref="${field.relation.model}"` : '';
+        xml += `      <field name="${xmlEscape(field.name)}" type="${xmlEscape(field.type)}"${attrStr}${relStr}/>\n`;
+      }
+      xml += `    </model>\n`;
+    }
+    const allRels = output.prismaSchema.models.flatMap(m => m.relations);
+    if (allRels.length > 0) {
+      const uniqueRels = [...new Set(allRels.map(r => `${r.from}→${r.to}`))];
+      xml += `    <relations>${uniqueRels.join(', ')}</relations>\n`;
+    }
+    xml += `  </schema>\n`;
+  }
+
+  // Core Libraries
+  const libs = Object.entries(output.graph)
+    .filter(([, n]) => n.role === 'library')
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (libs.length > 0) {
+    xml += `  <libraries>\n`;
+    for (const [libPath, node] of libs.slice(0, 15)) {
+      const exports = node.exports.filter(e => !e.startsWith('model:')).slice(0, 10);
+      const expStr = exports.length ? ` exports="${xmlEscape(exports.join(', '))}"` : '';
+      // Include key function signatures
+      let fnStr = '';
+      if (node.functions && node.functions.length > 0) {
+        const sigs = node.functions.slice(0, 6).map(f => {
+          let sig = f.name + '(';
+          if (f.params.length) sig += f.params.map(p => p.name).join(',');
+          sig += ')';
+          return sig;
+        });
+        fnStr = ` fns="${xmlEscape(sigs.join('; '))}"`;
+      }
+      xml += `    <file path="${xmlEscape(libPath)}" layer="${node.layer || 'Service'}"${expStr}${fnStr}/>\n`;
+    }
+    xml += `  </libraries>\n`;
+  }
+
+  // Scripts
+  const scripts = Object.entries(output.graph)
+    .filter(([, n]) => n.role === 'script')
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (scripts.length > 0) {
+    xml += `  <scripts>\n`;
+    for (const [scriptPath] of scripts) {
+      xml += `    <file path="${xmlEscape(scriptPath)}"/>\n`;
+    }
+    xml += `  </scripts>\n`;
+  }
+
+  // API Dependencies
+  if (output.services && Object.keys(output.services).length > 0) {
+    xml += `  <service_deps>\n`;
+    for (const [service, routes] of Object.entries(output.services)) {
+      xml += `    <service name="${xmlEscape(service)}" used_by="${xmlEscape(routes.map(r => r.replace('src/app', '')).join(', '))}"/>\n`;
+    }
+    xml += `  </service_deps>\n`;
+  }
+
+  xml += `</codebase_graph>`;
+  return xml;
+}
+
+function xmlEscape(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // MARKDOWN FORMATTER
 // ═══════════════════════════════════════════════════════════════════
 
@@ -887,6 +1013,8 @@ function main() {
 
   if (outputFormat === 'json') {
     console.log(JSON.stringify(output));
+  } else if (outputFormat === 'xml') {
+    console.log(formatGraphAsXML(output));
   } else {
     console.log(formatGraphAsMarkdown(output));
   }

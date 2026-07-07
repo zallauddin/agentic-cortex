@@ -7,11 +7,8 @@
  *   - .cursor/rules/agentic-cortex.mdc  (Cursor, alwaysApply: true)
  *   - .opencode/agentic-cortex.md  (OpenCode / Codebuff)
  *
- * Each file points to knowledge.md as the authoritative source for:
- *   - Pre-loaded coding standards (DRY, KISS, SOLID, Clean Code, Karpathy)
- *   - Session memories from previous work
- *   - Codebase structure graph
- *   - Auto-save protocol instructions
+ * Each file contains self-contained, token-dense XML-structured instructions
+ * optimized for LLM consumption — not human readability.
  *
  * Used by:
  *   - cli.js (setup command)
@@ -34,7 +31,6 @@ const path = require('path');
  */
 function createDiscoveryFiles(projectDir) {
   const created = [];
-  const knowledgeRel = './knowledge.md';
 
   // ── Claude Code (.claude/CLAUDE.md) ──
   const claudeDir = path.join(projectDir, '.claude');
@@ -43,24 +39,40 @@ function createDiscoveryFiles(projectDir) {
     try {
       if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
       fs.writeFileSync(claudePath, [
-        '# Agentic Cortex — Persistent Agent Memory',
+        '<agentic_cortex>',
+        'agentic-cortex is installed. Persistent, self-improving memory across sessions.',
         '',
-        'This project uses agentic-cortex for persistent, self-improving agent memory.',
+        '<bootstrap>agentic-cortex bootstrap</bootstrap>',
+        'Run with zero args at session start. System infers your task from session, git branch, recent activity.',
+        'Returns XML-tagged context: actionable insights, task-relevant memories (hybrid search + reranking),',
+        'warnings, coding standards, codebase graph, machine-wide global vault.',
+        'MCP: memory_bootstrap() — no args needed.',
         '',
-        '**IMPORTANT:** Read `' + knowledgeRel + '` at the start of every session. It contains:',
-        '- Pre-loaded coding standards (DRY, KISS, SOLID, Clean Code, Karpathy)',
-        '- Session memories from previous work',
-        '- Codebase structure graph',
-        '- Auto-save protocol instructions',
+        '<auto_save>',
+        'Save after: decisions, bug fixes, discoveries, learnings, preferences, feature completions, gotchas.',
+        'Command: agentic-cortex save "title" "content"',
+        'Type auto-detected. Override: --type TYPE --importance 1-10 --confidence 0-100 --tags "t1,t2"',
         '',
-        '## Quick Start',
-        '```bash',
-        'agentic-cortex save "title" "content" --type decision --importance 8',
-        'agentic-cortex search "query" --project .',
-        'agentic-cortex context --project .',
-        '```',
+        'Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90',
+        '</auto_save>',
         '',
-        'You MUST save observations automatically whenever you make decisions, fix bugs, discover context, or learn something new.',
+        '<commands>',
+        'bootstrap: agentic-cortex bootstrap',
+        'save: agentic-cortex save "title" "content"',
+        'search: agentic-cortex search "query" --project .',
+        'machine-search: agentic-cortex machine-search "query"',
+        'machine-memory: agentic-cortex machine-memory [--analytics]',
+        'forget: agentic-cortex forget <id> [--hard]',
+        'feedback: agentic-cortex feedback <id> --type helpful|incorrect',
+        'standards: agentic-cortex standards --search "topic"',
+        '</commands>',
+        '',
+        '<memory_types>instruction fact decision goal commitment preference relationship context event learning observation artifact error</memory_types>',
+        '',
+        '<mcp>agentic-cortex-mcp — 39+ tools. memory_bootstrap() first.</mcp>',
+        '',
+        'Read knowledge.md for injected context (coding standards, session memories, codebase graph).',
+        '</agentic_cortex>',
       ].join('\n'), 'utf-8');
       created.push('.claude/CLAUDE.md');
     } catch { /* ignore */ }
@@ -74,28 +86,33 @@ function createDiscoveryFiles(projectDir) {
       if (!fs.existsSync(cursorDir)) fs.mkdirSync(cursorDir, { recursive: true });
       fs.writeFileSync(cursorPath, [
         '---',
-        'description: Auto-injected agent memory system — provides session context, coding standards, and codebase graph',
+        'description: agentic-cortex — persistent self-improving agent memory with bootstrap, auto-save, cross-project immune system',
         'alwaysApply: true',
         '---',
         '',
-        '# Agentic Cortex Memory System',
+        '<agentic_cortex>',
+        '<bootstrap>agentic-cortex bootstrap</bootstrap>',
+        'Zero args. Infers task from session/git/recent activity. Returns structured XML context.',
         '',
-        'This project uses agentic-cortex for persistent agent memory. Read `' + knowledgeRel + '` at session start.',
+        '<auto_save>',
+        'Save automatically after: decisions, bug fixes, discoveries, learnings, preferences.',
+        'Command: agentic-cortex save "title" "content"',
+        'Type auto-detected. Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90',
+        '</auto_save>',
         '',
-        '**Auto-save protocol:** After making decisions, fixing bugs, discovering context, or learning new things, run:',
-        '```bash',
-        'agentic-cortex save "title" "content" --type <type> --importance <1-10>',
-        '```',
+        '<commands>',
+        'bootstrap: agentic-cortex bootstrap',
+        'save: agentic-cortex save "title" "content"',
+        'search: agentic-cortex search "query" --project .',
+        'machine-search: agentic-cortex machine-search "query"',
+        'machine-memory: agentic-cortex machine-memory [--analytics]',
+        'forget: agentic-cortex forget <id> [--hard]',
+        'feedback: agentic-cortex feedback <id> --type helpful|incorrect',
+        'standards: agentic-cortex standards --search "topic"',
+        '</commands>',
         '',
-        '**Search past memories:**',
-        '```bash',
-        'agentic-cortex search "query" --project .',
-        '```',
-        '',
-        '**Get full context (coding standards + sessions + observations):**',
-        '```bash',
-        'agentic-cortex context --project .',
-        '```',
+        '<mcp>agentic-cortex-mcp — 39+ tools. memory_bootstrap() first.</mcp>',
+        '</agentic_cortex>',
       ].join('\n'), 'utf-8');
       created.push('.cursor/rules/agentic-cortex.mdc');
     } catch { /* ignore */ }
@@ -108,22 +125,34 @@ function createDiscoveryFiles(projectDir) {
     try {
       if (!fs.existsSync(opencodeDir)) fs.mkdirSync(opencodeDir, { recursive: true });
       fs.writeFileSync(opencodePath, [
-        '# Agentic Cortex — Auto-Injected Agent Memory',
+        '<agentic_cortex>',
+        'Persistent, self-improving agent memory. Installed globally.',
         '',
-        'agentic-cortex provides persistent, self-improving memory for AI coding agents.',
+        '<bootstrap>agentic-cortex bootstrap</bootstrap>',
+        'Zero args. Infers task. Returns XML context with memories, insights, warnings, global vault, graph.',
         '',
-        '**Read `' + knowledgeRel + '` at session start for full context.**',
+        '<auto_save>',
+        'Save automatically. Never wait. Command: agentic-cortex save "title" "content"',
+        'Type auto-detected. Triggers (type|confidence): decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90',
+        '</auto_save>',
         '',
-        '## Commands',
-        '- `agentic-cortex save "title" "content" --type decision` — Save observations',
-        '- `agentic-cortex search "query"` — Search memories',
-        '- `agentic-cortex context` — Get full context injection',
-        '- `agentic-cortex feedback <id> --type helpful` — Reinforce useful memories',
-        '- `agentic-cortex standards` — View pre-loaded coding standards',
+        '<commands>',
+        'bootstrap: agentic-cortex bootstrap',
+        'save: agentic-cortex save "title" "content"',
+        'search: agentic-cortex search "query" --project .',
+        'machine-search: agentic-cortex machine-search "query"',
+        'machine-memory: agentic-cortex machine-memory [--analytics]',
+        'forget: agentic-cortex forget <id> [--hard]',
+        'feedback: agentic-cortex feedback <id> --type helpful|incorrect',
+        'answer: agentic-cortex answer "question" --project .',
+        'standards: agentic-cortex standards --search "topic"',
+        'daily-summary: agentic-cortex daily-summary --project .',
+        '</commands>',
         '',
-        '## MCP Server',
-        'Start with: `agentic-cortex-mcp`',
-        'Provides 35+ tools including memory_save, memory_search, memory_standards, memory_context.',
+        '<memory_types>instruction fact decision goal commitment preference relationship context event learning observation artifact error</memory_types>',
+        '',
+        '<mcp>agentic-cortex-mcp — 39+ tools. memory_bootstrap() with no args first.</mcp>',
+        '</agentic_cortex>',
       ].join('\n'), 'utf-8');
       created.push('.opencode/agentic-cortex.md');
     } catch { /* ignore */ }

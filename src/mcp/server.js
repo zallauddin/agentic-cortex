@@ -43,7 +43,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -452,6 +452,20 @@ const TOOLS = [
     },
   },
   {
+    name: 'memory_bootstrap',
+    description: '🔑 BOOTSTRAP — Call this FIRST at session start. Returns structured XML context with: task-relevant memories (hybrid search + cross-encoder reranking), LLM-generated actionable insights, recent sessions, warnings about incorrect memories, and collapsed coding standards. The system auto-infers your task — just call memory_bootstrap({}) with no arguments!',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workingOn: { type: 'string', description: 'What you are about to work on. If omitted, the system automatically infers it from your session prompt, git branch, or recent activity. Just call memory_bootstrap({}) — no arguments needed!' },
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+        includeStandards: { type: 'boolean', description: 'Include collapsed coding standards summary (default true)', default: true },
+        includeGraph: { type: 'boolean', description: 'Include codebase graph summary (default true)', default: true },
+        budgetTokens: { type: 'integer', description: 'Approximate token budget for context (default 4000)', default: 4000 },
+      },
+    },
+  },
+  {
     name: 'memory_learn_from_error',
     description: 'Report an error or shortcoming. Saves the error observation and automatically triggers root cause analysis — the system will generate a "learning" observation with a systemic fix. Use this whenever something goes wrong so the system improves over time.',
     inputSchema: {
@@ -494,6 +508,46 @@ const TOOLS = [
         confidenceModifier: { type: 'number', description: 'Multiplier for transferred confidence (default 0.8)', default: 0.8 },
       },
       required: ['fromProject', 'toProject'],
+    },
+  },
+  {
+    name: 'memory_machine_vault',
+    description: '🌐 MACHINE-WIDE MEMORY — View and search the global vault: battle-tested learnings, instructions, and facts promoted from all projects on this machine. Acts as an immune system preventing repeated mistakes across projects. Use query to find relevant global knowledge for your current task.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'What to do: list (show all), search (find by relevance), analytics (cross-project insights)', default: 'list' },
+        query: { type: 'string', description: 'Search query to find relevant global memories (for action=search)' },
+        type: { type: 'string', description: 'Filter by observation type (learning, instruction, fact, decision)' },
+        limit: { type: 'integer', description: 'Max results', default: 20 },
+        minConfidence: { type: 'integer', description: 'Minimum confidence filter' },
+      },
+    },
+  },
+  {
+    name: 'memory_promote_global',
+    description: '⭐ Promote a high-quality observation to the machine-wide global vault. Once promoted, this knowledge will appear in bootstrap for ALL projects, preventing the same mistakes from repeating. Requires confidence >= 85 and predicted_utility >= 10 (or use force=true).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'integer', description: 'Observation ID to promote to global scope' },
+        force: { type: 'boolean', description: 'Force promotion even if quality thresholds not met', default: false },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'memory_search_all',
+    description: '🔍 Search across ALL projects on this machine, not just the current one. Uses hybrid search (FTS5 + semantic) to find relevant memories from any project. Includes global vault memories. Great for finding if you solved a similar problem before in a different project.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query to find relevant memories across all projects' },
+        type: { type: 'string', description: 'Filter by observation type' },
+        limit: { type: 'integer', description: 'Max results', default: 20 },
+        minConfidence: { type: 'integer', description: 'Minimum confidence filter' },
+      },
+      required: ['query'],
     },
   },
   {
@@ -807,6 +861,19 @@ async function callTool(name, args) {
     case 'memory_transfer_knowledge':
       return api.transferKnowledge(args);
 
+    case 'memory_machine_vault': {
+      if (args.action === 'analytics') {
+        return api.machineAnalytics();
+      }
+      return api.getGlobalVault({ query: args.query, type: args.type, limit: args.limit, minConfidence: args.minConfidence });
+    }
+
+    case 'memory_promote_global':
+      return api.promoteToGlobal(args.id, { force: args.force });
+
+    case 'memory_search_all':
+      return api.searchAllProjects(args.query, args);
+
     case 'memory_ingest_transcript':
       return api.ingestTranscript(args.text, args);
 
@@ -878,6 +945,9 @@ async function callTool(name, args) {
         tags: [...(args.tags || []), 'auto-capture', 'mcp'],
       });
     }
+
+    case 'memory_bootstrap':
+      return api.bootstrap(args);
 
     default:
       throw new Error('Unknown tool: ' + name);
