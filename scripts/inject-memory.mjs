@@ -52,11 +52,30 @@ if (!existsSync(memCli)) {
 
 // ─── Layer 1: Session memories from agentic-cortex ──────────────────
 
+// Accept an optional --query argument for adaptive context retrieval.
+// Usage: node inject-memory.mjs [project-path] [--query "what I'm working on"]
+// Supports both --query value and --query=value syntax
+let taskQuery = '';
+const queryIdx = process.argv.findIndex(a => a === '--query' || a.startsWith('--query='));
+if (queryIdx !== -1) {
+  const arg = process.argv[queryIdx];
+  if (arg.startsWith('--query=')) {
+    taskQuery = arg.slice('--query='.length);
+  } else if (queryIdx + 1 < process.argv.length) {
+    taskQuery = process.argv[queryIdx + 1];
+  }
+}
+
 let sessionContext = '';
 try {
-  sessionContext = execFileSync('node', [memCli, 'context', projectPath], {
+  const contextArgs = [memCli, 'context', projectPath];
+  // Pass --query for adaptive context if available (Phase 1: task-aware retrieval)
+  if (taskQuery) {
+    contextArgs.push('--query', taskQuery);
+  }
+  sessionContext = execFileSync('node', contextArgs, {
     encoding: 'utf-8',
-    timeout: 15000,
+    timeout: 30000,
     stdio: ['pipe', 'pipe', 'pipe'],
   }).trim();
 } catch (err) {
@@ -71,11 +90,15 @@ try {
 
 const hasMemories = sessionContext && !sessionContext.includes('_No previous memory for this project yet._');
 
+if (taskQuery) {
+  console.error('[inject-memory] Task-aware context generated for query: "' + taskQuery + '"');
+}
+
 // ─── Layer 2: Codebase structure graph ────────────────────────────
 
 let graphContext = '';
 try {
-  graphContext = execSync(`node "${graphScript}" --output md`, {
+  graphContext = execSync(`node "${graphScript}" --output xml`, {
     encoding: 'utf-8',
     timeout: 30000,
     stdio: ['pipe', 'pipe', 'pipe'],
