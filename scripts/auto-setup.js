@@ -58,7 +58,7 @@ try {
   const graphScript = path.join(__dirname, 'generate-graph.mjs');
   if (fs.existsSync(graphScript)) {
     try {
-      execSync('node "' + graphScript + '" --output md', {
+      execSync('node "' + graphScript + '" --output xml', {
         encoding: 'utf-8',
         timeout: 30000,
         cwd: projectDir,
