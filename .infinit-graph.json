@@ -1,7 +1,7 @@
 {
-  "generated": "2026-07-04T21:25:03.078Z",
-  "fingerprint": "eb9c86a79a0b717c",
-  "fileCount": 36,
+  "generated": "2026-07-04T21:33:27.281Z",
+  "fingerprint": "873c34d638b8e3f0",
+  "fileCount": 38,
   "apiRoutes": [],
   "services": {},
   "prismaSchema": {
@@ -31,6 +31,14 @@
         "imports": 0
       },
       {
+        "path": "scripts/auto-setup.js",
+        "imports": 0
+      },
+      {
+        "path": "scripts/create-discovery-files.js",
+        "imports": 0
+      },
+      {
         "path": "src/api/index.js",
         "imports": 0
       },
@@ -40,14 +48,6 @@
       },
       {
         "path": "src/core/constants.js",
-        "imports": 0
-      },
-      {
-        "path": "src/core/db-path.js",
-        "imports": 0
-      },
-      {
-        "path": "src/core/db.js",
         "imports": 0
       }
     ]
@@ -104,8 +104,39 @@
           "isAsync": true
         }
       ],
-      "size": 51250,
+      "size": 52173,
       "layer": "Service"
+    },
+    "scripts/auto-setup.js": {
+      "path": "scripts/auto-setup.js",
+      "role": "script",
+      "exports": [],
+      "imports": [],
+      "functions": [],
+      "size": 5103,
+      "layer": "Unknown"
+    },
+    "scripts/create-discovery-files.js": {
+      "path": "scripts/create-discovery-files.js",
+      "role": "script",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createDiscoveryFiles",
+          "params": [
+            {
+              "name": "projectDir",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "create-discovery-files.js — Shared module for creating multi-agent discovery files.  Creates files that various AI codin",
+          "isAsync": false
+        }
+      ],
+      "size": 5268,
+      "layer": "Unknown"
     },
     "scripts/generate-graph.mjs": {
       "path": "scripts/generate-graph.mjs",

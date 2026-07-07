@@ -197,12 +197,47 @@ commands.timeline = {
 
 commands.context = {
   desc: 'Generate context pack for a project',
-  args: ['[project]'],
+  args: ['[project]', '[--query QUERY]'],
   parse(args) {
-    return { project: args[0] || process.env.AGENTIC_CORTEX_PROJECT || process.cwd() };
+    const opts = { project: process.env.AGENTIC_CORTEX_PROJECT || process.cwd() };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      else if (args[i] === '--query') opts.query = args.slice(i + 1).join(' ');
+      else if (!opts.project || opts.project === process.env.AGENTIC_CORTEX_PROJECT || opts.project === process.cwd()) {
+        opts.project = args[i];
+      }
+    }
+    return opts;
   },
   async run(db, opts) {
     console.log(await api.context(opts));
+  }
+};
+
+commands.bootstrap = {
+  desc: '🔑 Bootstrap structured context for an agent session. Zero-parameter by default — just run `agentic-cortex bootstrap` with no args. The system infers what you are working on from your session, git branch, or recent activity.',
+  args: ['[--project PATH]', '[--no-standards]', '[--no-graph]', '[--budget N]', '[working-on]'],
+  parse(args) {
+    const opts = { includeStandards: true, includeGraph: true, budgetTokens: 4000 };
+    let workingOn = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      else if (args[i] === '--no-standards') opts.includeStandards = false;
+      else if (args[i] === '--no-graph') opts.includeGraph = false;
+      else if (args[i] === '--budget') opts.budgetTokens = parseInt(args[++i], 10);
+      else workingOn += (workingOn ? ' ' : '') + args[i];
+    }
+    if (workingOn) opts.workingOn = workingOn;
+    return opts;
+  },
+  async run(db, opts) {
+    try {
+      const result = await api.bootstrap(opts);
+      console.log(result);
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
   }
 };
 
@@ -1004,6 +1039,102 @@ commands.transfer = {
     try {
       const result = await api.transferKnowledge(opts);
       console.log(JSON.stringify(result));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+// ─── Machine-Wide Memory: Cross-project immune system ────────────
+
+commands['machine-memory'] = {
+  desc: '🌐 View/search the machine-wide global vault — battle-tested learnings from all projects',
+  args: ['[--list]', '[--search QUERY]', '[--analytics]', '[--type TYPE]', '[--limit N]'],
+  parse(args) {
+    const opts = { action: 'list', limit: 20 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--search') { opts.action = 'search'; opts.query = args.slice(i + 1).join(' '); }
+      else if (args[i] === '--analytics') opts.action = 'analytics';
+      else if (args[i] === '--type') opts.type = args[++i];
+      else if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    if (opts.action === 'analytics') {
+      const stats = api.machineAnalytics();
+      console.log(JSON.stringify(stats, null, 2));
+      return;
+    }
+    if (opts.action === 'search' && opts.query) {
+      const results = await api.getGlobalVault({ query: opts.query, type: opts.type, limit: opts.limit });
+      console.log(JSON.stringify({ results, count: results.length, query: opts.query }, null, 2));
+      return;
+    }
+    // Default: list global vault
+    const results = await api.getGlobalVault({ type: opts.type, limit: opts.limit });
+    if (results.length === 0) {
+      console.log('No global memories yet. High-quality learnings from any project will be auto-promoted here.');
+      console.log('Use `agentic-cortex promote-global <id>` to manually promote an observation.');
+      return;
+    }
+    console.log('# 🌐 Machine-Wide Global Vault (' + results.length + ' battle-tested learnings)\n');
+    const byType = {};
+    for (const r of results) { (byType[r.type] = byType[r.type] || []).push(r); }
+    for (const [t, items] of Object.entries(byType)) {
+      console.log('## ' + t.charAt(0).toUpperCase() + t.slice(1) + '\n');
+      for (const item of items) {
+        console.log('- ' + item.title + ' (★' + (item.predicted_utility || 0) + ', confidence: ' + item.confidence + '%)');
+      }
+      console.log('');
+    }
+    console.log('\nThese learnings automatically appear in bootstrap for ALL projects.');
+    console.log('Use `agentic-cortex machine-search "query"` to search across all projects.');
+  }
+};
+
+commands['promote-global'] = {
+  desc: '⭐ Promote an observation to machine-wide global vault (requires confidence ≥ 85, utility ≥ 10)',
+  args: ['<id>', '[--force]'],
+  parse(args) {
+    const opts = { id: parseInt(args[0], 10), force: false };
+    if (args[1] === '--force') opts.force = true;
+    return opts;
+  },
+  async run(db, opts) {
+    if (isNaN(opts.id)) { console.error('Usage: promote-global <id> [--force]'); process.exit(1); }
+    try {
+      const result = await api.promoteToGlobal(opts.id, { force: opts.force });
+      console.log(JSON.stringify(result));
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+commands['machine-search'] = {
+  desc: '🔍 Search across ALL projects on this machine (not just current)',
+  args: ['<query>', '[--type TYPE]', '[--limit N]', '[--min-confidence N]'],
+  parse(args) {
+    const opts = { query: '', limit: 20, minConfidence: 0 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--type') opts.type = args[++i];
+      else if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+      else if (args[i] === '--min-confidence') opts.minConfidence = parseInt(args[++i], 10);
+      else opts.query += (opts.query ? ' ' : '') + args[i];
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    if (!opts.query) {
+      console.error('Usage: machine-search <query> [--type TYPE] [--limit N] [--min-confidence N]');
+      process.exit(1);
+    }
+    try {
+      const results = await api.searchAllProjects(opts.query, opts);
+      console.log(JSON.stringify({ results, count: results.length, query: opts.query }, null, 2));
     } catch (err) {
       console.error('Error:', err.message);
       process.exit(1);

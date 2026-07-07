@@ -15,7 +15,52 @@ core.selfImprove = selfImprove;
 const standards = require('../core/standards');
 core.standards = standards;
 
-// ─── Access Tracking Helper ───────────────────────────────────────────
+/**
+ * Auto-detect observation type from title + content patterns.
+ * Falls back to 'observation' if no patterns match.
+ *
+ * @param {string} title
+ * @param {string} content
+ * @returns {string} Detected type
+ */
+function _detectType(title, content) {
+  const text = (title + ' ' + content).toLowerCase();
+
+  // Error patterns (strongest signal first)
+  if (/\b(error|exception|crash|fail(?:ed|ure)?|bug|broke|broken|stack trace|segfault|panic|runtime error)\b/i.test(text)) {
+    return 'error';
+  }
+  // Decision patterns
+  if (/\b(chose|decided|going with|will use|opted|selected|picked|settled on|went with)\b/i.test(text)) {
+    return 'decision';
+  }
+  // Learning patterns
+  if (/\b(learned|found that|realized|discovered|figured out|turns out|lesson|insight|noticed that)\b/i.test(text)) {
+    return 'learning';
+  }
+  // Preference patterns
+  if (/\b(prefer|rather than|instead of|don't like|like using|favorite|go-to)\b/i.test(text)) {
+    return 'preference';
+  }
+  // Fact/context patterns
+  if (/\b(project uses|configured with|running on|database is|powered by|built with|depends on|requires|needs)\b/i.test(text)) {
+    return 'fact';
+  }
+  // Instruction patterns
+  if (/\b(step|procedure|how to|guide|workflow|recipe|process|pipeline|run this|do this|execute)\b/i.test(text)) {
+    return 'instruction';
+  }
+  // Event patterns
+  if (/\b(published|released|deployed|launched|completed|finished|merged|shipped|announced|rolled out)\b/i.test(text)) {
+    return 'event';
+  }
+  // Goal patterns
+  if (/\b(goal|objective|target|aim|milestone|plan to|want to|need to achieve)\b/i.test(text)) {
+    return 'goal';
+  }
+
+  return 'observation';
+}
 
 /**
  * Batch-update access_count and last_accessed_at for observation IDs.
@@ -86,7 +131,7 @@ async function save(opts) {
   const db = _getDB();
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
   const session = opts.session || process.env.AGENTIC_CORTEX_SESSION || null;
-  const type = opts.type || 'observation';
+  const type = opts.type || _detectType(opts.title || '', opts.content);
   const agentId = opts.agentId || opts.agent_id || null;
 
   if (!core.constants.VALID_TYPES.has(type)) {
@@ -555,6 +600,11 @@ async function context(opts) {
   const db = _getDB();
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
 
+  // If a query is provided, use the new bootstrap-style context
+  if (opts.query) {
+    return _buildBootstrapContext(db, project, opts.query, opts);
+  }
+
   const sessions = db.prepare(
     'SELECT id, session_id, project_name, user_prompt, summary, started_at, ended_at FROM sessions WHERE project_path = ? ORDER BY started_at DESC LIMIT 5'
   ).all(project);
@@ -565,7 +615,7 @@ async function context(opts) {
 
   let pack = '# Agentic Cortex - Project Context\n\n';
 
-  // #3 Coding standards: always injected, phase-aware, pre-loaded
+  // Coding standards: always injected, phase-aware, pre-loaded
   pack += standards.getStandardsContext();
   pack += '\n---\n\n';
 
@@ -577,30 +627,6 @@ async function context(opts) {
       pack += '- **' + d + '** (' + st + '): ' + (s.summary || s.user_prompt || 'No summary') + '\n';
     }
     pack += '\n';
-  }
-  // #2 Adaptive context: if query provided, semantic-match + warnings
-  if (opts.query) {
-    try {
-      const relevant = await search(opts.query, { project, limit: 10 });
-      if (relevant.length > 0) {
-        pack += '## Relevant Memories (matched: "' + opts.query + '")\n';
-        for (const r of relevant.slice(0, 10)) {
-          pack += '- [' + r.type.toUpperCase() + '] ' + (r.title || r.preview) + ' (utility: ' + (r.predicted_utility || 0) + ')\n';
-        }
-        pack += '\n';
-      }
-    } catch {}
-
-    const warnings = db.prepare(
-      "SELECT id, type, title, content FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE '%incorrect%' ORDER BY created_at DESC LIMIT 5"
-    ).all(project);
-    if (warnings.length > 0) {
-      pack += '## ⚠️ Previously Incorrect / Unreliable\n';
-      for (const w of warnings) {
-        pack += '- [' + w.type.toUpperCase() + '] ' + (w.title || w.content.slice(0, 80)) + '\n';
-      }
-      pack += '\n';
-    }
   }
 
   if (observations.length) {
@@ -617,6 +643,21 @@ async function context(opts) {
       pack += '\n';
     }
   }
+
+  // Warnings: previously incorrect/unreliable memories
+  try {
+    const warnings = db.prepare(
+      "SELECT id, type, title, content FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE '%incorrect%' ORDER BY created_at DESC LIMIT 5"
+    ).all(project);
+    if (warnings.length > 0) {
+      pack += '## ⚠️ Previously Incorrect / Unreliable\n';
+      for (const w of warnings) {
+        pack += '- [' + w.type.toUpperCase() + '] ' + (w.title || w.content.slice(0, 80)) + '\n';
+      }
+      pack += '\n';
+    }
+  } catch {}
+
   if (!sessions.length && !observations.length) {
     pack += '_No previous memory for this project yet._\n';
   }
@@ -625,6 +666,539 @@ async function context(opts) {
   _trackAccess(db, observations.map(o => o.id));
 
   return pack;
+}
+
+// ─── Bootstrap Context (Phase 1+2: Structured, LLM-Optimized) ────────
+
+/**
+ * Build a structured, token-budget-aware context optimized for LLM consumption.
+ * Uses XML-style tagging for hierarchical parsing, full content (not previews),
+ * hybrid search + reranking for task-relevant memories, and LLM-powered
+ * memory summarization for actionable insights.
+ *
+ * Called automatically by context() when opts.query is provided, and exposed
+ * as a standalone function for the memory_bootstrap MCP tool.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project - Project path
+ * @param {string} workingOn - What the agent is working on (query for search)
+ * @param {Object} [opts] - { includeStandards?, includeGraph?, budgetTokens? }
+ * @returns {Promise<string>} Structured XML-tagged context
+ */
+async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
+  const includeStandards = opts.includeStandards !== false; // default true
+  const includeGraph = opts.includeGraph !== false;          // default true
+  const budgetTokens = opts.budgetTokens || 4000;
+  const now = new Date().toISOString();
+
+  let output = `<agentic_cortex_context project="${_xmlEscape(project)}" generated="${now}" task="${_xmlEscape(workingOn)}">\n`;
+  let tokenEstimate = 0;
+
+  // ── Layer 0: Auto-start session if none active ──
+  let sessionId = process.env.AGENTIC_CORTEX_SESSION || null;
+  if (!sessionId) {
+    try {
+      const sess = startSession({ project, prompt: workingOn });
+      sessionId = sess.session_id;
+      process.env.AGENTIC_CORTEX_SESSION = sessionId;
+      output += `  <session_started id="${_xmlEscape(sessionId)}" />\n`;
+    } catch { /* best-effort */ }
+  }
+
+  // ── Layer 1: Actionable Insights (LLM summary of relevant memories) ──
+  try {
+    const insights = await _summarizeMemories(db, project, workingOn);
+    if (insights) {
+      output += `  <actionable_insights>\n    ${_xmlEscape(insights)}\n  </actionable_insights>\n`;
+      tokenEstimate += Math.ceil(insights.length / 4);
+    }
+  } catch { /* best-effort */ }
+
+  // ── Layer 2: Task-Relevant Memories (hybrid search + reranking) ──
+  try {
+    const queryVec = await core.embedding.computeEmbedding(workingOn).catch(() => null);
+    let relevant;
+    if (queryVec) {
+      relevant = core.search.hybridSearch(db, workingOn, queryVec, { project, limit: 30 });
+      // Apply cross-encoder reranking for precision
+      try {
+        relevant = await core.search.rerankResults(workingOn, relevant);
+      } catch { /* use hybrid scores as-is */ }
+    } else {
+      relevant = core.search.keywordSearch(db, { query: workingOn, project, limit: 20 });
+    }
+
+    if (relevant && relevant.length > 0) {
+      // Fetch full content for top results
+      const topIds = relevant.slice(0, 12).map(r => r.id);
+      const placeholders = topIds.map(() => '?').join(',');
+      const fullRows = db.prepare(
+        'SELECT id, agent_id, type, title, content, tags, importance, confidence, provenance, predicted_utility, freshness_score, created_at FROM observations WHERE id IN (' + placeholders + ')'
+      ).all(...topIds);
+      const fullMap = new Map(fullRows.map(r => [r.id, r]));
+
+      output += '  <relevant_memories count="' + Math.min(relevant.length, 12) + '">\n';
+
+      // Split into critical (confidence >= 85) and important tiers
+      const critical = [];
+      const important = [];
+      for (const r of relevant.slice(0, 12)) {
+        const full = fullMap.get(r.id);
+        if (!full) continue;
+        const score = r.rerank_score || r.combined_score || r.semantic_score || 0;
+        const confidence = full.confidence || 100;
+        const tier = (confidence >= 85 && score >= 0.6) ? critical : important;
+        tier.push({ ...full, relevance_score: Math.round(score * 1000) / 1000 });
+      }
+
+      if (critical.length > 0) {
+        output += '    <tier priority="critical">\n';
+        for (const mem of critical.slice(0, 5)) {
+          const tags = _safeJsonParse(mem.tags, []);
+          const tagsStr = tags.length ? ' tags="' + _xmlEscape(tags.join(',')) + '"' : '';
+          output += `      <memory type="${_xmlEscape(mem.type)}" confidence="${mem.confidence}" utility="${mem.predicted_utility || 0}" relevance="${mem.relevance_score}" freshness="${mem.freshness_score || 50}"${tagsStr}>\n`;
+          output += `        <title>${_xmlEscape(mem.title || '(untitled)')}</title>\n`;
+          output += `        <content>${_xmlEscape(_truncateContent(mem.content, 600))}</content>\n`;
+          output += `      </memory>\n`;
+          tokenEstimate += Math.ceil(((mem.title || '').length + _truncateContent(mem.content, 600).length) / 4);
+        }
+        output += '    </tier>\n';
+      }
+
+      if (important.length > 0) {
+        output += '    <tier priority="important">\n';
+        for (const mem of important.slice(0, 7)) {
+          const tags = _safeJsonParse(mem.tags, []);
+          const tagsStr = tags.length ? ' tags="' + _xmlEscape(tags.join(',')) + '"' : '';
+          output += `      <memory type="${_xmlEscape(mem.type)}" confidence="${mem.confidence}" utility="${mem.predicted_utility || 0}" relevance="${mem.relevance_score}"${tagsStr}>\n`;
+          output += `        <title>${_xmlEscape(mem.title || '(untitled)')}</title>\n`;
+          output += `        <content>${_xmlEscape(_truncateContent(mem.content, 400))}</content>\n`;
+          output += `      </memory>\n`;
+          tokenEstimate += Math.ceil(((mem.title || '').length + _truncateContent(mem.content, 400).length) / 4);
+        }
+        output += '    </tier>\n';
+      }
+      output += '  </relevant_memories>\n';
+
+      _trackAccess(db, fullRows.map(r => r.id));
+    }
+  } catch { /* hybrid search unavailable — skip layer */ }
+
+  // ── Layer 3: Recent Sessions ──
+  try {
+    const sessions = db.prepare(
+      'SELECT session_id, user_prompt, summary, started_at, ended_at FROM sessions WHERE project_path = ? ORDER BY started_at DESC LIMIT 3'
+    ).all(project);
+    if (sessions.length > 0) {
+      output += '  <recent_sessions>\n';
+      for (const s of sessions) {
+        const status = s.ended_at ? 'completed' : 'active';
+        output += `    <session id="${_xmlEscape(s.session_id)}" status="${status}" started="${s.started_at || '?'}">\n`;
+        output += `      <summary>${_xmlEscape(s.summary || s.user_prompt || 'No summary')}</summary>\n`;
+        output += `    </session>\n`;
+        tokenEstimate += Math.ceil(((s.summary || s.user_prompt || '').length) / 4);
+      }
+      output += '  </recent_sessions>\n';
+    }
+  } catch {}
+
+  // ── Layer 4: Warnings (incorrect/unreliable memories) ──
+  try {
+    const warnings = db.prepare(
+      "SELECT id, type, title, content FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE '%incorrect%' ORDER BY created_at DESC LIMIT 5"
+    ).all(project);
+    if (warnings.length > 0) {
+      output += '  <warnings>\n';
+      for (const w of warnings) {
+        output += `    <warning type="${_xmlEscape(w.type)}" id="${w.id}">${_xmlEscape(w.title || w.content.slice(0, 120))}</warning>\n`;
+      }
+      output += '  </warnings>\n';
+      tokenEstimate += 100;
+    }
+  } catch {}
+
+  // ── Layer 5: Coding Standards (collapsed/summarized) ──
+  if (includeStandards) {
+    const standardsSummary = _getStandardsSummary();
+    output += `  <coding_standards collapsed="true">\n    <summary>${_xmlEscape(standardsSummary)}</summary>\n  </coding_standards>\n`;
+    tokenEstimate += Math.ceil(standardsSummary.length / 4);
+  }
+
+  // ── Layer 5.5: Global Vault (machine-wide immune system) ──
+  try {
+    const globalMemories = db.prepare(
+      'SELECT id, type, title, content, confidence, predicted_utility, freshness_score, tags FROM observations WHERE project_path = ? AND is_active = 1 ORDER BY (predicted_utility + COALESCE(freshness_score, 50)) DESC LIMIT 20'
+    ).all('__global__');
+
+    if (globalMemories.length > 0) {
+      // Filter: find global memories semantically relevant to workingOn
+      let relevantGlobal = globalMemories;
+      try {
+        const globalVec = await core.embedding.computeEmbedding(workingOn).catch(() => null);
+        if (globalVec) {
+          const scored = globalMemories.map(m => {
+            // Score by title match (fast keyword check) + utility
+            const titleWords = (m.title || '').toLowerCase().split(/\s+/);
+            const queryWords = workingOn.toLowerCase().split(/\s+/);
+            const wordMatch = titleWords.filter(w => queryWords.some(q => q.includes(w) || w.includes(q))).length;
+            const keywordScore = wordMatch / Math.max(queryWords.length, 1);
+            return { ...m, _relevance: keywordScore * 0.4 + ((m.predicted_utility || 0) / 30) * 0.3 + (m.confidence / 100) * 0.3 };
+          });
+          scored.sort((a, b) => b._relevance - a._relevance);
+          relevantGlobal = scored.slice(0, 5);
+        }
+      } catch { /* use utility ranking */ }
+
+      if (relevantGlobal.length > 0) {
+        output += '  <global_vault count="' + relevantGlobal.length + '">\n';
+        // Always show a summary line explaining the concept
+        const vaultSize = db.prepare('SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1').get('__global__').c;
+        output += `    <summary>Machine-wide immune system — ${vaultSize} battle-tested learnings from all projects. These prevented mistakes from repeating across projects.</summary>\n`;
+        for (const mem of relevantGlobal.slice(0, 3)) {
+          const tags = _safeJsonParse(mem.tags, []);
+          const tagsStr = tags.filter(t => !['machine-global', 'cross-project', 'auto-promoted'].includes(t)).join(',');
+          output += `    <global_rule type="${_xmlEscape(mem.type)}" confidence="${mem.confidence}" utility="${mem.predicted_utility || 0}" original_tags="${_xmlEscape(tagsStr)}">\n`;
+          output += `      <title>${_xmlEscape(mem.title || '(untitled)')}</title>\n`;
+          output += `      <content>${_xmlEscape(_truncateContent(mem.content, 300))}</content>\n`;
+          output += `    </global_rule>\n`;
+          tokenEstimate += Math.ceil(((mem.title || '').length + _truncateContent(mem.content, 300).length) / 4);
+        }
+        output += '  </global_vault>\n';
+      }
+      // Track access for global memories shown in bootstrap
+      _trackAccess(db, relevantGlobal.map(r => r.id));
+    }
+  } catch { /* global vault query failed — skip */ }
+
+  // ── Layer 6: Codebase Graph (budget-limited) ──
+  if (includeGraph) {
+    try {
+      const graphRemaining = Math.max(200, budgetTokens - tokenEstimate - 300);
+      const graphBlock = _getGraphSummary(project, graphRemaining);
+      if (graphBlock) {
+        output += `  ${graphBlock}\n`;
+      }
+    } catch {}
+  }
+
+  output += '</agentic_cortex_context>';
+
+  // ── Layer 7: Usage instructions (appended after XML block) ──
+  output += '\n\n<!--\nINSTRUCTIONS: The above is your project memory context. Use it to:\n1. Avoid repeating past mistakes (check <warnings>)\n2. Apply previous learnings (check <actionable_insights>)\n3. Search deeper if needed: agentic-cortex search "your query" --project .\n4. Save new observations: agentic-cortex save "title" "content" --type decision\n5. Get full coding standard details: agentic-cortex standards --search "topic"\n-->\n';
+
+  return output;
+}
+
+/**
+ * Summarize task-relevant memories into actionable insights using LLM.
+ * Falls back to template-based summary if LLM is unavailable.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project
+ * @param {string} workingOn
+ * @returns {Promise<string>} 1-3 sentence actionable insight
+ */
+async function _summarizeMemories(db, project, workingOn) {
+  // Get top observations for this project ranked by utility + freshness
+  const topObs = db.prepare(
+    'SELECT type, title, content, confidence, predicted_utility, freshness_score FROM observations WHERE project_path = ? AND is_active = 1 AND tags NOT LIKE \'%coding-standard%\' ORDER BY (predicted_utility + COALESCE(freshness_score, 50)) DESC LIMIT 8'
+  ).all(project);
+
+  if (topObs.length === 0) return null;
+
+  const obsText = topObs.map((o, i) =>
+    `${i + 1}. [${o.type}] ${o.title || '(untitled)'}: ${o.content.slice(0, 200)}`
+  ).join('\n');
+
+  try {
+    const { callLLM } = require('../core/session');
+    const prompt = `You are a context summarizer for a coding agent. Given the agent is about to work on "${workingOn}" and has the following past memories, produce 2-4 actionable sentences. Focus on: what mistakes to avoid, what decisions were made, what patterns worked. Be specific. Output plain text, no formatting.\n\nPast memories:\n${obsText}`;
+
+    const result = await callLLM([
+      { role: 'system', content: 'You produce concise, actionable context summaries for coding agents. Output 2-4 sentences, plain text.' },
+      { role: 'user', content: prompt },
+    ], { temperature: 0.2, maxTokens: 400, timeout: 5000 });
+
+    if (result) {
+      const cleaned = result.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      if (cleaned && cleaned.length > 10) return cleaned;
+    }
+  } catch { /* LLM unavailable */ }
+
+  // Fallback: template-based summary
+  const byType = {};
+  for (const o of topObs.slice(0, 5)) {
+    (byType[o.type] = byType[o.type] || []).push(o.title || o.content.slice(0, 60));
+  }
+  const parts = [];
+  if (byType.decision) parts.push('Past decisions: ' + byType.decision.slice(0, 2).join('; '));
+  if (byType.error) parts.push('Errors encountered: ' + byType.error.slice(0, 2).join('; '));
+  if (byType.learning) parts.push('Learnings: ' + byType.learning.slice(0, 2).join('; '));
+  if (byType.preference) parts.push('Preferences: ' + byType.preference.slice(0, 2).join('; '));
+
+  if (parts.length === 0) return 'No specific insights from past sessions. Proceed with caution.';
+  return parts.join('. ') + '.';
+}
+
+/**
+ * Get a condensed summary of coding standards (titles + categories only).
+ * Saves ~2000 tokens vs the full standards block.
+ *
+ * @returns {string}
+ */
+function _getStandardsSummary() {
+  const phases = [
+    { key: 'all', label: 'Always Active' },
+    { key: 'planning', label: 'Planning' },
+    { key: 'implementation', label: 'Implementation' },
+    { key: 'review', label: 'Review' },
+  ];
+  let summary = 'Key rules: ';
+  const rules = [];
+  for (const phase of phases) {
+    const items = standards.ALL_STANDARDS.filter(s => s.phase === phase.key);
+    for (const s of items.slice(0, 4)) {
+      rules.push(`[${s.category}] ${s.title}`);
+    }
+  }
+  summary += rules.slice(0, 12).join(' | ');
+  summary += '. Use `agentic-cortex standards --search "topic"` for full details on any standard.';
+  return summary;
+}
+
+/**
+ * Get a structured XML codebase graph summary limited to a token budget.
+ * Reads from .infinit-graph.json cache if available, or extracted from knowledge.md.
+ * Returns real XML (not escaped) for direct embedding in bootstrap context.
+ *
+ * @param {string} project
+ * @param {number} tokenBudget - Approximate token budget for graph
+ * @returns {string|null}
+ */
+function _getGraphSummary(project, tokenBudget) {
+  const fs = require('fs');
+  const path = require('path');
+  const graphPath = path.join(project, '.infinit-graph.json');
+
+  // Try the JSON cache first
+  if (fs.existsSync(graphPath)) {
+    try {
+      const graph = JSON.parse(fs.readFileSync(graphPath, 'utf-8'));
+      let xml = `<codebase_graph files="${graph.fileCount}" api_routes="${(graph.apiRoutes || []).length}" generated="${graph.generated || '?'}">`;
+
+      if (graph.paradigms && graph.paradigms.length > 0) {
+        let stackStr = '';
+        if (graph.techStack) {
+          const ts = graph.techStack;
+          const parts = [];
+          if (ts.runtime && ts.runtime.length) parts.push('Lang: ' + ts.runtime.join(','));
+          if (ts.frameworks && ts.frameworks.length) parts.push('Framework: ' + ts.frameworks.join(','));
+          if (ts.databases && ts.databases.length) parts.push('DB: ' + ts.databases.join(','));
+          if (ts.tools && ts.tools.length) parts.push('Tools: ' + ts.tools.join(','));
+          if (parts.length) stackStr = ` stack="${_xmlEscape(parts.join(' | '))}"`;
+        }
+        xml += `<architecture patterns="${_xmlEscape(graph.paradigms.join(', '))}"${stackStr}/>`;
+      }
+
+      if (graph.layerMap && graph.layerMap.requestPath) {
+        const lc = graph.layerMap.layerCounts;
+        xml += `<layers dataflow="${_xmlEscape(graph.layerMap.requestPath)}" ui="${lc.UI}" api="${lc.API}" service="${lc.Service}" data="${lc.Data}"/>`;
+        if (graph.layerMap.hubFiles && graph.layerMap.hubFiles.length > 0) {
+          xml += `<hub_files>${graph.layerMap.hubFiles.slice(0, 8).map(h => _xmlEscape(h.path)).join(', ')}</hub_files>`;
+        }
+      }
+
+      // Include key libraries (most import count)
+      const libEntries = Object.entries(graph.graph || {})
+        .filter(([, n]) => n.role === 'library')
+        .sort(([, a], [, b]) => (b.imports?.length || 0) - (a.imports?.length || 0))
+        .slice(0, 12);
+      if (libEntries.length > 0) {
+        xml += '<libraries>';
+        for (const [libPath, node] of libEntries) {
+          const exports = (node.exports || []).filter(e => !e.startsWith('model:')).slice(0, 8);
+          const expStr = exports.length ? ` exports="${_xmlEscape(exports.join(','))}"` : '';
+          let fnStr = '';
+          if (node.functions && node.functions.length > 0) {
+            const sigs = node.functions.slice(0, 5).map(f => f.name + '(' + (f.params || []).map(p => p.name).join(',') + ')');
+            fnStr = ` fns="${_xmlEscape(sigs.join(';'))}"`;
+          }
+          xml += `<file path="${_xmlEscape(libPath)}"${expStr}${fnStr}/>`;
+        }
+        xml += '</libraries>';
+      }
+
+      // Scripts
+      const scriptEntries = Object.entries(graph.graph || {}).filter(([, n]) => n.role === 'script');
+      if (scriptEntries.length > 0) {
+        xml += '<scripts>';
+        for (const [p] of scriptEntries.slice(0, 10)) xml += `<file path="${_xmlEscape(p)}"/>`;
+        xml += '</scripts>';
+      }
+
+      xml += '</codebase_graph>';
+      // Truncate to budget safely — ensure we close the root tag
+      const maxChars = tokenBudget * 4;
+      if (xml.length > maxChars) {
+        const closingLen = '</codebase_graph>'.length;
+        const safeLen = Math.max(100, maxChars - closingLen);
+        xml = xml.slice(0, safeLen) + '</codebase_graph>';
+      }
+      return xml;
+    } catch {
+      // JSON parse failed, try knowledge.md fallback
+    }
+  }
+
+  // Fallback: extract from knowledge.md (markdown graph -> convert to XML)
+  try {
+    const knowledgePath = path.join(project, 'knowledge.md');
+    if (fs.existsSync(knowledgePath)) {
+      const content = fs.readFileSync(knowledgePath, 'utf-8');
+      // Try to find XML codebase_graph block first (new format)
+      const xmlMatch = content.match(/<codebase_graph[\s\S]*?<\/codebase_graph>/);
+      if (xmlMatch) return xmlMatch[0].slice(0, tokenBudget * 4);
+
+      // Fall back to old markdown format
+      const m = content.match(/## Codebase Graph\n([\s\S]*?)(?:\n## |\n<!--|$)/);
+      if (m) {
+        const text = m[1].trim().slice(0, tokenBudget * 4);
+        return `<codebase_graph><raw>${_xmlEscape(text)}</raw></codebase_graph>`;
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+/**
+ * Escape text for safe inclusion in XML content.
+ * @param {string} text
+ * @returns {string}
+ */
+function _xmlEscape(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Truncate content to maxChars while preserving word boundaries.
+ * @param {string} content
+ * @param {number} maxChars
+ * @returns {string}
+ */
+function _truncateContent(content, maxChars) {
+  if (!content || content.length <= maxChars) return content || '';
+  const truncated = content.slice(0, maxChars);
+  const lastSpace = truncated.lastIndexOf(' ');
+  return (lastSpace > maxChars * 0.8 ? truncated.slice(0, lastSpace) : truncated) + '...';
+}
+
+/**
+ * Parse JSON safely, returning a default on failure.
+ * @param {string} json
+ * @param {*} defaultVal
+ * @returns {*}
+ */
+function _safeJsonParse(json, defaultVal) {
+  try { return JSON.parse(json); } catch { return defaultVal; }
+}
+
+/**
+ * Bootstrap context for an agent session — the main entry point for agents.
+ * Auto-starts a session, retrieves task-relevant memories via hybrid search
+ * with cross-encoder reranking, generates actionable insights via LLM, and
+ * returns a structured XML-tagged context block optimized for LLM consumption.
+ *
+ * **Zero-parameter by default**: Just run `agentic-cortex bootstrap` with no
+ * arguments. The system infers what you're working on from your session,
+ * git branch, and recent activity. No need to describe your task.
+ *
+ * @param {Object} [opts] - { workingOn?: string, project?: string, includeStandards?: boolean, includeGraph?: boolean, budgetTokens?: number }
+ * @returns {Promise<string>} Structured XML-tagged context
+ */
+async function bootstrap(opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+
+  // Infer what the agent is working on if not explicitly provided
+  const workingOn = opts.workingOn || _inferTask(db, project);
+
+  return _buildBootstrapContext(db, project, workingOn, opts);
+}
+
+/**
+ * Infer what the agent is currently working on.
+ * Tries multiple signals in priority order:
+ *   1. Active session's user_prompt (most reliable)
+ *   2. Git branch name (run `git branch --show-current`)
+ *   3. Most recent observation title
+ *   4. Falls back to generic project name
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project
+ * @returns {string} Inferred task description
+ */
+function _inferTask(db, project) {
+  // Signal 1: Active session's user prompt
+  try {
+    const sid = process.env.AGENTIC_CORTEX_SESSION;
+    if (sid) {
+      const session = db.prepare(
+        'SELECT user_prompt FROM sessions WHERE session_id = ? AND ended_at IS NULL'
+      ).get(sid);
+      if (session && session.user_prompt && session.user_prompt.length > 3) {
+        return session.user_prompt;
+      }
+    }
+    // Fall back to most recent session prompt
+    const lastSession = db.prepare(
+      'SELECT user_prompt FROM sessions WHERE project_path = ? ORDER BY started_at DESC LIMIT 1'
+    ).get(project);
+    if (lastSession && lastSession.user_prompt && lastSession.user_prompt.length > 3) {
+      return lastSession.user_prompt;
+    }
+  } catch {}
+
+  // Signal 2: Git branch name
+  try {
+    const { execSync } = require('child_process');
+    const branch = execSync('git branch --show-current', {
+      encoding: 'utf-8',
+      cwd: project,
+      timeout: 3000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    if (branch && branch.length > 1 && branch !== 'main' && branch !== 'master') {
+      // Convert branch name to readable task: "fix-login-bug" → "fix login bug"
+      return branch.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+  } catch {}
+
+  // Signal 3: Most recent observation
+  try {
+    const lastObs = db.prepare(
+      'SELECT title, content FROM observations WHERE project_path = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1'
+    ).get(project);
+    if (lastObs) {
+      const text = (lastObs.title || lastObs.content || '').slice(0, 120);
+      if (text.length > 5) return text;
+    }
+  } catch {}
+
+  // Signal 4: Project name
+  try {
+    const path = require('path');
+    return 'working on ' + path.basename(project);
+  } catch {
+    return 'working on this project';
+  }
 }
 
 // ─── Lifecycle ────────────────────────────────────────────────────────
@@ -1115,6 +1689,282 @@ async function transferKnowledge(opts) {
   return { transferred, skipped };
 }
 
+// ─── Machine-Wide / Global Memory (Cross-Project Immune System) ──────
+
+/**
+ * Automatically promote a high-confidence, high-utility observation
+ * to machine-wide (global) scope. Called during reflection/consolidation
+ * and also exposed as a tool for manual promotion.
+ *
+ * Global memories act as a "machine-wide immune system" — if you learned
+ * it once, you never make that mistake again anywhere on this machine.
+ *
+ * @param {number} id - Observation ID to promote
+ * @param {Object} [opts] - { force?: boolean }
+ * @returns {Promise<{id: number, status: string, previousScope: string}>}
+ */
+async function promoteToGlobal(id, opts = {}) {
+  const db = _getDB();
+  const obs = db.prepare(
+    'SELECT id, project_path, type, title, content, confidence, predicted_utility, project_scope, tags FROM observations WHERE id = ? AND is_active = 1'
+  ).get(id);
+  if (!obs) throw new Error('Active observation not found: ' + id);
+
+  // Only promote if high enough quality, unless forced
+  if (!opts.force) {
+    if (obs.confidence < 85) {
+      throw new Error('Confidence too low for global promotion: ' + obs.confidence + '. Minimum: 85. Use --force to override.');
+    }
+    if ((obs.predicted_utility || 0) < 10) {
+      throw new Error('Utility too low for global promotion: ' + (obs.predicted_utility || 0) + '. Minimum: 10. Use --force to override.');
+    }
+  }
+
+  const previousScope = obs.project_scope || 'local';
+  if (previousScope === 'global') {
+    return { id, status: 'already_global', previousScope };
+  }
+
+  // Move the observation to the global namespace
+  const newTags = [...new Set([...(JSON.parse(obs.tags || '[]')), 'machine-global', 'cross-project'])];
+  db.prepare(
+    'UPDATE observations SET project_path = ?, project_scope = ?, tags = ?, agent_id = NULL WHERE id = ?'
+  ).run('__global__', 'global', JSON.stringify(newTags), id);
+
+  return { id, status: 'promoted_to_global', previousScope };
+}
+
+/**
+ * Auto-promote eligible high-quality learnings and instructions to global scope.
+ * Called during reflection to automatically grow the machine-wide knowledge base.
+ *
+ * Uses RELATIVE thresholds (not hardcoded values):
+ *   - Confidence: top 20% of all active learnings in this project (min floor: 70)
+ *   - Utility: > 2x the project's median predicted_utility (min floor: 5)
+ *
+ * This self-tunes as the project grows — what qualifies as "high quality"
+ * naturally increases over time.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} [project] - Optional: only promote from this project
+ * @returns {{ promoted: number, candidates: number, thresholds: {confidence: number, utility: number} }}
+ */
+function autoPromoteGlobal(db, project) {
+  // Compute RELATIVE thresholds from project data
+  let confThreshold = 70; // floor
+  let utilThreshold = 5;   // floor
+
+  try {
+    // Get confidence at 80th percentile of active learnings in this project
+    const projectFilter = project ? ' AND project_path = ?' : '';
+    const projectParams = project ? [project] : [];
+
+    const confRows = db.prepare(
+      `SELECT confidence FROM observations WHERE is_active = 1 AND type IN ('learning','instruction','fact','decision') AND project_scope = 'local'${projectFilter} ORDER BY confidence ASC`
+    ).all(...projectParams);
+    if (confRows.length >= 5) {
+      const p80Idx = Math.floor(confRows.length * 0.8);
+      confThreshold = Math.max(70, confRows[p80Idx]?.confidence || 70);
+    }
+
+    // Get median utility
+    const utilRows = db.prepare(
+      `SELECT predicted_utility FROM observations WHERE is_active = 1${projectFilter} ORDER BY predicted_utility ASC`
+    ).all(...projectParams);
+    if (utilRows.length >= 5) {
+      const medianIdx = Math.floor(utilRows.length / 2);
+      const median = utilRows[medianIdx]?.predicted_utility || 0;
+      utilThreshold = Math.max(5, Math.ceil(median * 2));
+    }
+  } catch { /* use floor thresholds */ }
+
+  let sql = `SELECT id, type, title, confidence, predicted_utility
+    FROM observations
+    WHERE is_active = 1
+      AND project_scope = 'local'
+      AND type IN ('learning', 'instruction', 'fact', 'decision')
+      AND confidence >= ?
+      AND predicted_utility >= ?
+      AND tags NOT LIKE '%machine-global%'`;
+  const params = [confThreshold, utilThreshold];
+
+  if (project) {
+    sql += ' AND project_path = ?';
+    params.push(project);
+  }
+
+  sql += ' ORDER BY confidence DESC, predicted_utility DESC LIMIT 20';
+  const candidates = db.prepare(sql).all(...params);
+
+  let promoted = 0;
+  for (const c of candidates) {
+    try {
+      const existing = db.prepare(
+        'SELECT id FROM observations WHERE project_path = ? AND title = ? AND is_active = 1'
+      ).get('__global__', c.title);
+      if (existing) continue;
+
+      const obs = db.prepare('SELECT * FROM observations WHERE id = ?').get(c.id);
+      const newTags = [...new Set([...(JSON.parse(obs.tags || '[]')), 'machine-global', 'cross-project', 'auto-promoted'])];
+      db.prepare(
+        'UPDATE observations SET project_path = ?, project_scope = ?, tags = ? WHERE id = ?'
+      ).run('__global__', 'global', JSON.stringify(newTags), c.id);
+      promoted++;
+    } catch { /* skip individual failures */ }
+  }
+
+  if (promoted > 0) {
+    console.error('[agentic-cortex] Auto-promoted %d memories to machine-wide global vault (from %d candidates, conf≥%d, util≥%d)', promoted, candidates.length, confThreshold, utilThreshold);
+  }
+
+  return { promoted, candidates: candidates.length, thresholds: { confidence: confThreshold, utility: utilThreshold } };
+}
+
+/**
+ * Get the machine-wide global vault — all observations promoted to global scope.
+ * These are battle-tested learnings, instructions, and facts that apply
+ * across all projects on this machine.
+ *
+ * @param {Object} [opts] - { type?, limit?, minConfidence?, query? }
+ * @returns {Promise<Object[]>}
+ */
+async function getGlobalVault(opts = {}) {
+  const db = _getDB();
+  const limit = opts.limit || 50;
+
+  let sql = `SELECT id, type, title, content, tags, confidence, predicted_utility,
+    freshness_score, created_at, steps, triggers, preconditions, postconditions, embedding
+    FROM observations
+    WHERE project_path = ? AND is_active = 1`;
+  const params = ['__global__'];
+
+  if (opts.type) { sql += ' AND type = ?'; params.push(opts.type); }
+  if (opts.minConfidence) { sql += ' AND confidence >= ?'; params.push(opts.minConfidence); }
+
+  sql += ' ORDER BY predicted_utility DESC, confidence DESC LIMIT ?';
+  params.push(limit);
+
+  const results = db.prepare(sql).all(...params);
+
+  // Track access for global vault reads
+  _trackAccess(db, results.map(r => r.id));
+
+  if (opts.query && results.length > 0) {
+    try {
+      const queryVec = await core.embedding.computeEmbedding(opts.query);
+      const scored = results.map(r => {
+        try {
+          const vec = r.embedding ? JSON.parse(r.embedding) : [];
+          if (vec.length === 0 && queryVec && queryVec.length > 0) return { ...r, _score: 0 };
+          return { ...r, _score: core.embedding.cosineSimilarity(queryVec, vec) };
+        } catch { return { ...r, _score: 0 }; }
+      });
+      scored.sort((a, b) => b._score - a._score);
+      return scored.slice(0, limit).map(({ _score, embedding, ...r }) => r);
+    } catch { /* embedding unavailable — return as-is */ }
+  }
+
+  return results.map(({ embedding, ...r }) => r);
+}
+
+/**
+ * Search across ALL projects (not just current) on this machine.
+ * Uses hybrid search when embeddings are available, falls back to keyword.
+ *
+ * @param {string} query - Search query
+ * @param {Object} [opts] - { limit?, type?, minConfidence?, includeGlobal? }
+ * @returns {Promise<Object[]>}
+ */
+async function searchAllProjects(query, opts = {}) {
+  const db = _getDB();
+  const limit = opts.limit || 20;
+
+  // Use hybrid search if available (no project filter = all projects)
+  let results;
+  try {
+    const searchOpts = { limit: limit * 2 };
+    if (opts.type) searchOpts.type = opts.type;
+    if (opts.minConfidence) searchOpts.minConfidence = opts.minConfidence;
+
+    const queryVec = await core.embedding.computeEmbedding(query);
+    results = core.search.hybridSearch(db, query, queryVec, searchOpts);
+  } catch {
+    results = core.search.keywordSearch(db, { query, limit: limit * 2 });
+  }
+
+  // Add project_path info for context
+  const enriched = results.slice(0, limit).map(r => ({
+    ...r,
+    project: r.project_path === '__global__' ? '[GLOBAL VAULT]' : r.project_path,
+  }));
+
+  _trackAccess(db, results.map(r => r.id));
+  return enriched;
+}
+
+/**
+ * Get machine-wide analytics — insights across all projects.
+ * Shows: top repeated errors, most useful global learnings, project count,
+ * cross-project pattern frequency.
+ *
+ * @returns {{ projectCount: number, totalObservations: number, globalVaultSize: number,
+ *             topErrors: Object[], topLearnings: Object[], repeatedTags: Object[] }}
+ */
+function machineAnalytics() {
+  const db = _getDB();
+
+  const projectCount = db.prepare(
+    'SELECT COUNT(DISTINCT project_path) as c FROM observations WHERE project_path != ?'
+  ).get('__global__').c;
+
+  const totalObservations = db.prepare(
+    'SELECT COUNT(*) as c FROM observations WHERE is_active = 1'
+  ).get().c;
+
+  const globalVaultSize = db.prepare(
+    'SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1'
+  ).get('__global__').c;
+
+  // Top errors across all projects
+  const topErrors = db.prepare(
+    'SELECT title, content, project_path, confidence, created_at FROM observations WHERE type = ? AND is_active = 1 AND project_path != ? ORDER BY confidence DESC LIMIT 10'
+  ).all('error', '__global__');
+
+  // Top global learnings
+  const topLearnings = db.prepare(
+    'SELECT title, content, confidence, predicted_utility, created_at FROM observations WHERE project_path = ? AND type IN (?, ?) AND is_active = 1 ORDER BY predicted_utility DESC LIMIT 10'
+  ).all('__global__', 'learning', 'instruction');
+
+  // Repeated tags across projects (potential patterns)
+  const repeatedTags = db.prepare(
+    `SELECT tags FROM observations WHERE is_active = 1 AND project_path != ? AND tags != '[]' LIMIT 500`
+  ).all('__global__');
+
+  const tagCounts = new Map();
+  for (const row of repeatedTags) {
+    try {
+      const tags = JSON.parse(row.tags);
+      for (const tag of tags) {
+        if (tag === 'machine-global' || tag === 'cross-project' || tag === 'coding-standard') continue;
+        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      }
+    } catch {}
+  }
+  const topTags = [...tagCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([tag, count]) => ({ tag, count }));
+
+  return {
+    projectCount,
+    totalObservations,
+    globalVaultSize,
+    topErrors: topErrors.map(e => ({ ...e, preview: e.content.slice(0, 150) })),
+    topLearnings: topLearnings.map(l => ({ ...l, preview: l.content.slice(0, 150) })),
+    repeatedTags: topTags,
+  };
+}
+
 // ─── Conversation Transcript Ingestion ────────────────────────────────
 
 /**
@@ -1416,7 +2266,8 @@ function computeFreshness(obs) {
   // Confidence subscore: 0-25
   const confidenceScore = (obs.confidence / 100) * 25;
 
-  // Utility subscore: 0-20      const utilityScore = Math.min(Math.max(obs.predicted_utility || 0, -10), 20);
+  // Utility subscore: 0-20
+  const utilityScore = Math.min(Math.max(obs.predicted_utility || 0, -10), 20);
 
   return Math.round(Math.min(100, Math.max(0, accessScore + recencyScore + confidenceScore + utilityScore)));
 }
@@ -1719,7 +2570,7 @@ module.exports = {
   embed, embedAll,
   checkConflicts,
   exportJSON, exportMarkdown, importJSON,
-  context,
+  context, bootstrap,
   init, close, health,
   addRelation, getRelations, getGraph, deleteRelation, listRelationTypes,
   createHook, listHooks, updateHook, deleteHook, setHookEnabled, registerHook, unregisterHook,
@@ -1731,6 +2582,7 @@ module.exports = {
   computeFreshness, updateFreshnessScores, autoArchive,
   runMaintenance, checkAndRunMaintenance, initMaintenanceScheduler,
   analytics,
+  promoteToGlobal, autoPromoteGlobal, getGlobalVault, searchAllProjects, machineAnalytics,
   getStandardsContext: standards.getStandardsContext,
   ensureStandardsExist: standards.ensureStandardsExist,
   listStandards: standards.listStandards,
