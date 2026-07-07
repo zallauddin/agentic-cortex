@@ -43,8 +43,14 @@ Use to skip rediscovery of known files and decisions.
 </agentic_cortex>
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-07T04:51:54.218Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-07T05:08:47.758Z -->
 
+# Agentic Cortex - Project Context
+
+## Key Observations
+### Event
+- README v4.7.0 update
+- README v4.7.0 update
 ## Codebase Graph
 *38 source files | 0 API routes | Generated 2026-07-07T04:51:54.168Z*
 

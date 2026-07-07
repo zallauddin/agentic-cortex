@@ -755,7 +755,7 @@ commands.setup = {
     if (fs.existsSync(graphScript)) {
       try {
         const { execSync } = require('child_process');
-        execSync('node "' + graphScript + '" --output md', { encoding: 'utf-8', timeout: 30000, cwd });
+        execSync('node "' + graphScript + '" --output xml', { encoding: 'utf-8', timeout: 30000, cwd });
         console.error('[agentic-cortex]   codebase graph generated');
       } catch (err) {
         console.error('[agentic-cortex]   graph generation skipped: ' + (err.message || '').split('\n')[0]);
