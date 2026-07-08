@@ -1447,6 +1447,69 @@ commands.standards = {
   }
 };
 
+// ─── MCP Config: Output MCP server configuration for any agent ──
+
+commands['mcp-config'] = {
+  desc: 'Output MCP server config JSON for claude, cursor, or opencode',
+  args: ['--agent claude|cursor|opencode', '[--json]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--agent') opts.agent = args[++i];
+      if (args[i] === '--json') opts.json = true;
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const validAgents = ['claude', 'cursor', 'opencode'];
+    if (!opts.agent || !validAgents.includes(opts.agent)) {
+      console.error('Usage: mcp-config --agent claude|cursor|opencode [--json]');
+      console.error('');
+      console.error('Outputs the MCP server configuration for the specified agent.');
+      console.error('Use --json for machine-readable output. Without --json, shows');
+      console.error('the config with file path and instructions.');
+      process.exit(1);
+    }
+
+    const configs = {
+      claude: {
+        file: '.mcp.json',
+        displayName: 'Claude Code',
+        config: { mcpServers: { 'agentic-cortex': { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } } },
+        note: 'Claude Code auto-discovers .mcp.json in the project root. Requires user approval on first use.'
+      },
+      cursor: {
+        file: '.cursor/mcp.json',
+        displayName: 'Cursor',
+        config: { mcpServers: { 'agentic-cortex': { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } } },
+        note: 'Cursor auto-discovers .cursor/mcp.json. Also supports ~/.cursor/mcp.json for global scope.'
+      },
+      opencode: {
+        file: 'opencode.json',
+        displayName: 'OpenCode',
+        config: { mcp: { 'agentic-cortex': { type: 'local', command: ['agentic-cortex-mcp'], enabled: true } } },
+        note: 'OpenCode uses MCP servers as addons/plugins. This is the ONLY way OpenCode can use agentic-cortex.'
+      },
+    };
+
+    const entry = configs[opts.agent];
+
+    if (opts.json) {
+      console.log(JSON.stringify({ agent: opts.agent, file: entry.file, ...entry.config }, null, 2));
+    } else {
+      console.log('# MCP Config for ' + entry.displayName + '\n');
+      console.log('File: ' + entry.file);
+      console.log('Note: ' + entry.note);
+      console.log('');
+      console.log('```json');
+      console.log(JSON.stringify(entry.config, null, 2));
+      console.log('```');
+      console.log('');
+      console.log('Run "agentic-cortex setup" to auto-create this file in your project.');
+    }
+  }
+};
+
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
 commands.inject = {
