@@ -410,6 +410,34 @@ commands.serve = {
 
 
 
+// ─── List ────────────────────────────────────────────────────────
+
+commands.list = {
+  desc: 'List observations with filters (type, project, min-confidence, temporal)',
+  args: ['[--project PATH]', '[--type TYPE]', '[--limit N]', '[--min-confidence N]', '[--changed-since DATE]', '[--as-of DATE]'],
+  parse(args) {
+    const opts = { limit: 10 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      else if (args[i] === '--type') opts.type = args[++i];
+      else if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+      else if (args[i] === '--min-confidence') opts.minConfidence = parseInt(args[++i], 10);
+      else if (args[i] === '--changed-since') opts.changedSince = args[++i];
+      else if (args[i] === '--as-of') opts.asOf = args[++i];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    try {
+      const results = api.list(opts);
+      console.log(JSON.stringify({ observations: results, count: results.length }, null, 2));
+    } catch (err) {
+      console.error('List error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
 // ─── Edit & Forget ─────────────────────────────────────────────
 
 commands.edit = {
@@ -456,6 +484,33 @@ commands.forget = {
       console.log(JSON.stringify(result));
     } catch (err) {
       console.error('Error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+// ─── Reflection / Consolidation ───────────────────────────────────
+
+commands.reflect = {
+  desc: 'Run reflection cycle: consolidate similar memories, promote patterns, archive superseded',
+  args: ['[--project PATH]', '[--dry-run]', '[--threshold N]', '[--min-count N]', '[--max-age-days N]'],
+  parse(args) {
+    const opts = { dryRun: false, minCount: 2, maxAgeDays: 30 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      else if (args[i] === '--dry-run') opts.dryRun = true;
+      else if (args[i] === '--threshold') opts.threshold = parseFloat(args[++i]);
+      else if (args[i] === '--min-count') opts.minCount = parseInt(args[++i], 10);
+      else if (args[i] === '--max-age-days') opts.maxAgeDays = parseInt(args[++i], 10);
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    try {
+      const result = await api.reflect(opts);
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error('Reflection error:', err.message);
       process.exit(1);
     }
   }
