@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-07T05:18:46.494Z",
-  "fingerprint": "b722ad2919e03687",
+  "generated": "2026-07-11T21:35:53.751Z",
+  "fingerprint": "36b7fce19e760f7b",
   "fileCount": 38,
   "apiRoutes": [],
   "services": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 57764,
+      "size": 62468,
       "layer": "Service"
     },
     "scripts/auto-setup.js": {
@@ -133,9 +133,41 @@
           "returnType": null,
           "doc": "create-discovery-files.js — Shared module for creating multi-agent discovery files.  Creates files that various AI codin",
           "isAsync": false
+        },
+        {
+          "name": "readJSON",
+          "params": [
+            {
+              "name": "filePath",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "writeMCPConfig",
+          "params": [
+            {
+              "name": "fileName",
+              "type": null
+            },
+            {
+              "name": "mcpKey",
+              "type": null
+            },
+            {
+              "name": "serverConfig",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
         }
       ],
-      "size": 7394,
+      "size": 11856,
       "layer": "Unknown"
     },
     "scripts/generate-graph.mjs": {
