@@ -32,10 +32,16 @@ const homedirCliPath = join(homedir(), '.agentic-cortex', 'cli.js');
 const memCli = existsSync(localCliPath) ? localCliPath
   : existsSync(globalCliPath) ? globalCliPath
   : (() => {
+    const whichCmd = process.platform === 'win32' ? 'where agentic-cortex' : 'which agentic-cortex';
+    let whichPath = '';
     try {
-      const whichPath = execSync('which agentic-cortex 2>/dev/null || where agentic-cortex 2>nul', { encoding: 'utf-8' }).trim();
-      return whichPath || localCliPath;
-    } catch { return localCliPath; }
+      whichPath = execSync(whichCmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      // On Windows, `where` may return multiple paths (e.g. both .cmd and .ps1) — take the first line
+      if (process.platform === 'win32') whichPath = whichPath.split(/\r?\n/)[0].trim();
+    } catch {
+      whichPath = ''; // fall through to localCliPath
+    }
+    return whichPath || localCliPath;
   })();
 const knowledgePath = join(rawPath, 'knowledge.md');
 const graphScript = join(__dirname, 'generate-graph.mjs');
@@ -138,7 +144,9 @@ const startIdx = knowledge.indexOf(startMarker);
 const endIdx = knowledge.indexOf(endMarker);
 
 if (startIdx === -1 || endIdx === -1) {
-  console.error('[inject-memory] Could not find MEMORY_CONTEXT_START/END markers in knowledge.md');
+  console.error('[inject-memory] FAILED: knowledge.md is missing the required markers MEMORY_CONTEXT_START and MEMORY_CONTEXT_END.');
+  console.error('[inject-memory] The knowledge.md template may be outdated. Run: agentic-cortex init --force');
+  console.error('[inject-memory] Marker startIdx=' + startIdx + ' endIdx=' + endIdx);
   process.exit(1);
 }
 
