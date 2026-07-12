@@ -15,6 +15,15 @@ core.selfImprove = selfImprove;
 const standards = require('../core/standards');
 core.standards = standards;
 
+// Keyword fallback arrays for outcome classification (used by recordAction and self-improve)
+const _KEYWORD_SUCCESS = ['pass', 'success', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated'];
+const _KEYWORD_FAILURE = ['fail', 'error', 'crash', 'broke', 'failed', 'rejected', 'timeout', 'rollback', 'revert'];
+
+// Auto-reflect state: run reflect() every Nth bootstrap call in background
+let _bootstrapCount = 0;
+const AUTO_REFLECT_INTERVAL = 10;
+let _autoReflectRunning = false;
+
 /**
  * Auto-detect observation type from title + content patterns.
  * Falls back to 'observation' if no patterns match.
@@ -784,6 +793,48 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
     }
   } catch { /* hybrid search unavailable — skip layer */ }
 
+  // ── Layer 2.5: Past Failures on Similar Tasks ──
+  try {
+    const failRows = db.prepare(
+      "SELECT id, type, title, content, confidence, tags FROM observations WHERE project_path = ? AND is_active = 1 AND type IN ('error', 'failure') AND confidence < ? ORDER BY created_at DESC LIMIT 20"
+    ).all(project, 50);
+
+    if (failRows.length > 0) {
+      // Rank failures by similarity to workingOn
+      const failVec = await core.embedding.computeEmbedding(workingOn).catch(() => null);
+      let ranked = failRows;
+      if (failVec && core.embedding.cosineSimilarity) {
+        ranked = failRows.map(row => {
+          const rowVec = row.embedding || null;
+          const sim = rowVec ? core.embedding.cosineSimilarity(failVec, rowVec) : 0;
+          return { ...row, _sim: sim };
+        }).sort((a, b) => b._sim - a._sim);
+      } else {
+        // Fallback: take the 3 most recent
+        ranked = failRows.map(row => ({ ...row, _sim: 0 }));
+      }
+
+      const top3 = ranked.slice(0, 3);
+      const top3Ids = top3.map(r => r.id);
+
+      if (top3.length > 0) {
+        output += `  <past_failures_on_similar_tasks count="${top3.length}">\n`;
+        output += '    <warning>EXPLICITLY AVOID these past approaches — they failed in this project. Pick a DIFFERENT path.</warning>\n';
+        for (const fail of top3) {
+          const simStr = fail._sim > 0 ? ` similarity="${fail._sim.toFixed(2)}"` : '';
+          output += `    <failure type="${_xmlEscape(fail.type)}" confidence="${fail.confidence}"${simStr}>\n`;
+          output += `      <title>${_xmlEscape(fail.title || '(untitled)')}</title>\n`;
+          output += `      <content>${_xmlEscape(_truncateContent(fail.content, 400))}</content>\n`;
+          output += '    </failure>\n';
+          tokenEstimate += Math.ceil(((fail.title || '').length + _truncateContent(fail.content, 400).length) / 4);
+        }
+        output += '  </past_failures_on_similar_tasks>\n';
+
+        _trackAccess(db, top3Ids);
+      }
+    }
+  } catch { /* past failures query failed — skip */ }
+
   // ── Layer 3: Recent Sessions ──
   try {
     const sessions = db.prepare(
@@ -1130,7 +1181,25 @@ async function bootstrap(opts) {
   // Infer what the agent is working on if not explicitly provided
   const workingOn = opts.workingOn || _inferTask(db, project);
 
-  return _buildBootstrapContext(db, project, workingOn, opts);
+  const result = await _buildBootstrapContext(db, project, workingOn, opts);
+
+  // Auto-reflect: trigger background reflect after every Nth bootstrap
+  _bootstrapCount++;
+  if (_bootstrapCount % AUTO_REFLECT_INTERVAL === 0 && !_autoReflectRunning) {
+    _autoReflectRunning = true;
+    (async () => {
+      try {
+        await core.reflection.reflect(_getDB(), { project });
+        console.warn('[api] Auto-reflect triggered after %d bootstraps for project %s', _bootstrapCount, project);
+      } catch (e) {
+        console.error('[api] Auto-reflect failed:', e.message);
+      } finally {
+        _autoReflectRunning = false;
+      }
+    })();
+  }
+
+  return result;
 }
 
 /**
@@ -1598,38 +1667,49 @@ async function recordAction(opts) {
     tags: ['action', 'action-triplet'],
   });
 
+  // Classify outcome via LLM with keyword fallback
+  let classification = 'neutral';
+  let usedFallback = false;
+  try {
+    classification = await core.selfImprove.classifyOutcome(opts.outcome);
+  } catch {
+    // Keyword fallback when LLM classifier unavailable
+    usedFallback = true;
+    const outcomeText = opts.outcome.toLowerCase();
+    const succeeded = _KEYWORD_SUCCESS.some(w => outcomeText.includes(w));
+    const failed = _KEYWORD_FAILURE.some(w => outcomeText.includes(w));
+    classification = (succeeded && !failed) ? 'success' : failed ? 'failure' : 'neutral';
+  }
+
+  // Use first-class type based on classification
+  const outcomeType = classification === 'success' ? 'success' : classification === 'failure' ? 'failure' : 'observation';
+  const classificationTag = classification === 'success' ? 'success' : classification === 'failure' ? 'failure' : null;
+
   const outcomeObs = await save({
     title: 'Outcome: ' + opts.outcome.slice(0, 80),
     content: opts.outcome,
-    type: 'observation',
+    type: outcomeType,
     project,
     agentId,
     confidence: 100,
     provenance: 'observed',
-    tags: ['outcome', 'action-triplet'],
+    tags: ['outcome', 'action-triplet', classificationTag].filter(Boolean),
   });
 
   // Link the triplet via relations: intent → achieves → action → produces → outcome
   await core.relations.addRelation(db, { sourceId: intentObs.id, targetId: actionObs.id, relationType: 'achieves', confidence: 90 });
   await core.relations.addRelation(db, { sourceId: actionObs.id, targetId: outcomeObs.id, relationType: 'produces', confidence: 90 });
 
-  // Evidence-based confidence: compare outcome to intent (runs inline since relations
-  // didn't exist when post_save hooks fired during save() calls above)
-  const outcomeText = opts.outcome.toLowerCase();
-  const successIndicators = ['pass', 'success', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated'];
-  const failureIndicators = ['fail', 'error', 'crash', 'broke', 'failed', 'rejected', 'timeout', 'rollback', 'revert'];
-  const succeeded = successIndicators.some(w => outcomeText.includes(w));
-  const failed = failureIndicators.some(w => outcomeText.includes(w));
-
-  if (succeeded && !failed) {
+  // Evidence-based confidence boost/decay driven by LLM classification
+  if (classification === 'success') {
     db.prepare('UPDATE observations SET confidence = MIN(confidence + 3, 100) WHERE id = ?').run(intentObs.id);
     db.prepare('UPDATE observations SET confidence = MIN(confidence + 5, 100) WHERE id = ?').run(actionObs.id);
-  } else if (failed) {
+  } else if (classification === 'failure') {
     db.prepare('UPDATE observations SET confidence = MAX(confidence - 10, 10) WHERE id = ?').run(actionObs.id);
     db.prepare('UPDATE observations SET confidence = MAX(confidence - 5, 10) WHERE id = ?').run(intentObs.id);
   }
 
-  return { intentId: intentObs.id, actionId: actionObs.id, outcomeId: outcomeObs.id, status: 'recorded', evidence: succeeded ? 'success' : (failed ? 'failure' : 'neutral') };
+  return { intentId: intentObs.id, actionId: actionObs.id, outcomeId: outcomeObs.id, status: 'recorded', evidence: classification, classificationMethod: usedFallback ? 'keyword-fallback' : 'llm' };
 }
 
 // ─── Cross-Project Knowledge Transfer ─────────────────────────────────

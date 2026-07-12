@@ -48,6 +48,13 @@ const DEFAULT_PATTERN_MIN_COUNT = 3;
  */
 const DEFAULT_ARCHIVE_AGE_DAYS = 30;
 
+/**
+ * Default confidence threshold for auto-extracting skills from learnings.
+ * Actual threshold varies by project maturity (see _projectRelativeThreshold).
+ * @type {number}
+ */
+const DEFAULT_SKILL_CONFIDENCE_THRESHOLD = 80;
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 /**
@@ -251,6 +258,18 @@ async function promotePatterns(db, opts = {}) {
   const minCount = opts.minCount ?? DEFAULT_PATTERN_MIN_COUNT;
   const dryRun = opts.dryRun ?? false;
 
+  /** Map project observation count to a confidence threshold. */
+  function _projectRelativeThreshold(count) {
+    if (count < 200) return 75;
+    if (count <= 1000) return DEFAULT_SKILL_CONFIDENCE_THRESHOLD;
+    return 90;
+  }
+
+  const projectCount = db.prepare(
+    'SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1'
+  ).get(project).c;
+  const threshold = opts.skillConfidenceThreshold ?? _projectRelativeThreshold(projectCount);
+
   const recent = db.prepare(
     'SELECT id, type, title, content, tags, created_at ' +
     'FROM observations WHERE project_path = ? AND is_active = 1 ' +
@@ -292,7 +311,7 @@ async function promotePatterns(db, opts = {}) {
     // Check if we already promoted this pattern recently.
     // SAFETY: p.theme comes from parsed DB tag/type values, not raw user input.
     const existing = db.prepare(
-      'SELECT id FROM observations WHERE project_path = ? AND type = \'learning\' AND title LIKE \'%\' || ? || \'%\' AND created_at > datetime(\'now\', \'-7 days\')'
+      'SELECT id FROM observations WHERE project_path = ? AND type IN (\'pattern\', \'learning\') AND title LIKE \'%\' || ? || \'%\' AND created_at > datetime(\'now\', \'-7 days\')'
     ).get(project, p.theme);
     if (existing) continue;
 
@@ -336,7 +355,7 @@ Return JSON with:
     if (!dryRun && summary.title && summary.content && _saveFn) {
       await _saveFn({
         project,
-        type: 'learning',
+        type: 'pattern',
         title: summary.title,
         content: summary.content,
         tags: summary.tags || ['pattern', p.theme, p.type],
@@ -351,11 +370,14 @@ Return JSON with:
 
   // ── Skill auto-extraction: high-confidence learnings become instructions ──
   let skillsExtracted = 0;
+  if (!dryRun) {
+    console.warn('[reflection] Skill extraction threshold for %s: %d (project has %d observations)', project, threshold, projectCount);
+  }
   const ripeLearnings = db.prepare(
     'SELECT id, title, content, confidence, tags FROM observations ' +
     'WHERE project_path = ? AND type = ? AND is_active = 1 AND confidence >= ? ' +
     'ORDER BY confidence DESC LIMIT 5'
-  ).all(project, 'learning', 90);
+  ).all(project, 'learning', threshold);
 
   for (const learning of ripeLearnings) {
     // Check if already promoted
@@ -529,6 +551,7 @@ module.exports = {
   DEFAULT_CONSOLIDATE_THRESHOLD,
   DEFAULT_PATTERN_MIN_COUNT,
   DEFAULT_ARCHIVE_AGE_DAYS,
+  DEFAULT_SKILL_CONFIDENCE_THRESHOLD,
   consolidateMemories,
   promotePatterns,
   archiveSuperseded,

@@ -1563,6 +1563,14 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
   for (let i = 0; i < displayTypes.length; i += 5) {
     console.log('  ' + displayTypes.slice(i, i + 5).join(', '));
   }
+  console.log('\nMCP Server:');
+  console.log('  agentic-cortex-mcp              Start the MCP server (43 tools for memory, session, reflection, etc.)');
+  console.log('  agentic-cortex mcp-config       Generate MCP config files for OpenCode, Claude Code, Cursor');
+  console.log('');
+  console.log('MCP Tools (call via MCP protocol):');
+  console.log('  memory_bootstrap  memory_save  memory_search  memory_list  memory_context');
+  console.log('  memory_reflect  memory_edit  memory_forget  memory_health  memory_graph');
+  console.log('  ...and 33 more. See: agentic-cortex-mcp --help or https://github.com/.../MCP-TOOLS.md');
   console.log('\nEnvironment:');
   console.log('  AGENTIC_CORTEX_PROJECT    Default project path for observations');
   console.log('  AGENTIC_CORTEX_SESSION    Current session ID');
