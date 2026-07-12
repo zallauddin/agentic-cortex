@@ -12,6 +12,17 @@
  */
 
 const api = require('../api');
+const pkg = require('../../package.json');
+
+// ─── Global error handlers ────────────────────────────────────────────
+// Must write to stderr to avoid corrupting the MCP stdio JSON channel.
+process.on('uncaughtException', (err) => {
+  console.error('[agentic-cortex-mcp] Uncaught exception:', err);
+  // Don't crash — keep serving tools. But log prominently.
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[agentic-cortex-mcp] Unhandled rejection at:', promise, 'reason:', reason);
+});
 
 // ─── JSON-RPC 2.0 helpers ────────────────────────────────────────────
 
@@ -968,7 +979,7 @@ async function handleRequest(msg) {
     return rpcResult(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'agentic-cortex', version: '3.1.0' },
+      serverInfo: { name: 'agentic-cortex', version: pkg.version },
     });
   }
 
