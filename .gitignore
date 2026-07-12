@@ -57,3 +57,11 @@ temp/
 
 # Build artifacts
 *.map
+
+# Swarm-lane & integration test artifacts (do not commit)
+jobs/
+test-mcp-*/
+test-cursor-*/
+
+# Windows reserved-name artifacts
+nul

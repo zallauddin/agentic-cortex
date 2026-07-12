@@ -402,7 +402,7 @@ const ALL_STANDARDS = [
  *
  * @returns {string} Markdown-formatted standards block
  */
-function getStandardsContext() {
+function getStandardsContext(db, project) {
   const phases = [
     { key: PHASES.ALL, label: '🔴 Always Active — Every Phase' },
     { key: PHASES.PLANNING, label: '🟡 Planning & Design Phase' },
@@ -436,6 +436,28 @@ function getStandardsContext() {
       }
     }
     block += '\n';
+  }
+
+  // Append project-specific custom standards if db + project provided
+  if (db && project) {
+    try {
+      const customs = db.prepare(
+        "SELECT title, content, tags FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE ? AND tags LIKE ? ORDER BY predicted_utility DESC, confidence DESC LIMIT 20"
+      ).all(project, '%coding-standard%', '%custom%');
+      if (customs && customs.length > 0) {
+        block += '\n### ⚙️ Project-Specific Standards (custom)\n';
+        for (const c of customs) {
+          let tags = [];
+          try { tags = JSON.parse(c.tags); } catch (e) { tags = []; }
+          const phase = tags.find(t => Object.values(PHASES).includes(t)) || 'ALL';
+          const category = tags.find(t => Object.values(CATEGORIES).includes(t)) || 'GENERAL';
+          block += `- **${c.title}** [${category}/${phase}] (custom)\n`;
+          block += `  ${c.content}\n`;
+        }
+      }
+    } catch (e) {
+      // silent — custom standards are optional
+    }
   }
 
   return block;
@@ -522,6 +544,81 @@ async function ensureStandardsExist(db, project, saveFn) {
   return { seeded, skipped, alreadyExisted: false };
 }
 
+// ─── Custom Standards Management ────────────────────────────────────
+
+/**
+ * Add a project-specific custom standard. Persisted as an observation with
+ * type:'instruction', tags:['coding-standard','custom','best-practice',...].
+ * Idempotent: skips insertion if a standard with the same title already exists
+ * (either built-in or previously-added custom).
+ * @param {import('better-sqlite3').Database} db - better-sqlite3 Database instance
+ * @param {string} project - project path
+ * @param {object} def - standard definition; required: title, content, phase; optional: category, steps, triggers, preconditions, postconditions, importance, confidence
+ * @param {function} saveFn - save function (the api.save() closure injected via setSaveFunction)
+ * @returns {object} { id, added: bool, skipped: bool, reason: string }
+ */
+function addStandard(db, project, def, saveFn) {
+  if (!def || typeof def !== 'object') return { id: null, added: false, skipped: true, reason: 'def is required and must be an object' };
+  if (!def.title || typeof def.title !== 'string') return { id: null, added: false, skipped: true, reason: 'def.title is required (string)' };
+  if (!def.content || typeof def.content !== 'string') return { id: null, added: false, skipped: true, reason: 'def.content is required (string)' };
+  if (!def.phase || !Object.values(PHASES).includes(def.phase)) return { id: null, added: false, skipped: true, reason: 'def.phase is required and must be one of: ' + Object.values(PHASES).join(', ') };
+
+  const category = def.category && Object.values(CATEGORIES).includes(def.category) ? def.category : 'general';
+  const titleLower = def.title.toLowerCase();
+
+  // Idempotent: check against built-in ALL_STANDARDS titles
+  for (const s of ALL_STANDARDS) {
+    if (s.title.toLowerCase() === titleLower) {
+      return { id: null, added: false, skipped: true, reason: 'built-in standard with this title already exists' };
+    }
+  }
+  // Idempotent: check against existing custom standards with same title in this project
+  const existing = db.prepare(
+    "SELECT id FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE ? AND LOWER(title) = ?"
+  ).get(project, '%coding-standard%', titleLower);
+  if (existing) {
+    return { id: existing.id, added: false, skipped: true, reason: 'custom standard with this title already exists in this project' };
+  }
+
+  const obs = {
+    project,
+    type: 'instruction',
+    title: def.title,
+    content: def.content,
+    tags: ['coding-standard', 'custom', 'best-practice', category, def.phase],
+    importance: def.importance || 9,
+    confidence: def.confidence || 95,
+    provenance: 'explicit',
+    project_scope: 'local',
+    steps: def.steps || [],
+    triggers: def.triggers || [],
+    preconditions: def.preconditions || [],
+    postconditions: def.postconditions || []
+  };
+  const result = saveFn(obs);
+  return { id: result && result.id ? result.id : null, added: true, skipped: false, reason: 'added' };
+}
+
+/**
+ * Soft-delete a custom standard by setting is_active=0. Built-in standards
+ * cannot be removed (they are seeded by ensureStandardsExist; if a built-in
+ * is archived this way, ensureStandardsExist will re-seed it on next run —
+ * this function is intended for custom standards only).
+ * @param {import('better-sqlite3').Database} db - better-sqlite3 Database instance
+ * @param {string|number} id - observation id
+ * @returns {object} { removed: bool, reason: string }
+ */
+function removeStandard(db, id) {
+  if (!id) return { removed: false, reason: 'id is required' };
+  const existing = db.prepare('SELECT id, tags FROM observations WHERE id = ?').get(id);
+  if (!existing) return { removed: false, reason: 'no observation with id ' + id };
+  if (!String(existing.tags).includes('coding-standard')) {
+    return { removed: false, reason: 'observation ' + id + ' is not a coding standard' };
+  }
+  db.prepare('UPDATE observations SET is_active = 0 WHERE id = ?').run(id);
+  return { removed: true, reason: 'archived (is_active=0) — preserved for history' };
+}
+
 // ─── Querying ─────────────────────────────────────────────────────────
 
 /**
@@ -548,6 +645,24 @@ function listStandards(db, project, opts = {}) {
   sql += ' ORDER BY predicted_utility DESC, confidence DESC LIMIT ?';
   params.push(opts.limit || 50);
 
+  return db.prepare(sql).all(...params);
+}
+
+/**
+ * List project-specific custom standards (tags include 'coding-standard' AND 'custom').
+ * @param {import('better-sqlite3').Database} db - better-sqlite3 Database instance
+ * @param {string} project - project path
+ * @param {object} [opts] - { phase, category, limit }
+ * @returns {array} matching observations
+ */
+function listCustomStandards(db, project, opts) {
+  opts = opts || {};
+  let sql = "SELECT id, title, content, tags, confidence, importance, predicted_utility, created_at FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE ? AND tags LIKE ?";
+  const params = [project, '%coding-standard%', '%custom%'];
+  if (opts.phase) { sql += ' AND tags LIKE ?'; params.push('%' + opts.phase + '%'); }
+  if (opts.category) { sql += ' AND tags LIKE ?'; params.push('%' + opts.category + '%'); }
+  sql += ' ORDER BY predicted_utility DESC, confidence DESC';
+  if (opts.limit) sql += ' LIMIT ' + parseInt(opts.limit, 10);
   return db.prepare(sql).all(...params);
 }
 
@@ -581,6 +696,9 @@ module.exports = {
   getStandardsContext,
   getStandardsAsObservations,
   ensureStandardsExist,
+  addStandard,
+  removeStandard,
   listStandards,
+  listCustomStandards,
   searchStandards,
 };

@@ -42,6 +42,78 @@ const MAX_ANALYZED_CACHE = 200;
 const _projectSaveCounts = new Map();
 const MAX_SAVE_COUNTS = 50;
 
+// Track whether the last classifyOutcome call used the keyword fallback
+let _lastClassificationFallback = false;
+
+// Gap 7: deterministic verification — per-learning debounce cache (learningId → lastVerifiedAt ms)
+const _verifiedRecently = new Map();
+const VERIFY_DEBOUNCE_MS = 60000; // skip re-verifying same learning within 60s
+
+// ─── Outcome Classification ─────────────────────────────────────────
+
+/**
+ * Keyword-based fallback classifier for outcome text.
+ * Preserved from the original Hook 3 implementation for use when the LLM
+ * is unavailable or returns unparseable output.
+ *
+ * @param {string} outcomeText - The outcome content to classify
+ * @returns {'success'|'failure'|'neutral'} Classification result
+ */
+function _keywordClassify(outcomeText) {
+  const text = (outcomeText || '').toLowerCase();
+  const successIndicators = ['pass', 'success', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated'];
+  const failureIndicators = ['fail', 'error', 'crash', 'broke', 'failed', 'rejected', 'timeout', 'rollback', 'revert'];
+
+  const succeeded = successIndicators.some(w => text.includes(w));
+  const failed = failureIndicators.some(w => text.includes(w));
+
+  if (succeeded && !failed) return 'success';
+  if (failed) return 'failure';
+  return 'neutral';
+}
+
+/**
+ * Classify an outcome text as success, failure, or neutral using an LLM.
+ * Falls back to keyword-based classification if the LLM is unavailable or
+ * returns invalid output.
+ *
+ * @param {string} outcomeText - The outcome content to classify
+ * @returns {Promise<'success'|'failure'|'neutral'>} Classification result
+ */
+async function classifyOutcome(outcomeText) {
+  const systemPrompt = `You classify the outcome of a coding action. Respond with a single JSON object.
+
+Classification rules:
+- "success" = the action achieved its intended goal (work completed, test passes, bug fixed, build green, key created)
+- "failure" = the action did NOT achieve its goal (anything failed, broke, rejected, error, timeout, rollback, didn't work, didn't take, didn't fix)
+- "neutral" = outcome is ambiguous or neither success nor failure
+
+CRITICAL rules:
+- MUST handle negation: "didn't work", "didn't take", "didn't fix", "didn't pass", "not working" are FAILURES, not successes
+- MUST handle implicit failure: "the code crashed after applying" is a FAILURE
+- "fixed" alone is success; "didn't fix" is failure
+
+Respond ONLY with: {"outcome":"success|failure|neutral","reason":"brief reason"}`;
+
+  _lastClassificationFallback = false;
+  try {
+    const result = await callLLM([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Classify this outcome: "${(outcomeText || '').slice(0, 500)}"` },
+    ], { temperature: 0, maxTokens: 80, timeout: 8000 });
+
+    const parsed = JSON.parse(result || '{}');
+    if (['success', 'failure', 'neutral'].includes(parsed.outcome)) {
+      return parsed.outcome;
+    }
+  } catch {
+    // LLM unavailable or parse failed — fall through to keyword fallback
+  }
+
+  _lastClassificationFallback = true;
+  return _keywordClassify(outcomeText);
+}
+
 // ─── 1. Root Cause Analysis from Errors ──────────────────────────────
 
 /**
@@ -224,8 +296,6 @@ Return JSON:
  */
 async function verifyLearning(db, newObs) {
   // Find learnings in the same project
-  // Only verify learnings periodically (1 in 5 saves) to avoid excessive LLM calls
-  if (Math.random() > 0.2) return;
 
   const learnings = db.prepare(
     'SELECT id, title, content, confidence FROM observations ' +
@@ -237,6 +307,10 @@ async function verifyLearning(db, newObs) {
   if (learnings.length === 0) return;
 
   for (const learning of learnings) {
+    const nowMs = Date.now();
+    if (_verifiedRecently.has(learning.id) && (nowMs - _verifiedRecently.get(learning.id)) < VERIFY_DEBOUNCE_MS) {
+      continue; // skip — verified recently, deterministic on other learnings
+    }
     try {
       const prompt = `A learning rule exists: "${learning.title}: ${learning.content.slice(0, 200)}"
 
@@ -265,9 +339,16 @@ Return JSON: { \"verdict\": \"CONTRADICT\"|\"REINFORCE\"|\"NEUTRAL\", \"reason\"
         db.prepare('UPDATE observations SET confidence = MAX(confidence - 15, 10) WHERE id = ?')
           .run(learning.id);
       }
+      _verifiedRecently.set(learning.id, nowMs);
     } catch (e) {
       // LLM verification is best-effort; failures are silent
     }
+  }
+
+  // Prune debounce cache if it grows too large
+  if (_verifiedRecently.size > 500) {
+    const sortedIds = [..._verifiedRecently.entries()].sort((a, b) => a[1] - b[1]);
+    for (let i = 0; i < 250; i++) _verifiedRecently.delete(sortedIds[i][0]);
   }
 }
 
@@ -325,13 +406,18 @@ function initHooks(saveFn) {
 
       if (!intent) continue;
 
-      // Compare outcome to intent using keyword matching (fast, no LLM needed)
-      const outcomeText = (obs.content || '').toLowerCase();
-      const successIndicators = ['pass', 'success', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated'];
-      const failureIndicators = ['fail', 'error', 'crash', 'broke', 'failed', 'rejected', 'timeout', 'rollback', 'revert'];
-
-      const succeeded = successIndicators.some(w => outcomeText.includes(w));
-      const failed = failureIndicators.some(w => outcomeText.includes(w));
+      // Compare outcome to intent using LLM classifier (with keyword fallback)
+      const outcomeText = obs.content || '';
+      let result;
+      try {
+        result = await classifyOutcome(outcomeText);
+      } catch {
+        result = _keywordClassify(outcomeText);
+        _lastClassificationFallback = true;
+      }
+      console.warn('[self-improve] Hook 3: outcome classified as %s via %s', result, _lastClassificationFallback ? 'keyword-fallback' : 'llm');
+      const succeeded = result === 'success';
+      const failed = result === 'failure';
 
       if (succeeded && !failed) {
         // Boost intent and action confidence — evidence of correctness
@@ -386,6 +472,7 @@ function resetState() {
 // ─── Exports ──────────────────────────────────────────────────────────
 
 module.exports = {
+  classifyOutcome,
   learnFromError,
   autoResolveConflicts,
   verifyLearning,
