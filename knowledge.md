@@ -43,7 +43,7 @@ Use to skip rediscovery of known files and decisions.
 </agentic_cortex>
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-13T17:21:05.081Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-13T17:26:34.965Z -->
 
 # Agentic Cortex - Project Context
 
@@ -134,37 +134,34 @@ These standards are pre-loaded and always active. You MUST apply them at every p
 ### Event
 - README v4.7.0 update (★0)
 - README v4.7.0 update (★0)
-## Codebase Graph
-*42 source files | 0 API routes | Generated 2026-07-13T05:39:00.502Z*
-
-### Architecture
-**Patterns:** Repository Pattern, Event-Driven, CLI Tool
-**Stack:** Databases: SQLite | Tools: Xenova Transformers (AI/ML)
-
-### Data Flow
-`API → Service`
-Files per layer: UI=0 API=1 Service=35 Data=0
-**Hub files (most imported):** `scripts/inject-memory.mjs`, `scripts/generate-graph.mjs`, `src/sync/git-sync.js`, `cli.js`, `scripts/auto-setup.js`
-
-### Core Libraries (15)
-- `src/core/conflict.js` — fns: checkConflicts(db, opts)
-- `src/core/constants.js` — fns: getProjectDefault(opts)
-- `src/core/db-path.js` — fns: ensureDir(filePath), getDbDir(), getDbPath(), getLegacyDbPath(), getLegacyDbPathIfExists()
-- `src/core/db.js` — fns: ensureSchema(db), getDb(), getDbPath_()
-- `src/core/embedding.js` — fns: _cacheGet(key), _cacheSet(key, value), clearEmbeddingCache(), computeEmbedding(text), cosineSimilarity(a, b)
-- `src/core/export.js` — fns: exportJSON(db, opts), exportMarkdown(db, opts), findRelated(obs, allObs), importJSON(db, data, opts), sanitizeFilename(title, id)
-- `src/core/hooks.js` — fns: createHook(db, opts), deleteHook(db, id), evaluateCondition(type, value, observation, context), executePersistedHook(db, hook, observation, context), getPersistedHooks(db, event)
-- `src/core/index.js`
-- `src/core/reflection.js` — fns: _projectRelativeThreshold(count), archiveSuperseded(db, opts), consolidateMemories(db, opts), findSimilarClusters(observations, threshold), generateConsolidatedSummary(cluster)
-- `src/core/relations.js` — fns: addRelation(db, opts), deleteRelation(db, relationId), getGraph(db, opts), getRelations(db, observationId), listRelationTypes(db)
-- `src/core/search.js` — fns: buildWhereClause(opts), hybridSearch(db, query, queryVec, opts), keywordSearch(db, opts), rerankResults(query, results), sanitizeDate(dateStr)
-- `src/core/self-improve.js` — fns: _keywordClassify(outcomeText), autoResolveConflicts(db, opts), classifyOutcome(outcomeText), initHooks(saveFn), learnFromError(db, errorObs)
-
-### Scripts
-- `scripts/auto-setup.js`
-- `scripts/create-discovery-files.js`
-- `scripts/generate-graph.mjs`
-- `scripts/import-community-knowledge.js`
-- `scripts/inject-memory.mjs`
-- `scripts/seed-memory-repo.js`
+<codebase_graph files="42" api_routes="0" generated="2026-07-13T17:26:34.946Z">
+  <architecture patterns="Repository Pattern, Event-Driven, CLI Tool" stack="Databases: SQLite | Tools: Xenova Transformers (AI/ML)"/>
+  <layers dataflow="API → Service" ui="0" api="1" service="35" data="0"/>
+  <hub_files>scripts/inject-memory.mjs, scripts/generate-graph.mjs, src/sync/git-sync.js, cli.js, scripts/auto-setup.js, scripts/create-discovery-files.js, scripts/import-community-knowledge.js, scripts/seed-memory-repo.js</hub_files>
+  <libraries>
+    <file path="src/core/conflict.js" layer="Service" fns="checkConflicts(db,opts)"/>
+    <file path="src/core/constants.js" layer="Service" fns="getProjectDefault(opts)"/>
+    <file path="src/core/db-path.js" layer="Service" fns="ensureDir(filePath); getDbDir(); getDbPath(); getLegacyDbPath(); getLegacyDbPathIfExists()"/>
+    <file path="src/core/db.js" layer="Service" fns="ensureSchema(db); getDb(); getDbPath_()"/>
+    <file path="src/core/embedding.js" layer="Service" fns="_cacheGet(key); _cacheSet(key,value); clearEmbeddingCache(); computeEmbedding(text); cosineSimilarity(a,b); disposePipelines()"/>
+    <file path="src/core/export.js" layer="Service" fns="exportJSON(db,opts); exportMarkdown(db,opts); findRelated(obs,allObs); importJSON(db,data,opts); sanitizeFilename(title,id)"/>
+    <file path="src/core/hooks.js" layer="Service" fns="createHook(db,opts); deleteHook(db,id); evaluateCondition(type,value,observation,context); executePersistedHook(db,hook,observation,context); getPersistedHooks(db,event); interpolate(str,observation,context)"/>
+    <file path="src/core/index.js" layer="Service"/>
+    <file path="src/core/reflection.js" layer="Service" fns="_projectRelativeThreshold(count); archiveSuperseded(db,opts); consolidateMemories(db,opts); findSimilarClusters(observations,threshold); generateConsolidatedSummary(cluster); getEmbeddedObservations(db,project,limit)"/>
+    <file path="src/core/relations.js" layer="Service" fns="addRelation(db,opts); deleteRelation(db,relationId); getGraph(db,opts); getRelations(db,observationId); listRelationTypes(db)"/>
+    <file path="src/core/search.js" layer="Service" fns="buildWhereClause(opts); hybridSearch(db,query,queryVec,opts); keywordSearch(db,opts); rerankResults(query,results); sanitizeDate(dateStr); semanticSearch(db,queryVec,opts)"/>
+    <file path="src/core/self-improve.js" layer="Service" fns="_keywordClassify(outcomeText); autoResolveConflicts(db,opts); classifyOutcome(outcomeText); initHooks(saveFn); learnFromError(db,errorObs); resetState()"/>
+    <file path="src/core/session.js" layer="Service" fns="callLLM(messages,opts); endSession(db,sessionId,summary); listSessions(db,opts); startSession(db,opts); summarizeSession(db,opts); templateSummary(obs,reason)"/>
+    <file path="src/core/standards.js" layer="Service" fns="addStandard(db,project,def,saveFn); ensureStandardsExist(db,project,saveFn); getStandardsAsObservations(project); getStandardsContext(db,project); listCustomStandards(db,project,opts); listStandards(db,project,opts)"/>
+    <file path="src/core/watcher.js" layer="Service" fns="_flushBatch(onBatch); _onChange(eventType,filename,onBatch); _walkForChanges(dir,prefix,since,onBatch); _watchWithPolling(dir,onBatch); getStatus(); setAPI(api)"/>
+  </libraries>
+  <scripts>
+    <file path="scripts/auto-setup.js"/>
+    <file path="scripts/create-discovery-files.js"/>
+    <file path="scripts/generate-graph.mjs"/>
+    <file path="scripts/import-community-knowledge.js"/>
+    <file path="scripts/inject-memory.mjs"/>
+    <file path="scripts/seed-memory-repo.js"/>
+  </scripts>
+</codebase_graph>
 <!-- MEMORY_CONTEXT_END -->

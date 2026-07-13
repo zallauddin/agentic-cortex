@@ -129,19 +129,19 @@ function syncPull(db, repoUrl) {
       const { observation, relations } = decodeMarkdown(mdContent);
       if (!observation.id || !observation.content) continue;
 
-      // Check if this observation already exists in local __global__ scope
+      // Check if this observation already exists locally (any project_path)
       const existing = db.prepare(
-        'SELECT id, synced_at FROM observations WHERE id = ? AND project_path = ? AND is_active = 1'
-      ).get(observation.id, '__global__');
+        'SELECT id, synced_at, project_path FROM observations WHERE id = ? AND is_active = 1'
+      ).get(observation.id);
 
       if (existing) {
         // Check if the repo version is newer
         const existingSynced = existing.synced_at || '';
         const repoSynced = observation.synced_at || '';
         if (repoSynced > existingSynced) {
-          // Update local copy
+          // Update local copy (preserve original project_path)
           db.prepare(
-            'UPDATE observations SET type = ?, title = ?, content = ?, tags = ?, confidence = ?, importance = ?, provenance = ?, agent_id = ?, session_id = ?, steps = ?, triggers = ?, preconditions = ?, postconditions = ? WHERE id = ?'
+            "UPDATE observations SET type = ?, title = ?, content = ?, tags = ?, confidence = ?, importance = ?, provenance = ?, agent_id = ?, session_id = ?, steps = ?, triggers = ?, preconditions = ?, postconditions = ?, synced_at = datetime('now') WHERE id = ?"
           ).run(
             observation.type, observation.title, observation.content,
             JSON.stringify(observation.tags), observation.confidence,
@@ -157,8 +157,9 @@ function syncPull(db, repoUrl) {
         }
       } else {
         // New observation — insert into __global__ scope
+        const now = new Date().toISOString();
         db.prepare(
-          'INSERT INTO observations (id, project_path, project_scope, type, title, content, tags, importance, confidence, provenance, agent_id, session_id, steps, triggers, preconditions, postconditions, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+          'INSERT INTO observations (id, project_path, project_scope, type, title, content, tags, importance, confidence, provenance, agent_id, session_id, steps, triggers, preconditions, postconditions, created_at, synced_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
         ).run(
           observation.id, '__global__', 'global',
           observation.type, observation.title, observation.content,
@@ -169,7 +170,8 @@ function syncPull(db, repoUrl) {
           observation.triggers ? JSON.stringify(observation.triggers) : null,
           observation.preconditions ? JSON.stringify(observation.preconditions) : null,
           observation.postconditions ? JSON.stringify(observation.postconditions) : null,
-          observation.created_at || new Date().toISOString()
+          observation.created_at || now,
+          now
         );
         newCount++;
 
