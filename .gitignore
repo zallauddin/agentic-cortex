@@ -63,5 +63,8 @@ jobs/
 test-mcp-*/
 test-cursor-*/
 
+# Agent auto-generated artifacts (do not commit)
+$HOME/
+
 # Windows reserved-name artifacts
 nul
