@@ -43,7 +43,7 @@ Use to skip rediscovery of known files and decisions.
 </agentic_cortex>
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-13T17:26:34.965Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-13T19:04:40.414Z -->
 
 # Agentic Cortex - Project Context
 
@@ -134,7 +134,7 @@ These standards are pre-loaded and always active. You MUST apply them at every p
 ### Event
 - README v4.7.0 update (★0)
 - README v4.7.0 update (★0)
-<codebase_graph files="42" api_routes="0" generated="2026-07-13T17:26:34.946Z">
+<codebase_graph files="42" api_routes="0" generated="2026-07-13T19:04:40.396Z">
   <architecture patterns="Repository Pattern, Event-Driven, CLI Tool" stack="Databases: SQLite | Tools: Xenova Transformers (AI/ML)"/>
   <layers dataflow="API → Service" ui="0" api="1" service="35" data="0"/>
   <hub_files>scripts/inject-memory.mjs, scripts/generate-graph.mjs, src/sync/git-sync.js, cli.js, scripts/auto-setup.js, scripts/create-discovery-files.js, scripts/import-community-knowledge.js, scripts/seed-memory-repo.js</hub_files>

@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-13T17:26:34.946Z",
-  "fingerprint": "77125688c29e9ad8",
+  "generated": "2026-07-13T19:04:40.396Z",
+  "fingerprint": "4287045b6656e55d",
   "fileCount": 42,
   "apiRoutes": [],
   "services": {},
@@ -1715,7 +1715,7 @@
           "isAsync": false
         }
       ],
-      "size": 115532,
+      "size": 116698,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1849,7 +1849,7 @@
           "isAsync": false
         }
       ],
-      "size": 11794,
+      "size": 12059,
       "layer": "Service"
     },
     "src/core/embedding.js": {
@@ -3416,7 +3416,7 @@
           "isAsync": false
         }
       ],
-      "size": 14226,
+      "size": 14321,
       "layer": "Service"
     },
     "src/sync/markdown-codec.js": {
