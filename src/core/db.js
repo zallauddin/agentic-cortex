@@ -254,6 +254,10 @@ function ensureSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_maintenance_project ON maintenance_log(project_path);
   `);
+
+  // Phase 12: Team memory sync — synced_at for tracking repo sync state
+  try { db.exec(`ALTER TABLE observations ADD COLUMN synced_at TEXT`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_synced ON observations(synced_at)`); } catch {}
 }
 
 /**

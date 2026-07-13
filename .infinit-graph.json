@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-13T05:39:00.502Z",
-  "fingerprint": "a9b59f76278f3f8b",
+  "generated": "2026-07-13T17:26:34.946Z",
+  "fingerprint": "77125688c29e9ad8",
   "fileCount": 42,
   "apiRoutes": [],
   "services": {},
@@ -595,7 +595,7 @@
           "isAsync": false
         }
       ],
-      "size": 99426,
+      "size": 111069,
       "layer": "Unknown"
     },
     "scripts/inject-memory.mjs": {
