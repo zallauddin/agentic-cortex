@@ -467,6 +467,7 @@ function setSaveFunction(saveFn) {
 function resetState() {
   _analyzedErrorIds.clear();
   _projectSaveCounts.clear();
+  _verifiedRecently.clear();
 }
 
 // ─── Exports ──────────────────────────────────────────────────────────

@@ -348,7 +348,7 @@ describe('promotePatterns', () => {
     await reflection.promotePatterns(db, { project: '/test', minCount: 3 });
 
     assert.ok(savedItems.length >= 1, 'Should save at least one promoted pattern');
-    assert.equal(savedItems[0].type, 'learning');
+    assert.equal(savedItems[0].type, 'pattern');
     assert.ok(savedItems[0].title.includes('cache'));
   });
 
