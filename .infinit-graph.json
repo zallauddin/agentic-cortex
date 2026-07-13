@@ -1,7 +1,7 @@
 {
-  "generated": "2026-07-13T00:07:37.533Z",
-  "fingerprint": "dabf5398ce51c7a0",
-  "fileCount": 38,
+  "generated": "2026-07-13T05:39:00.502Z",
+  "fingerprint": "a9b59f76278f3f8b",
+  "fileCount": 42,
   "apiRoutes": [],
   "services": {},
   "prismaSchema": {
@@ -12,7 +12,7 @@
     "layerCounts": {
       "UI": 0,
       "API": 1,
-      "Service": 33,
+      "Service": 35,
       "Data": 0
     },
     "crossLayerEdges": {},
@@ -27,6 +27,10 @@
         "imports": 4
       },
       {
+        "path": "src/sync/git-sync.js",
+        "imports": 1
+      },
+      {
         "path": "cli.js",
         "imports": 0
       },
@@ -39,20 +43,17 @@
         "imports": 0
       },
       {
-        "path": "src/api/index.js",
+        "path": "scripts/import-community-knowledge.js",
         "imports": 0
       },
       {
-        "path": "src/core/conflict.js",
-        "imports": 0
-      },
-      {
-        "path": "src/core/constants.js",
+        "path": "scripts/seed-memory-repo.js",
         "imports": 0
       }
     ]
   },
   "paradigms": [
+    "Repository Pattern",
     "Event-Driven",
     "CLI Tool"
   ],
@@ -494,6 +495,109 @@
       "size": 38852,
       "layer": "Unknown"
     },
+    "scripts/import-community-knowledge.js": {
+      "path": "scripts/import-community-knowledge.js",
+      "role": "script",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "encodeObservation",
+          "params": [
+            {
+              "name": "obs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "escapeYaml",
+          "params": [
+            {
+              "name": "str",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "generateFilename",
+          "params": [
+            {
+              "name": "obs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "getGlobalDir",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "getRepoDir",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "obs",
+          "params": [
+            {
+              "name": "type",
+              "type": null
+            },
+            {
+              "name": "title",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "readSyncConfig",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "shellQuote",
+          "params": [
+            {
+              "name": "str",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 99426,
+      "layer": "Unknown"
+    },
     "scripts/inject-memory.mjs": {
       "path": "scripts/inject-memory.mjs",
       "role": "script",
@@ -507,6 +611,87 @@
       ],
       "functions": [],
       "size": 6213,
+      "layer": "Unknown"
+    },
+    "scripts/seed-memory-repo.js": {
+      "path": "scripts/seed-memory-repo.js",
+      "role": "script",
+      "exports": [
+        "db"
+      ],
+      "imports": [],
+      "functions": [
+        {
+          "name": "_readSyncConfig",
+          "params": [],
+          "returnType": null,
+          "doc": "seed-memory-repo.js — One-time migration to seed a team memory repo.  Gathers high-confidence observations (errors, lear",
+          "isAsync": false
+        },
+        {
+          "name": "_scanForDbs",
+          "params": [
+            {
+              "name": "dir",
+              "type": null
+            },
+            {
+              "name": "maxDepth",
+              "type": null
+            },
+            {
+              "name": "currentDepth",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Recursively scan a directory for agentic-cortex.db files. Zero-dependency — uses only fs.readdirSync.  @param {string} d",
+          "isAsync": false
+        },
+        {
+          "name": "collectFromDb",
+          "params": [
+            {
+              "name": "database",
+              "type": null
+            },
+            {
+              "name": "dbLabel",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "@type {Array<Object>} /\nlet candidates = [];\n\n/   Query a single DB instance and collect candidates. @param {import('bet",
+          "isAsync": false
+        },
+        {
+          "name": "getGlobalDir",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "getRepoDir",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "shellQuote",
+          "params": [
+            {
+              "name": "str",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 18004,
       "layer": "Unknown"
     },
     "src/api/index.js": {
@@ -544,6 +729,26 @@
           "params": [],
           "returnType": null,
           "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_checkNewObsAgainstErrors",
+          "params": [
+            {
+              "name": "observation",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            },
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Check a new observation against recent errors to proactively warn the agent BEFORE they repeat a known failure pattern. ",
           "isAsync": false
         },
         {
@@ -606,6 +811,29 @@
           ],
           "returnType": null,
           "doc": "Infer what the agent is currently working on. Tries multiple signals in priority order:   1. Active session's user_promp",
+          "isAsync": false
+        },
+        {
+          "name": "_keywordOverlap",
+          "params": [
+            {
+              "name": "textA",
+              "type": null
+            },
+            {
+              "name": "textB",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Compute keyword overlap ratio between two texts. Used as a pre-filter so embedding misses don't hide semantically simila",
+          "isAsync": false
+        },
+        {
+          "name": "_pruneIgnoredWarnings",
+          "params": [],
+          "returnType": null,
+          "doc": null,
           "isAsync": false
         },
         {
@@ -796,8 +1024,8 @@
           "name": "close",
           "params": [],
           "returnType": null,
-          "doc": "Close the database connection and release pipeline resources",
-          "isAsync": false
+          "doc": "Initialize the database (idempotent) /\n// Track whether proactive warning hook has been registered (idempotent guard)\nle",
+          "isAsync": true
         },
         {
           "name": "computeFreshness",
@@ -1112,13 +1340,6 @@
           ],
           "returnType": null,
           "doc": "Parse a conversation transcript (agent chat log, code review, meeting notes) and auto-extract structured observations. U",
-          "isAsync": true
-        },
-        {
-          "name": "init",
-          "params": [],
-          "returnType": null,
-          "doc": "Initialize the database (idempotent)",
           "isAsync": true
         },
         {
@@ -1494,7 +1715,7 @@
           "isAsync": false
         }
       ],
-      "size": 108653,
+      "size": 115532,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -3115,6 +3336,193 @@
         }
       ],
       "size": 45183,
+      "layer": "Service"
+    },
+    "src/sync/git-sync.js": {
+      "path": "src/sync/git-sync.js",
+      "role": "source",
+      "exports": [],
+      "imports": [
+        " + filename + "
+      ],
+      "functions": [
+        {
+          "name": "_getGlobalDir",
+          "params": [],
+          "returnType": null,
+          "doc": "@returns {string} Path to global memories in the repo",
+          "isAsync": false
+        },
+        {
+          "name": "_getRepoDir",
+          "params": [],
+          "returnType": null,
+          "doc": "@returns {string} Local cache directory for the memory repo",
+          "isAsync": false
+        },
+        {
+          "name": "_getRepoUrl",
+          "params": [],
+          "returnType": null,
+          "doc": "git-sync.js — Sync the agentic-cortex __global__ vault with a team Git repo.  Pull: clones/pulls .cortex/global/ .md fro",
+          "isAsync": false
+        },
+        {
+          "name": "_shellQuote",
+          "params": [
+            {
+              "name": "str",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Quote a string for safe shell usage (cross-platform). @param {string} str @returns {string}",
+          "isAsync": false
+        },
+        {
+          "name": "syncPull",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "repoUrl",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Pull the latest team knowledge from the memory repo. Clones if first time, otherwise pulls. Imports .cortex/global/ .md ",
+          "isAsync": false
+        },
+        {
+          "name": "syncPush",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "promotedIds",
+              "type": null
+            },
+            {
+              "name": "repoUrl",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Push newly promoted global observations to the team memory repo. Exports observations in __global__ scope as .cortex/glo",
+          "isAsync": false
+        }
+      ],
+      "size": 14226,
+      "layer": "Service"
+    },
+    "src/sync/markdown-codec.js": {
+      "path": "src/sync/markdown-codec.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "_collectJson",
+          "params": [
+            {
+              "name": "lines",
+              "type": null
+            },
+            {
+              "name": "startIdx",
+              "type": null
+            },
+            {
+              "name": "startValue",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Collect a multi-line JSON value from YAML frontmatter.",
+          "isAsync": false
+        },
+        {
+          "name": "_escapeYaml",
+          "params": [
+            {
+              "name": "str",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Escape a string for safe YAML double-quoted inclusion. @param {string} str @returns {string}",
+          "isAsync": false
+        },
+        {
+          "name": "_parseFrontmatter",
+          "params": [
+            {
+              "name": "fmText",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Parse YAML frontmatter text into a key-value object. Handles strings, integers, arrays, and quoted strings. @param {stri",
+          "isAsync": false
+        },
+        {
+          "name": "_parseRelations",
+          "params": [
+            {
+              "name": "relationsText",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Parse the relations footer. Format: \"- derives_from → 1204 (Port conflict investigation)\" @param {string} relationsText ",
+          "isAsync": false
+        },
+        {
+          "name": "decodeMarkdown",
+          "params": [
+            {
+              "name": "mdString",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Decode a markdown string into an observation object + relations array. @param {string} mdString - Full markdown content ",
+          "isAsync": false
+        },
+        {
+          "name": "encodeObservation",
+          "params": [
+            {
+              "name": "obs",
+              "type": null
+            },
+            {
+              "name": "relations",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "markdown-codec.js — Serialize/deserialize observations as markdown files with YAML frontmatter. Used by the Git-sync mod",
+          "isAsync": false
+        },
+        {
+          "name": "generateFilename",
+          "params": [
+            {
+              "name": "obs",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Generate a filesystem-safe filename for an observation. Format: {type}__{id}__{slug}.md @param {Object} obs @returns {st",
+          "isAsync": false
+        }
+      ],
+      "size": 8111,
       "layer": "Service"
     },
     "tests/cli.test.js": {

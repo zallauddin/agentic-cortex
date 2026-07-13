@@ -1,0 +1,14 @@
+{
+  "mcp": {
+    "agentic-cortex": {
+      "type": "local",
+      "command": [
+        "agentic-cortex-mcp"
+      ],
+      "enabled": true
+    }
+  },
+  "instructions": [
+    "AGENTS.md"
+  ]
+}

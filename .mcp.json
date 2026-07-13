@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "agentic-cortex": {
+      "type": "stdio",
+      "command": "agentic-cortex-mcp",
+      "args": []
+    }
+  }
+}
