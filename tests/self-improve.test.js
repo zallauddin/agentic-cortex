@@ -192,43 +192,46 @@ describe('verifyLearning', () => {
     db = createTestDb();
     llmCallCount = 0;
     mockLLMResponse = null;
+    selfImprove.resetState(); // clear debounce cache between tests
   });
 
-  it('should skip most saves (random threshold)', async () => {
+  it('should debounce repeated verification of the same learning within 60s', async () => {
     db.prepare('INSERT INTO observations (project_path, type, title, content, confidence) VALUES (?,?,?,?,?)')
       .run('/test', 'learning', 'Rule', 'Desc', 50);
-    const orig = Math.random;
-    Math.random = () => 0.9;
-    try {
-      await selfImprove.verifyLearning(db, { project_path: '/test', type: 'observation', content: 't' });
-      assert.equal(llmCallCount, 0);
-    } finally { Math.random = orig; }
+
+    // First call invokes LLM and applies REINFORCE (confidence 50 -> 55)
+    mockLLMResponse = JSON.stringify({ verdict: 'REINFORCE', reason: 'good' });
+    await selfImprove.verifyLearning(db, { project_path: '/test', type: 'observation', content: 't1' });
+    assert.equal(llmCallCount, 1, 'First verifyLearning call invokes LLM');
+
+    // Second call within 60s debounce window must NOT invoke LLM (deterministic)
+    mockLLMResponse = JSON.stringify({ verdict: 'CONTRADICT', reason: 'bad' });
+    await selfImprove.verifyLearning(db, { project_path: '/test', type: 'observation', content: 't2' });
+    assert.equal(llmCallCount, 1, 'Second call within debounce window is skipped');
+
+    // Confidence from first call is preserved (50 + 5 = 55, REINFORCE not CONTRADICT)
+    const l = db.prepare('SELECT confidence FROM observations WHERE type = ?').get('learning');
+    assert.equal(l.confidence, 55, 'Confidence reflects first call only (REINFORCE): got ' + l.confidence);
   });
 
   it('should reinforce learning', async () => {
     db.prepare('INSERT INTO observations (project_path, type, title, content, confidence) VALUES (?,?,?,?,?)')
       .run('/test', 'learning', 'Rule', 'Desc', 50);
     mockLLMResponse = JSON.stringify({ verdict: 'REINFORCE', reason: 'good' });
-    const orig = Math.random;
-    Math.random = () => 0.1;
-    try {
-      await selfImprove.verifyLearning(db, { project_path: '/test', type: 'observation', content: 't' });
-      const l = db.prepare('SELECT confidence FROM observations WHERE type = ?').get('learning');
-      assert.ok(l.confidence > 50);
-    } finally { Math.random = orig; }
+
+    await selfImprove.verifyLearning(db, { project_path: '/test', type: 'observation', content: 't' });
+    const l = db.prepare('SELECT confidence FROM observations WHERE type = ?').get('learning');
+    assert.ok(l.confidence > 50, 'REINFORCE should boost confidence: got ' + l.confidence);
   });
 
   it('should downgrade learning on contradiction', async () => {
     db.prepare('INSERT INTO observations (project_path, type, title, content, confidence) VALUES (?,?,?,?,?)')
       .run('/test', 'learning', 'Bad', 'Desc', 50);
     mockLLMResponse = JSON.stringify({ verdict: 'CONTRADICT', reason: 'wrong' });
-    const orig = Math.random;
-    Math.random = () => 0.1;
-    try {
-      await selfImprove.verifyLearning(db, { project_path: '/test', type: 'observation', content: 't' });
-      const l = db.prepare('SELECT confidence FROM observations WHERE type = ?').get('learning');
-      assert.ok(l.confidence < 50);
-    } finally { Math.random = orig; }
+
+    await selfImprove.verifyLearning(db, { project_path: '/test', type: 'observation', content: 't' });
+    const l = db.prepare('SELECT confidence FROM observations WHERE type = ?').get('learning');
+    assert.ok(l.confidence < 50, 'CONTRADICT should reduce confidence: got ' + l.confidence);
   });
 });
 
