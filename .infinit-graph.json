@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-11T21:35:53.751Z",
-  "fingerprint": "36b7fce19e760f7b",
+  "generated": "2026-07-13T00:07:37.533Z",
+  "fingerprint": "dabf5398ce51c7a0",
   "fileCount": 38,
   "apiRoutes": [],
   "services": {},
@@ -104,7 +104,7 @@
           "isAsync": true
         }
       ],
-      "size": 62468,
+      "size": 63098,
       "layer": "Service"
     },
     "scripts/auto-setup.js": {
@@ -112,8 +112,16 @@
       "role": "script",
       "exports": [],
       "imports": [],
-      "functions": [],
-      "size": 5104,
+      "functions": [
+        {
+          "name": "detectParentProject",
+          "params": [],
+          "returnType": null,
+          "doc": "auto-setup.js — Postinstall auto-discovery for agentic-cortex.  Runs automatically when agentic-cortex is installed as a",
+          "isAsync": false
+        }
+      ],
+      "size": 7097,
       "layer": "Unknown"
     },
     "scripts/create-discovery-files.js": {
@@ -135,6 +143,18 @@
           "isAsync": false
         },
         {
+          "name": "ensureInstructionsEntry",
+          "params": [
+            {
+              "name": "filePath",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Ensure \"AGENTS.md\" is in the opencode.json instructions array. Creates the array if missing. @param {string} filePath - ",
+          "isAsync": false
+        },
+        {
           "name": "readJSON",
           "params": [
             {
@@ -143,7 +163,7 @@
             }
           ],
           "returnType": null,
-          "doc": null,
+          "doc": "create-discovery-files.js — Shared module for creating multi-agent discovery files.  Creates files that various AI codin",
           "isAsync": false
         },
         {
@@ -163,11 +183,27 @@
             }
           ],
           "returnType": null,
-          "doc": null,
+          "doc": "Write MCP server config for a given tool file. Idempotent — skips if agentic-cortex already configured. @param {string} ",
+          "isAsync": false
+        },
+        {
+          "name": "writeSection",
+          "params": [
+            {
+              "name": "filePath",
+              "type": null
+            },
+            {
+              "name": "sectionContent",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Write or update a version-stamped section in a file.  Marker format:   <!-- agentic-cortex:start:vX.Y.Z -->   ... conten",
           "isAsync": false
         }
       ],
-      "size": 11856,
+      "size": 20823,
       "layer": "Unknown"
     },
     "scripts/generate-graph.mjs": {
@@ -470,7 +506,7 @@
         "url"
       ],
       "functions": [],
-      "size": 5659,
+      "size": 6213,
       "layer": "Unknown"
     },
     "src/api/index.js": {
@@ -1458,7 +1494,7 @@
           "isAsync": false
         }
       ],
-      "size": 105060,
+      "size": 108653,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1506,7 +1542,7 @@
           "isAsync": false
         }
       ],
-      "size": 2657,
+      "size": 2690,
       "layer": "Service"
     },
     "src/core/db-path.js": {
@@ -2056,6 +2092,18 @@
       "imports": [],
       "functions": [
         {
+          "name": "_projectRelativeThreshold",
+          "params": [
+            {
+              "name": "count",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Map project observation count to a confidence threshold.",
+          "isAsync": false
+        },
+        {
           "name": "archiveSuperseded",
           "params": [
             {
@@ -2180,7 +2228,7 @@
           "isAsync": true
         }
       ],
-      "size": 19796,
+      "size": 20708,
       "layer": "Service"
     },
     "src/core/relations.js": {
@@ -2386,6 +2434,18 @@
       "imports": [],
       "functions": [
         {
+          "name": "_keywordClassify",
+          "params": [
+            {
+              "name": "outcomeText",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "self-improve.js — Self-improving agentic loop for agentic-cortex.  Detects shortcomings (errors, contradictions, gaps), ",
+          "isAsync": false
+        },
+        {
           "name": "autoResolveConflicts",
           "params": [
             {
@@ -2399,6 +2459,18 @@
           ],
           "returnType": null,
           "doc": "Run conflict detection on a project and auto-resolve contradictions. Uses LLM to determine which observation is correct,",
+          "isAsync": true
+        },
+        {
+          "name": "classifyOutcome",
+          "params": [
+            {
+              "name": "outcomeText",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Classify an outcome text as success, failure, or neutral using an LLM. Falls back to keyword-based classification if the",
           "isAsync": true
         },
         {
@@ -2426,7 +2498,7 @@
             }
           ],
           "returnType": null,
-          "doc": "self-improve.js — Self-improving agentic loop for agentic-cortex.  Detects shortcomings (errors, contradictions, gaps), ",
+          "doc": "Analyze an error observation and generate a systemic learning/fix. Called automatically by the post_save hook when type=",
           "isAsync": true
         },
         {
@@ -2465,7 +2537,7 @@
           "isAsync": true
         }
       ],
-      "size": 14932,
+      "size": 18500,
       "layer": "Service"
     },
     "src/core/session.js": {
@@ -2585,6 +2657,30 @@
       "imports": [],
       "functions": [
         {
+          "name": "addStandard",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "def",
+              "type": null
+            },
+            {
+              "name": "saveFn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Add a project-specific custom standard. Persisted as an observation with type:'instruction', tags:['coding-standard','cu",
+          "isAsync": false
+        },
+        {
           "name": "ensureStandardsExist",
           "params": [
             {
@@ -2618,10 +2714,39 @@
         },
         {
           "name": "getStandardsContext",
-          "params": [],
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
           "returnType": null,
           "doc": "standards.js — Canonical Coding Standards for agentic-cortex.  Pre-loaded, always-injected, phase-aware coding standards",
           "isAsync": true
+        },
+        {
+          "name": "listCustomStandards",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List project-specific custom standards (tags include 'coding-standard' AND 'custom'). @param {import('better-sqlite3').D",
+          "isAsync": false
         },
         {
           "name": "listStandards",
@@ -2641,6 +2766,22 @@
           ],
           "returnType": null,
           "doc": "List all active coding standards for a project.  @param {import('better-sqlite3').Database} db @param {string} project @",
+          "isAsync": false
+        },
+        {
+          "name": "removeStandard",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "id",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Soft-delete a custom standard by setting is_active=0. Built-in standards cannot be removed (they are seeded by ensureSta",
           "isAsync": false
         },
         {
@@ -2668,7 +2809,7 @@
           "isAsync": false
         }
       ],
-      "size": 38998,
+      "size": 45119,
       "layer": "Service"
     },
     "src/core/watcher.js": {
@@ -2973,7 +3114,7 @@
           "isAsync": true
         }
       ],
-      "size": 44663,
+      "size": 45183,
       "layer": "Service"
     },
     "tests/cli.test.js": {
@@ -3307,7 +3448,7 @@
           "isAsync": false
         }
       ],
-      "size": 20892,
+      "size": 20891,
       "layer": "Service"
     },
     "tests/relations.test.js": {
@@ -3382,7 +3523,7 @@
           "isAsync": false
         }
       ],
-      "size": 9402,
+      "size": 10122,
       "layer": "Service"
     },
     "tests/session.test.js": {

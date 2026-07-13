@@ -24,6 +24,45 @@ let _bootstrapCount = 0;
 const AUTO_REFLECT_INTERVAL = 10;
 let _autoReflectRunning = false;
 
+// Ignore-count tracker: how many times each failure has been shown in EXPLICITLY AVOID
+// Key: failure obs ID. Value: { count, lastShown (ISO), title }
+// Pruned on every write: max 1000 entries, expire entries older than 30 days
+const _ignoredWarnings = new Map();
+const IGNORED_MAX_ENTRIES = 1000;
+const IGNORED_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function _pruneIgnoredWarnings() {
+  if (_ignoredWarnings.size <= IGNORED_MAX_ENTRIES) {
+    // Expire old entries even when under cap
+    const now = Date.now();
+    for (const [id, entry] of _ignoredWarnings) {
+      const age = now - new Date(entry.lastShown || 0).getTime();
+      if (age > IGNORED_MAX_AGE_MS) _ignoredWarnings.delete(id);
+    }
+    return;
+  }
+  // Cap exceeded — remove oldest entries first
+  const entries = [..._ignoredWarnings.entries()]
+    .sort((a, b) => new Date(a[1].lastShown || 0).getTime() - new Date(b[1].lastShown || 0).getTime());
+  const toRemove = entries.slice(0, entries.length - Math.floor(IGNORED_MAX_ENTRIES * 0.8));
+  for (const [id] of toRemove) _ignoredWarnings.delete(id);
+}
+
+/**
+ * Compute keyword overlap ratio between two texts.
+ * Used as a pre-filter so embedding misses don't hide semantically similar failures.
+ * @param {string} textA
+ * @param {string} textB
+ * @returns {number} Overlap ratio 0-1
+ */
+function _keywordOverlap(textA, textB) {
+  const wordsA = new Set((textA || '').toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  const wordsB = (textB || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  if (wordsB.length === 0) return 0;
+  const overlap = wordsB.filter(w => wordsA.has(w)).length;
+  return overlap / Math.max(wordsB.length, 1);
+}
+
 /**
  * Auto-detect observation type from title + content patterns.
  * Falls back to 'observation' if no patterns match.
@@ -807,22 +846,53 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
         ranked = failRows.map(row => {
           const rowVec = row.embedding || null;
           const sim = rowVec ? core.embedding.cosineSimilarity(failVec, rowVec) : 0;
-          return { ...row, _sim: sim };
+          // Keyword boost: add up to 0.3 based on word overlap, ensuring embedding misses don't hide relevant failures
+          const kwBoost = _keywordOverlap(workingOn, (row.title || '') + ' ' + (row.content || ''));
+          const boostedSim = Math.min(1.0, sim + kwBoost * 0.3);
+          return { ...row, _sim: boostedSim, _embeddingSim: sim, _keywordBoost: kwBoost };
         }).sort((a, b) => b._sim - a._sim);
       } else {
-        // Fallback: take the 3 most recent
-        ranked = failRows.map(row => ({ ...row, _sim: 0 }));
+        // Fallback: keyword-only ranking
+        ranked = failRows.map(row => {
+          const kwBoost = _keywordOverlap(workingOn, (row.title || '') + ' ' + (row.content || ''));
+          return { ...row, _sim: kwBoost, _embeddingSim: 0, _keywordBoost: kwBoost };
+        }).sort((a, b) => b._sim - a._sim);
       }
 
       const top3 = ranked.slice(0, 3);
       const top3Ids = top3.map(r => r.id);
 
       if (top3.length > 0) {
-        output += `  <past_failures_on_similar_tasks count="${top3.length}">\n`;
-        output += '    <warning>EXPLICITLY AVOID these past approaches — they failed in this project. Pick a DIFFERENT path.</warning>\n';
+        // Track ignore counts and build escalated warning language
+        let warningLevel = 'standard';
+        const ignoredIds = [];
         for (const fail of top3) {
+          const tracker = _ignoredWarnings.get(fail.id) || { count: 0, lastShown: null };
+          tracker.count++;
+          tracker.lastShown = new Date().toISOString();
+          tracker.title = fail.title;
+          _ignoredWarnings.set(fail.id, tracker);
+          _pruneIgnoredWarnings();
+          if (tracker.count >= 3) ignoredIds.push(fail.id);
+          if (tracker.count >= 5) warningLevel = 'escalated';
+          else if (tracker.count >= 3 && warningLevel !== 'escalated') warningLevel = 'critical';
+        }
+
+        output += `  <past_failures_on_similar_tasks count="${top3.length}" warning_level="${warningLevel}">\n`;
+
+        if (warningLevel === 'escalated') {
+          output += '    <warning severity="escalated">ESCALATED: one or more of these failures has been shown 5+ times and repeatedly IGNORED. Using this approach WILL cause failure. Choose a DIFFERENT approach now.</warning>\n';
+        } else if (warningLevel === 'critical') {
+          output += '    <warning severity="critical">CRITICAL: you have IGNORED one or more of these warnings 3+ times. DO NOT repeat these approaches — they WILL fail again.</warning>\n';
+        } else {
+          output += '    <warning severity="standard">EXPLICITLY AVOID these past approaches — they failed in this project. Pick a DIFFERENT path.</warning>\n';
+        }
+
+        for (const fail of top3) {
+          const tracker = _ignoredWarnings.get(fail.id);
+          const ignoreInfo = tracker && tracker.count > 1 ? ` ignored_count="${tracker.count}"` : '';
           const simStr = fail._sim > 0 ? ` similarity="${fail._sim.toFixed(2)}"` : '';
-          output += `    <failure type="${_xmlEscape(fail.type)}" confidence="${fail.confidence}"${simStr}>\n`;
+          output += `    <failure type="${_xmlEscape(fail.type)}" confidence="${fail.confidence}"${simStr}${ignoreInfo}>\n`;
           output += `      <title>${_xmlEscape(fail.title || '(untitled)')}</title>\n`;
           output += `      <content>${_xmlEscape(_truncateContent(fail.content, 400))}</content>\n`;
           output += '    </failure>\n';
@@ -1178,6 +1248,16 @@ async function bootstrap(opts) {
   const db = _getDB();
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
 
+  // ── Layer -1: Pull from team memory repo (Git sync) ──
+  if (process.env.AGENTIC_CORTEX_MEMORY_REPO) {
+    try {
+      const { syncPull } = require('../sync/git-sync');
+      syncPull(db);
+    } catch (err) {
+      console.warn('[agentic-cortex] Git sync pull failed (non-fatal):', err.message);
+    }
+  }
+
   // Infer what the agent is working on if not explicitly provided
   const workingOn = opts.workingOn || _inferTask(db, project);
 
@@ -1270,13 +1350,73 @@ function _inferTask(db, project) {
   }
 }
 
+// ─── Proactive Warning Hook ───────────────────────────────────────────
+
+/**
+ * Check a new observation against recent errors to proactively warn
+ * the agent BEFORE they repeat a known failure pattern.
+ * Registered as a pre_save hook during init().
+ */
+function _checkNewObsAgainstErrors(observation, context, db) {
+  // Only check observations that aren't themselves errors/failures
+  if (observation.type === 'error' || observation.type === 'failure') return;
+
+  try {
+    const project = observation.project_path || context?.project || null;
+    if (!project) return;
+
+    // Get last 50 errors/failures in this project
+    const recentErrors = db.prepare(
+      "SELECT id, type, title, content, tags, confidence FROM observations WHERE project_path = ? AND is_active = 1 AND type IN ('error', 'failure') ORDER BY created_at DESC LIMIT 50"
+    ).all(project);
+
+    if (recentErrors.length === 0) return;
+
+    const newText = (observation.title || '') + ' ' + (observation.content || '');
+    let bestMatch = null;
+    let bestOverlap = 0;
+
+    for (const err of recentErrors) {
+      const kwOverlap = _keywordOverlap(newText, (err.title || '') + ' ' + (err.content || ''));
+      if (kwOverlap > bestOverlap) {
+        bestOverlap = kwOverlap;
+        bestMatch = err;
+      }
+    }
+
+    // Threshold: warn when overlap exceeds 0.25 (substantial keyword match)
+    if (bestOverlap >= 0.25 && bestMatch) {
+      console.error(
+        '[agentic-cortex] ⚠️ PROACTIVE WARNING: New observation "%s" (type=%s) closely matches a known ERROR #%d "%s" (confidence=%d, keyword-overlap=%.2f). Consider if you are about to repeat this failure.',
+        (observation.title || observation.content || '').slice(0, 80),
+        observation.type,
+        bestMatch.id,
+        (bestMatch.title || bestMatch.content || '').slice(0, 60),
+        bestMatch.confidence || 0,
+        bestOverlap
+      );
+    }
+  } catch { /* best-effort — never block a save */
+    console.warn('[agentic-cortex] Proactive warning check failed (non-fatal):', err && err.message ? err.message : err);
+  }
+}
+
 // ─── Lifecycle ────────────────────────────────────────────────────────
 
 /** Initialize the database (idempotent) */
+// Track whether proactive warning hook has been registered (idempotent guard)
+let _proactiveWarningHookRegistered = false;
+
 async function init() {
   _getDB();
   // Initialize auto-maintenance scheduler on first init
   initMaintenanceScheduler();
+
+  // Register proactive warning hook (idempotent — only once)
+  if (!_proactiveWarningHookRegistered) {
+    core.hooks.registerHook('pre_save', _checkNewObsAgainstErrors);
+    _proactiveWarningHookRegistered = true;
+  }
 
   // Auto-seed coding standards on first init (zero user action needed)
   try {
@@ -1877,6 +2017,7 @@ function autoPromoteGlobal(db, project) {
   const candidates = db.prepare(sql).all(...params);
 
   let promoted = 0;
+  const promotedIds = [];
   for (const c of candidates) {
     try {
       const existing = db.prepare(
@@ -1890,11 +2031,22 @@ function autoPromoteGlobal(db, project) {
         'UPDATE observations SET project_path = ?, project_scope = ?, tags = ? WHERE id = ?'
       ).run('__global__', 'global', JSON.stringify(newTags), c.id);
       promoted++;
+      promotedIds.push(c.id);
     } catch { /* skip individual failures */ }
   }
 
   if (promoted > 0) {
     console.error('[agentic-cortex] Auto-promoted %d memories to machine-wide global vault (from %d candidates, conf≥%d, util≥%d)', promoted, candidates.length, confThreshold, utilThreshold);
+
+    // ── Push newly promoted global observations to team memory repo ──
+    if (process.env.AGENTIC_CORTEX_MEMORY_REPO && promotedIds.length > 0) {
+      try {
+        const { syncPush } = require('../sync/git-sync');
+        syncPush(db, promotedIds);
+      } catch (err) {
+        console.warn('[agentic-cortex] Git sync push failed (non-fatal):', err.message);
+      }
+    }
   }
 
   return { promoted, candidates: candidates.length, thresholds: { confidence: confThreshold, utility: utilThreshold } };
