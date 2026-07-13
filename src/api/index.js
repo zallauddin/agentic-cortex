@@ -753,6 +753,23 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
     } catch { /* best-effort */ }
   }
 
+  // ── Layer 0.5: Team memory sync result ──
+  if (opts._syncResult) {
+    const sr = opts._syncResult;
+    if (sr.pulled > 0) {
+      output += `  <team_memory_sync status="ok" pulled="${sr.pulled}" new="${sr.new || 0}" updated="${sr.updated || 0}" repo="${_xmlEscape(sr.repoUrl || '')}" />\n`;
+    } else if (sr.reason) {
+      output += `  <team_memory_sync status="skipped" reason="${_xmlEscape(sr.reason)}" />\n`;
+    }
+  }
+  // Always report available global observations (may exist from prior syncs)
+  try {
+    const globalCount = db.prepare('SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1').get('__global__').c;
+    if (globalCount > 0) {
+      output += `  <team_memory_available count="${globalCount}" scope="__global__">Community knowledge from team memory repo is available for this session</team_memory_available>\n`;
+    }
+  } catch { /* best-effort */ }
+
   // ── Layer 1: Actionable Insights (LLM summary of relevant memories) ──
   try {
     const insights = await _summarizeMemories(db, project, workingOn);
@@ -1249,17 +1266,23 @@ async function bootstrap(opts) {
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
 
   // ── Layer -1: Pull from team memory repo (Git sync) ──
-  if (process.env.AGENTIC_CORTEX_MEMORY_REPO) {
-    try {
-      const { syncPull } = require('../sync/git-sync');
-      syncPull(db);
-    } catch (err) {
-      console.warn('[agentic-cortex] Git sync pull failed (non-fatal):', err.message);
+  // syncPull resolves the repo URL from env var > sync-config.json, so no guard needed
+  let syncResult = null;
+  try {
+    const { syncPull, _getRepoUrl } = require('../sync/git-sync');
+    const repoUrl = _getRepoUrl();
+    if (repoUrl) {
+      syncResult = syncPull(db, repoUrl);
     }
+  } catch (err) {
+    console.warn('[agentic-cortex] Git sync pull failed (non-fatal):', err.message);
   }
 
   // Infer what the agent is working on if not explicitly provided
   const workingOn = opts.workingOn || _inferTask(db, project);
+
+  // Pass sync result through so bootstrap context can report it
+  if (syncResult) opts._syncResult = syncResult;
 
   const result = await _buildBootstrapContext(db, project, workingOn, opts);
 
