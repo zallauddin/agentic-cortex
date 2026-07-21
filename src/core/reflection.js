@@ -547,14 +547,228 @@ async function reflect(db, opts = {}) {
   return { consolidate, promote, archive, globalPromote };
 }
 
+// ─── 4. Crystallize: Tiered Memory Upward Compression ──────────────
+
+/**
+ * Default minimum verification count before a synthesis can become a principle.
+ * @type {number}
+ */
+const DEFAULT_PRINCIPLE_VERIFY_COUNT = 3;
+
+/**
+ * Default confidence threshold for promoting to principle layer.
+ * @type {number}
+ */
+const DEFAULT_PRINCIPLE_CONFIDENCE = 90;
+
+/**
+ * Crystallize: compress raw observations (layer 1) upward into synthesis
+ * (layer 2) and stable syntheses into principles (layer 3).
+ *
+ * This is AutoGTM's "compounding brain" pattern applied to memory:
+ *   raw (1) → synthesis (2) → principle (3)
+ *
+ * Layer 1 → 2: Groups raw observations with similar topics/themes and
+ *   generates LLM-summarized syntheses. Original raws remain active.
+ *
+ * Layer 2 → 3: Promotion happens when a synthesis has confidence >= 90
+ *   AND has been independently verified (REINFORCE verdict) 3+ times.
+ *   Principles are always injected in context and rarely adjusted.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Object} opts
+ * @param {string} [opts.project] - Project path
+ * @param {number} [opts.fromLayer=1] - Layer to compress from
+ * @param {number} [opts.minCount=3] - Minimum raw observations to form a synthesis
+ * @param {boolean} [opts.dryRun=false] - Preview only
+ * @returns {Promise<{rawToSynthesis: number, synthesisToPrinciple: number, dryRun: boolean}>}
+ */
+async function crystallize(db, opts = {}) {
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const fromLayer = opts.fromLayer || 1;
+  const minCount = opts.minCount || 3;
+  const dryRun = opts.dryRun || false;
+
+  let rawToSynthesis = 0;
+  let synthesisToPrinciple = 0;
+
+  // ── Layer 1 → 2: Raw observations → Syntheses ──
+  if (fromLayer <= 1) {
+    const raws = db.prepare(
+      'SELECT id, type, title, content, tags, confidence, embedding ' +
+      'FROM observations WHERE project_path = ? AND is_active = 1 ' +
+      'AND (layer IS NULL OR layer = 1) AND embedding IS NOT NULL ' +
+      'ORDER BY created_at DESC LIMIT 200'
+    ).all(project);
+
+    if (raws.length >= minCount) {
+      // Find theme clusters by tag overlap (AutoGTM's topic grouping)
+      const tagClusters = new Map();
+      for (const r of raws) {
+        try {
+          const tags = JSON.parse(r.tags || '[]');
+          for (const tag of tags) {
+            if (!tagClusters.has(tag)) tagClusters.set(tag, []);
+            tagClusters.get(tag).push(r);
+          }
+        } catch {}
+      }
+
+      // Process clusters with >= minCount members that don't already have a synthesis
+      for (const [tag, cluster] of tagClusters) {
+        if (cluster.length < minCount) continue;
+
+        // Check if synthesis for this tag already exists recently
+        const existingSynth = db.prepare(
+          "SELECT id FROM observations WHERE project_path = ? AND type = 'synthesis' AND is_active = 1 AND tags LIKE ? AND created_at > datetime('now', '-30 days')"
+        ).get(project, '%"' + tag + '"%');
+        if (existingSynth) continue;
+
+        // Generate synthesis via LLM
+        const prompt = `You are compressing ${cluster.length} raw observations about "${tag}" into a single synthesis. Extract the key insights, remove redundancy, and write a concise summary.
+
+Observations:
+${cluster.slice(0, 10).map((r, i) => `${i + 1}. [${r.type}] ${r.title || '(untitled)'}: ${r.content.slice(0, 300)}`).join('\n\n')}
+
+Return JSON with:
+- title: Synthesis title (max 80 chars)
+- content: Key insights synthesized (max 800 chars, markdown ok)`;
+
+        let synthesized;
+        try {
+          const result = await callLLM([
+            { role: 'system', content: 'You distill multiple observations into a single synthesis. Respond ONLY with valid JSON.' },
+            { role: 'user', content: prompt },
+          ], { temperature: 0.2, maxTokens: 1200, timeout: 30000 });
+          synthesized = JSON.parse(result || '{}');
+        } catch {
+          synthesized = {
+            title: `Synthesis: ${tag}`,
+            content: cluster.slice(0, 5).map(r => `- ${r.title || r.content.slice(0, 100)}`).join('\n'),
+          };
+        }
+
+        if (!dryRun && synthesized.title && synthesized.content && _saveFn) {
+          const avgConf = Math.round(cluster.reduce((s, r) => s + (r.confidence || 100), 0) / cluster.length);
+          const synthObs = await _saveFn({
+            project,
+            type: 'learning',
+            title: synthesized.title,
+            content: synthesized.content,
+            tags: [tag, 'synthesis', 'auto-crystallized'],
+            confidence: Math.min(100, avgConf),
+            importance: 7,
+            provenance: 'inferred',
+            layer: 2,
+          });
+
+          if (synthObs && synthObs.id) {
+            // Link all raws → synthesis via 'distills' relation
+            for (const r of cluster.slice(0, 10)) {
+              try {
+                db.prepare(
+                  'INSERT OR IGNORE INTO memory_relations (source_id, target_id, relation_type, confidence) VALUES (?,?,?,?)'
+                ).run(synthObs.id, r.id, 'distills', 85);
+              } catch {}
+            }
+            rawToSynthesis++;
+
+            // Log crystallization
+            db.prepare(
+              'INSERT INTO crystallization_log (project_path, from_layer, to_layer, source_count, result_observation_id) VALUES (?,?,?,?,?)'
+            ).run(project, 1, 2, cluster.length, synthObs.id);
+          }
+        }
+      }
+    }
+  }
+
+  // ── Layer 2 → 3: Syntheses → Principles ──
+  // A synthesis becomes a principle when it has confidence >= 90 and has been
+  // independently verified (REINFORCE verdicts in evaluation_log) 3+ times.
+  if (fromLayer <= 2) {
+    const syntheses = db.prepare(
+      "SELECT id, title, content, tags, confidence FROM observations " +
+      "WHERE project_path = ? AND type = 'learning' AND is_active = 1 " +
+      'AND (layer = 2 OR layer IS NULL) AND confidence >= ?'
+    ).all(project, DEFAULT_PRINCIPLE_CONFIDENCE);
+
+    for (const synth of syntheses) {
+      // Check if already promoted
+      const alreadyPromoted = db.prepare(
+        'SELECT id FROM memory_relations WHERE source_id = ? AND relation_type = ?'
+      ).get(synth.id, 'hardens_to');
+      if (alreadyPromoted) continue;
+
+      // Count REINFORCE verdicts for this synthesis in eval log
+      const verifyCount = db.prepare(
+        'SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ? AND intent_id = ? AND llm_verdict = ?'
+      ).get(project, synth.id, 'REINFORCE').c;
+
+      if (verifyCount >= DEFAULT_PRINCIPLE_VERIFY_COUNT) {
+        if (!dryRun && _saveFn) {
+          const principleObs = await _saveFn({
+            project,
+            type: 'principle',
+            title: synth.title,
+            content: synth.content,
+            tags: [...(JSON.parse(synth.tags || '[]')), 'principle', 'auto-crystallized'],
+            confidence: Math.min(100, synth.confidence + 5),
+            importance: 10,
+            provenance: 'inferred',
+            layer: 3,
+            project_scope: 'global',
+          });
+
+          if (principleObs && principleObs.id) {
+            db.prepare(
+              'INSERT OR IGNORE INTO memory_relations (source_id, target_id, relation_type, confidence) VALUES (?,?,?,?)'
+            ).run(principleObs.id, synth.id, 'hardens_to', 95);
+            // Mark synthesis as layer 2 explicitly
+            db.prepare('UPDATE observations SET layer = 2 WHERE id = ?').run(synth.id);
+            synthesisToPrinciple++;
+
+            db.prepare(
+              'INSERT INTO crystallization_log (project_path, from_layer, to_layer, source_count, result_observation_id) VALUES (?,?,?,?,?)'
+            ).run(project, 2, 3, 1, principleObs.id);
+          }
+        }
+      }
+    }
+  }
+
+  return { rawToSynthesis, synthesisToPrinciple, dryRun };
+}
+
+/**
+ * Get principles (layer 3) for a project — always-injected, load-bearing knowledge.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project
+ * @param {number} [limit=10]
+ * @returns {Array<Object>}
+ */
+function getPrinciples(db, project, limit = 10) {
+  return db.prepare(
+    'SELECT id, type, title, content, tags, confidence, importance, predicted_utility, freshness_score ' +
+    'FROM observations WHERE (project_path = ? OR (project_scope = ? AND is_active = 1)) ' +
+    'AND is_active = 1 AND (layer = 3 OR type = ?) ' +
+    'ORDER BY confidence DESC, predicted_utility DESC LIMIT ?'
+  ).all(project, 'global', 'principle', limit);
+}
+
 module.exports = {
   DEFAULT_CONSOLIDATE_THRESHOLD,
   DEFAULT_PATTERN_MIN_COUNT,
   DEFAULT_ARCHIVE_AGE_DAYS,
   DEFAULT_SKILL_CONFIDENCE_THRESHOLD,
+  DEFAULT_PRINCIPLE_VERIFY_COUNT,
+  DEFAULT_PRINCIPLE_CONFIDENCE,
   consolidateMemories,
   promotePatterns,
   archiveSuperseded,
+  crystallize,
+  getPrinciples,
   reflect,
   findSimilarClusters,
   pickCanonical,

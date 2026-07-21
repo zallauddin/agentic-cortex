@@ -258,6 +258,44 @@ function ensureSchema(db) {
   // Phase 12: Team memory sync — synced_at for tracking repo sync state
   try { db.exec(`ALTER TABLE observations ADD COLUMN synced_at TEXT`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_synced ON observations(synced_at)`); } catch {}
+
+  // Phase 13: Crystallized memory layers — tiered knowledge (raw=1, synthesis=2, principle=3)
+  try { db.exec(`ALTER TABLE observations ADD COLUMN layer INTEGER DEFAULT 1`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_layer ON observations(layer, is_active)`); } catch {}
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS crystallization_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      from_layer INTEGER NOT NULL,
+      to_layer INTEGER NOT NULL,
+      source_count INTEGER NOT NULL,
+      result_observation_id INTEGER,
+      run_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_crystallization_project ON crystallization_log(project_path);
+  `);
+
+  // Phase 14: Append-only evaluation log — immutable audit trail for self-improvement
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS evaluation_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      intent_id INTEGER,
+      intent_content TEXT,
+      action_id INTEGER,
+      action_content TEXT,
+      outcome_id INTEGER,
+      outcome_content TEXT,
+      llm_verdict TEXT NOT NULL,
+      verdict_reason TEXT,
+      confidence_delta INTEGER DEFAULT 0,
+      variable_changed TEXT,
+      evaluated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_eval_log_project ON evaluation_log(project_path);
+    CREATE INDEX IF NOT EXISTS idx_eval_log_verdict ON evaluation_log(llm_verdict);
+    CREATE INDEX IF NOT EXISTS idx_eval_log_time ON evaluation_log(evaluated_at);
+  `);
 }
 
 /**

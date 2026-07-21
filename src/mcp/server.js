@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -662,6 +662,45 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'memory_crystallize',
+    description: '🧊 CRYSTALLIZE — Compress raw observations upward through tiered layers (raw→synthesis→principle). AutoGTM\'s compounding brain: high-confidence syntheses verified 3+ times harden into principles that are always injected and rarely adjusted.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        fromLayer: { type: 'integer', description: 'Layer to compress from (1=raw, 2=synthesis)', default: 1 },
+        minCount: { type: 'integer', description: 'Minimum raw observations to form a synthesis', default: 3 },
+        dryRun: { type: 'boolean', description: 'Preview without making changes', default: false },
+      },
+    },
+  },
+  {
+    name: 'memory_experiment',
+    description: '🧪 HYPOTHESIS TESTING — Spawn or list controlled experiments. AutoGTM\'s single-variable experiment loop: when the same error tag appears 3+ times, the system auto-spawns experiments that change ONE variable and measure against a fixed metric.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'What to do: spawn (create experiment), list (show active)', default: 'list' },
+        errorTag: { type: 'string', description: 'Error tag to spawn experiment for (required for action=spawn)' },
+        project: { type: 'string', description: 'Project path' },
+        limit: { type: 'integer', description: 'Max results for list', default: 20 },
+      },
+    },
+  },
+  {
+    name: 'memory_eval_log',
+    description: '📊 IMMUTABLE AUDIT TRAIL — Query the append-only evaluation log. AutoGTM\'s results.tsv: every evaluation is preserved forever for benchmarking and plateau detection. Use --stats for aggregate metrics.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        verdict: { type: 'string', description: 'Filter by verdict: SUCCESS, FAILURE, NEUTRAL, REINFORCE, CONTRADICT' },
+        limit: { type: 'integer', description: 'Max rows', default: 50 },
+        stats: { type: 'boolean', description: 'Return aggregate stats instead of raw rows', default: false },
+      },
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -925,6 +964,23 @@ async function callTool(name, args) {
         return api.searchStandards(require('../core/db').getDb(), project, args.query, args.limit || 10);
       }
       return api.listStandards(require('../core/db').getDb(), project, { phase: args.phase, category: args.category, limit: args.limit || 20 });
+    }
+
+    case 'memory_crystallize':
+      return api.crystallize(args);
+
+    case 'memory_experiment': {
+      if (args.action === 'spawn') {
+        return api.spawnExperiment({ project: args.project, errorTag: args.errorTag });
+      }
+      return api.listExperiments({ project: args.project, limit: args.limit });
+    }
+
+    case 'memory_eval_log': {
+      if (args.stats) {
+        return api.getEvalLogStats({ project: args.project });
+      }
+      return api.getEvaluationLog({ project: args.project, verdict: args.verdict, limit: args.limit });
     }
 
     case 'memory_auto_capture': {

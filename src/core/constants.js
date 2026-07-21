@@ -14,6 +14,7 @@ const VALID_TYPES = new Set([
   'instruction', 'fact', 'decision', 'goal', 'commitment', 'preference',
   'relationship', 'context', 'event', 'learning', 'observation',
   'artifact', 'error', 'success', 'failure', 'pattern',
+  'synthesis', 'principle', 'experiment', 'procedure', 'skill',
   // Skill/procedural memory types
   'skill', 'procedure',
   // Intent → Action → Outcome tracking
