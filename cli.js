@@ -1389,6 +1389,120 @@ commands.analytics = {
   }
 };
 
+// ─── FSM: Finite-State Machine orchestration layer ──────────
+
+commands.fsm = {
+  desc: 'Manage agent state machines (brain orchestration layer)',
+  args: ['[--list-machines]', '[--start MACHINE]', '[--agent-id ID]', '[--transition TRIGGER]', '[--state]', '[--project PATH]'],
+  parse(args) {
+    const opts = { action: 'state' };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--list-machines') opts.action = 'list-machines';
+      if (args[i] === '--start') { opts.action = 'start'; opts.machineName = args[++i]; }
+      if (args[i] === '--agent-id') opts.agentId = args[++i];
+      if (args[i] === '--transition') { opts.action = 'transition'; opts.trigger = args[++i]; }
+      if (args[i] === '--state') opts.action = 'state';
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    try {
+      if (opts.action === 'list-machines') {
+        console.log(JSON.stringify(api.listMachines(), null, 2));
+      } else if (opts.action === 'start') {
+        const agentId = opts.agentId || 'default';
+        const r = api.startAgent(agentId, opts.machineName, { project: opts.project });
+        console.log(JSON.stringify(r, null, 2));
+      } else if (opts.action === 'transition') {
+        const agentId = opts.agentId || 'default';
+        const r = api.transitionAgent(agentId, opts.trigger, { project: opts.project });
+        console.log(JSON.stringify(r, null, 2));
+      } else {
+        const agentId = opts.agentId || 'default';
+        const state = api.getAgentState(agentId);
+        const transitions = api.getAvailableTransitions(agentId);
+        console.log(JSON.stringify({ state, transitions }, null, 2));
+      }
+    } catch (err) { console.error('FSM error:', err.message); process.exit(1); }
+  }
+};
+
+// ─── Rules: Declarative condition-action rules ─────────────────────
+
+commands.rules = {
+  desc: 'Manage brain rules (condition→action declarative logic)',
+  args: ['[--list]', '[--event EVENT]', '[--delete ID]', '[--enable ID]', '[--disable ID]', '[--eval EVENT]', '[--project PATH]'],
+  parse(args) {
+    const opts = { action: 'list' };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--list') opts.action = 'list';
+      if (args[i] === '--event') opts.event = args[++i];
+      if (args[i] === '--delete') { opts.action = 'delete'; opts.id = parseInt(args[++i], 10); }
+      if (args[i] === '--enable') { opts.action = 'enable'; opts.id = parseInt(args[++i], 10); }
+      if (args[i] === '--disable') { opts.action = 'disable'; opts.id = parseInt(args[++i], 10); }
+      if (args[i] === '--eval') { opts.action = 'eval'; opts.event = args[++i]; }
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    try {
+      if (opts.action === 'delete') {
+        console.log(JSON.stringify(api.deleteRule(opts.id), null, 2));
+      } else if (opts.action === 'enable') {
+        console.log(JSON.stringify(api.setRuleEnabled(opts.id, true), null, 2));
+      } else if (opts.action === 'disable') {
+        console.log(JSON.stringify(api.setRuleEnabled(opts.id, false), null, 2));
+      } else if (opts.action === 'eval') {
+        const results = await api.evaluateRules(opts.event, { project: opts.project });
+        console.log(JSON.stringify(results, null, 2));
+      } else {
+        console.log(JSON.stringify(api.listRules({ event: opts.event }), null, 2));
+      }
+    } catch (err) { console.error('Rules error:', err.message); process.exit(1); }
+  }
+};
+
+// ─── Workflow: Multi-step procedure executor ───────────────────────
+
+commands.workflow = {
+  desc: 'Execute multi-step workflows with dependencies (brain procedure engine)',
+  args: ['[--list]', '[--start NAME]', '[--advance ID]', '[--cancel ID]', '[--get ID]', '[--agent-id ID]', '[--project PATH]'],
+  parse(args) {
+    const opts = { action: 'list' };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--list') opts.action = 'list';
+      if (args[i] === '--start') { opts.action = 'start'; opts.workflowName = args[++i]; }
+      if (args[i] === '--advance') { opts.action = 'advance'; opts.instanceId = parseInt(args[++i], 10); }
+      if (args[i] === '--cancel') { opts.action = 'cancel'; opts.instanceId = parseInt(args[++i], 10); }
+      if (args[i] === '--get') { opts.action = 'get'; opts.instanceId = parseInt(args[++i], 10); }
+      if (args[i] === '--agent-id') opts.agentId = args[++i];
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    try {
+      if (opts.action === 'list') {
+        console.log(JSON.stringify(api.listWorkflows(), null, 2));
+      } else if (opts.action === 'start') {
+        const r = api.startWorkflow(opts.workflowName, { agentId: opts.agentId, project: opts.project });
+        console.log(JSON.stringify(r, null, 2));
+      } else if (opts.action === 'advance') {
+        const r = api.advanceWorkflow(opts.instanceId);
+        console.log(JSON.stringify(r, null, 2));
+      } else if (opts.action === 'cancel') {
+        const r = api.cancelWorkflow(opts.instanceId);
+        console.log(JSON.stringify(r, null, 2));
+      } else if (opts.action === 'get') {
+        const r = api.getWorkflowInstance(opts.instanceId);
+        console.log(JSON.stringify(r, null, 2));
+      }
+    } catch (err) { console.error('Workflow error:', err.message); process.exit(1); }
+  }
+};
+
 // ─── Standards: Pre-loaded coding standards ────────────────────────
 
 commands.standards = {

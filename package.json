@@ -1,6 +1,6 @@
 {
   "name": "agentic-cortex",
-  "version": "4.9.0",
+  "version": "5.0.0",
   "description": "Persistent self-improving agent memory — install & forget: auto-inject context via git hooks, zero-arg bootstrap, machine-wide global vault, 13 memory types, confidence tracking, XML codebase graphs",
   "keywords": [
     "ai-agent",

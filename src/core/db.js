@@ -296,6 +296,69 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_eval_log_verdict ON evaluation_log(llm_verdict);
     CREATE INDEX IF NOT EXISTS idx_eval_log_time ON evaluation_log(evaluated_at);
   `);
+
+  // Phase 15: FSM engine — state machines, transitions, per-agent state
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS state_machines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      definition TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS agent_states (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      machine_name TEXT NOT NULL,
+      current_state TEXT NOT NULL,
+      state_data TEXT DEFAULT '{}',
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_transition_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(agent_id, machine_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_states_agent ON agent_states(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_states_machine ON agent_states(machine_name, current_state);
+  `);
+
+  // Phase 16: Rule engine — declarative condition-action rules
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS brain_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      priority INTEGER DEFAULT 5,
+      event TEXT NOT NULL,
+      condition_type TEXT NOT NULL,
+      condition_config TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      action_config TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_rules_event ON brain_rules(event, enabled);
+    CREATE INDEX IF NOT EXISTS idx_rules_priority ON brain_rules(priority);
+  `);
+
+  // Phase 17: Workflow executor — multi-step procedures with dependencies
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workflow_definitions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      steps TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS workflow_instances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workflow_name TEXT NOT NULL,
+      agent_id TEXT,
+      project_path TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      current_step TEXT,
+      completed_steps TEXT DEFAULT '[]',
+      step_results TEXT DEFAULT '{}',
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_workflow_instances_status ON workflow_instances(status, agent_id);
+  `);
 }
 
 /**

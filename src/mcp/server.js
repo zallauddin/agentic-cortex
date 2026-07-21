@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -701,6 +701,47 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'memory_fsm',
+    description: '🧠 FSM ORCHESTRATION — Manage the agent brain state machine: start agents in workflows, transition between states, query current state. The brain\'s executive function — tracks where every agent is and what comes next.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'What to do: start (begin machine), transition (move state), state (query current), list-machines (show available)', default: 'state' },
+        machineName: { type: 'string', description: 'Machine name: coding-workflow, debug-workflow, review-workflow (for action=start)' },
+        agentId: { type: 'string', description: 'Agent identifier (defaults to AGENTIC_CORTEX_AGENT_ID env var)', default: 'default' },
+        trigger: { type: 'string', description: 'Transition trigger (for action=transition): plan_approved, tests_pass, review_approved, etc.' },
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_rules',
+    description: '📋 RULE ENGINE — Manage declarative brain rules: list, delete, enable/disable, or evaluate manually. Rules fire automatically on post_save and state_transition events.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'What to do: list, delete, enable, disable, evaluate', default: 'list' },
+        id: { type: 'integer', description: 'Rule ID (for delete/enable/disable)' },
+        event: { type: 'string', description: 'Filter by event or evaluate event: post_save, state_transition, manual' },
+        project: { type: 'string', description: 'Project path (for evaluate)' },
+      },
+    },
+  },
+  {
+    name: 'memory_workflow',
+    description: '⚡ WORKFLOW EXECUTOR — Run multi-step procedures with dependency ordering: start, advance steps, check progress, cancel. Built-in workflows: deploy-pipeline, bug-fix-cycle, memory-maintenance.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'What to do: list, start, advance, get, cancel', default: 'list' },
+        workflowName: { type: 'string', description: 'Workflow name (for action=start)' },
+        instanceId: { type: 'integer', description: 'Instance ID (for advance/get/cancel)' },
+        agentId: { type: 'string', description: 'Agent identifier' },
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -981,6 +1022,56 @@ async function callTool(name, args) {
         return api.getEvalLogStats({ project: args.project });
       }
       return api.getEvaluationLog({ project: args.project, verdict: args.verdict, limit: args.limit });
+    }
+
+    case 'memory_fsm': {
+      const agentId = args.agentId || process.env.AGENTIC_CORTEX_AGENT_ID || 'default';
+      if (args.action === 'start') {
+        api.startAgent(agentId, args.machineName, { project: args.project });
+        return api.getAgentState(agentId);
+      }
+      if (args.action === 'transition') {
+        api.transitionAgent(agentId, args.trigger, { project: args.project });
+        return api.getAgentState(agentId);
+      }
+      if (args.action === 'list-machines') {
+        return api.listMachines();
+      }
+      const state = api.getAgentState(agentId);
+      const transitions = api.getAvailableTransitions(agentId);
+      return { state, transitions };
+    }
+
+    case 'memory_rules': {
+      if (args.action === 'delete') {
+        return api.deleteRule(args.id);
+      }
+      if (args.action === 'enable') {
+        return api.setRuleEnabled(args.id, true);
+      }
+      if (args.action === 'disable') {
+        return api.setRuleEnabled(args.id, false);
+      }
+      if (args.action === 'evaluate') {
+        return api.evaluateRules(args.event || 'manual', { project: args.project });
+      }
+      return api.listRules({ event: args.event });
+    }
+
+    case 'memory_workflow': {
+      if (args.action === 'start') {
+        return api.startWorkflow(args.workflowName, { agentId: args.agentId, project: args.project });
+      }
+      if (args.action === 'advance') {
+        return api.advanceWorkflow(args.instanceId);
+      }
+      if (args.action === 'cancel') {
+        return api.cancelWorkflow(args.instanceId);
+      }
+      if (args.action === 'get') {
+        return api.getWorkflowInstance(args.instanceId);
+      }
+      return api.listWorkflows();
     }
 
     case 'memory_auto_capture': {

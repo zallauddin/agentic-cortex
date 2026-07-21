@@ -25,4 +25,7 @@ module.exports = {
   relations: require('./relations'),
   hooks: require('./hooks'),
   reflection: require('./reflection'),
+  fsm: require('./fsm'),
+  rules: require('./rules'),
+  workflow: require('./workflow'),
 };
