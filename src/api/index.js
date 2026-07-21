@@ -15,6 +15,28 @@ core.selfImprove = selfImprove;
 const standards = require('../core/standards');
 core.standards = standards;
 
+// Initialize FSM engine — the orchestration layer (v5.0.0)
+const fsm = require('../core/fsm');
+core.fsm = fsm;
+
+// Initialize rule engine — declarative condition-action rules (v5.0.0)
+const rules = require('../core/rules');
+core.rules = rules;
+
+// Initialize workflow executor — multi-step procedures (v5.0.0)
+const workflow = require('../core/workflow');
+core.workflow = workflow;
+
+// Wire dependency injection
+fsm.setSaveFunction(save);
+rules.setSaveFunction(save);
+rules.setFsm(fsm);
+workflow.setSaveFunction(save);
+workflow.setFsm(fsm);
+
+// Rules hook is registered in init() to avoid TDZ with _apiDb
+let _rulesHookRegistered = false;
+
 // Keyword fallback arrays for outcome classification (used by recordAction and self-improve)
 const _KEYWORD_SUCCESS = ['pass', 'success', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated'];
 const _KEYWORD_FAILURE = ['fail', 'error', 'crash', 'broke', 'failed', 'rejected', 'timeout', 'rollback', 'revert'];
@@ -674,6 +696,23 @@ async function context(opts) {
         pack += `- **${p.title || '(untitled)'}** (conf: ${p.confidence}%, util: ${p.predicted_utility || 0})${tags ? ' — ' + tags : ''}\n`;
       }
       pack += '\n';
+    }
+  } catch { /* best-effort */ }
+
+  // Layer 3.5: FSM State Awareness (v5.0.0 orchestration layer)
+  try {
+    const agentId = process.env.AGENTIC_CORTEX_AGENT_ID || null;
+    if (agentId) {
+      const stateCtx = fsm.getStateContext(agentId);
+      if (stateCtx) {
+        const available = fsm.getAvailableTransitions(agentId);
+        pack += '## 🔄 Agent State: ' + stateCtx.state + ' (' + stateCtx.machineName + ')\n';
+        pack += '**Phase focus:** ' + stateCtx.phase + '\n';
+        if (available.length > 0) {
+          pack += '**Available transitions:** ' + available.map(t => t.trigger + ' → ' + t.to).join(', ') + '\n';
+        }
+        pack += '\n';
+      }
     }
   } catch { /* best-effort */ }
 
@@ -1453,6 +1492,20 @@ async function init() {
   if (!_proactiveWarningHookRegistered) {
     core.hooks.registerHook('pre_save', _checkNewObsAgainstErrors);
     _proactiveWarningHookRegistered = true;
+  }
+
+  // Register rules hook on first init (idempotent)
+  if (!_rulesHookRegistered) {
+    rules.initRuleHook(_getDB());
+    _rulesHookRegistered = true;
+  }
+
+  // Seed default FSM machines, rules, and workflows on first init
+  try {
+    fsm.initDefaultMachines(_getDB());
+    workflow.initDefaultWorkflows(_getDB());
+  } catch (err) {
+    console.warn('[agentic-cortex] FSM/workflow init warning: ' + (err && err.message ? err.message : err));
   }
 
   // Auto-seed coding standards on first init (zero user action needed)
@@ -2963,4 +3016,28 @@ module.exports = {
   listExperiments,
   getEvaluationLog,
   getEvalLogStats,
+  // ── v5.0.0: Brain orchestration layer ──
+  init: async () => { await init(); return { status: 'initialized' }; },
+  // FSM
+  defineMachine: (def) => fsm.defineMachine(def),
+  startAgent: (agentId, machineName, opts) => fsm.startAgent(_getDB(), agentId, machineName, opts),
+  transitionAgent: (agentId, trigger, opts) => fsm.transition(_getDB(), agentId, trigger, opts),
+  getAgentState: (agentId) => fsm.getAgentState(agentId),
+  getAvailableTransitions: (agentId) => fsm.getAvailableTransitions(agentId),
+  listMachines: () => fsm.listMachines(),
+  listAgentStates: (opts) => fsm.listAgentStates(_getDB(), opts || {}),
+  // Rules
+  defineRule: (def) => rules.defineRule(_getDB(), def),
+  evaluateRules: (event, context) => rules.evaluate(_getDB(), event, context),
+  listRules: (opts) => rules.listRules(_getDB(), opts || {}),
+  deleteRule: (id) => rules.deleteRule(_getDB(), id),
+  setRuleEnabled: (id, enabled) => rules.setRuleEnabled(_getDB(), id, enabled),
+  // Workflow
+  defineWorkflow: (def) => workflow.defineWorkflow(def),
+  startWorkflow: (name, opts) => workflow.startWorkflow(_getDB(), name, opts),
+  advanceWorkflow: (instanceId, opts) => workflow.advanceWorkflow(_getDB(), instanceId, opts),
+  getWorkflowInstance: (instanceId) => workflow.getWorkflowInstance(_getDB(), instanceId),
+  listWorkflows: () => workflow.listWorkflows(),
+  listWorkflowInstances: (opts) => workflow.listWorkflowInstances(_getDB(), opts || {}),
+  cancelWorkflow: (instanceId) => workflow.cancelWorkflow(_getDB(), instanceId),
 };
