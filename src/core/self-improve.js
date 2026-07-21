@@ -5,7 +5,7 @@
  * analysis via LLM, and generates automatic improvements ("learnings").
  * Operates continuously via the hooks system — no manual invocation needed.
  *
- * Three core operations:
+ * Five core operations:
  *
  * 1. learnFromError — When an 'error' observation is saved, triggers RCA
  *    via LLM and generates a 'learning' observation with the systemic fix.
@@ -17,6 +17,13 @@
  * 3. verifyLearning — When new observations contradict or reinforce a
  *    previous learning, adjusts the learning's confidence up or down.
  *    High-confidence learnings become "rules"; low-confidence ones decay.
+ *
+ * 4. spawnExperiment — When recurring errors are detected (same tag 3+ times),
+ *    creates a structured experiment with hypothesis, isolated variable,
+ *    and fixed metric (AutoGTM's single-variable experiment pattern).
+ *
+ * 5. writeEvalLog — Immutable append-only audit trail for every evaluation
+ *    (AutoGTM's results.tsv pattern applied to self-improvement).
  *
  * Integration: initHooks() registers post_save hooks so the loop is
  * always running — every save triggers self-improvement checks.
@@ -37,6 +44,10 @@ let _saveFn = null;
 // Track already-analyzed error IDs to prevent duplicate RCA
 const _analyzedErrorIds = new Set();
 const MAX_ANALYZED_CACHE = 200;
+
+// Track error tags per project for experiment spawning (recurring error detection)
+const _errorTagCounts = new Map();
+const EXPERIMENT_SPAWN_THRESHOLD = 3;
 
 // Track save counts per project for periodic conflict checks (every ~30 saves)
 const _projectSaveCounts = new Map();
@@ -334,10 +345,36 @@ Return JSON: { \"verdict\": \"CONTRADICT\"|\"REINFORCE\"|\"NEUTRAL\", \"reason\"
         // Boost confidence, cap at 98
         db.prepare('UPDATE observations SET confidence = MIN(confidence + 5, 98) WHERE id = ?')
           .run(learning.id);
+        // Write immutable eval log entry for crystallize's verification count
+        try {
+          writeEvalLog(db, {
+            project: newObs.project_path || process.cwd(),
+            intentId: learning.id,
+            intentContent: learning.content,
+            outcomeId: newObs.id,
+            outcomeContent: (newObs.content || '').slice(0, 500),
+            verdict: 'REINFORCE',
+            verdictReason: parsed.reason || '',
+            confidenceDelta: 5,
+          });
+        } catch { /* best-effort */ }
       } else if (parsed.verdict === 'CONTRADICT' && learning.confidence < 85) {
         // Only downgrade non-hardened learnings
         db.prepare('UPDATE observations SET confidence = MAX(confidence - 15, 10) WHERE id = ?')
           .run(learning.id);
+        // Write immutable eval log entry
+        try {
+          writeEvalLog(db, {
+            project: newObs.project_path || process.cwd(),
+            intentId: learning.id,
+            intentContent: learning.content,
+            outcomeId: newObs.id,
+            outcomeContent: (newObs.content || '').slice(0, 500),
+            verdict: 'CONTRADICT',
+            verdictReason: parsed.reason || '',
+            confidenceDelta: -15,
+          });
+        } catch { /* best-effort */ }
       }
       _verifiedRecently.set(learning.id, nowMs);
     } catch (e) {
@@ -419,17 +456,35 @@ function initHooks(saveFn) {
       const succeeded = result === 'success';
       const failed = result === 'failure';
 
+      let confidenceDelta = 0;
       if (succeeded && !failed) {
         // Boost intent and action confidence — evidence of correctness
         db.prepare('UPDATE observations SET confidence = MIN(confidence + 3, 100) WHERE id = ?').run(intent.id);
         db.prepare('UPDATE observations SET confidence = MIN(confidence + 5, 100) WHERE id = ?').run(action.id);
+        confidenceDelta = 3;
       } else if (failed) {
         // Downgrade confidence — strategy didn't work
         db.prepare('UPDATE observations SET confidence = MAX(confidence - 10, 10) WHERE id = ?').run(action.id);
         if (intent.confidence > 50) {
           db.prepare('UPDATE observations SET confidence = MAX(confidence - 5, 10) WHERE id = ?').run(intent.id);
         }
+        confidenceDelta = -10;
       }
+
+      // ── Pattern 3: Append-only immutable evaluation log (AutoGTM's results.tsv) ──
+      try {
+        writeEvalLog(db, {
+          project: obs.project_path,
+          intentId: intent.id,
+          intentContent: intent.content,
+          actionId: action.id,
+          actionContent: action.content,
+          outcomeId: obs.id,
+          outcomeContent: outcomeText,
+          verdict: result.toUpperCase(),
+          confidenceDelta,
+        });
+      } catch { /* best-effort */ }
     }
   });
 
@@ -447,6 +502,29 @@ function initHooks(saveFn) {
       console.warn('[self-improve] Periodic conflict check for %s (%d saves)...', obs.project_path, count);
       await autoResolveConflicts(db, { project: obs.project_path, limit: 3 });
     }
+  });
+
+  // Hook 5: Recurring error detection → Auto-spawn experiments (AutoGTM's hypothesis testing)
+  hooks.registerHook('post_save', async (obs, ctx, db) => {
+    if (obs.type !== 'error' || !obs.project_path || !obs.tags) return;
+    try {
+      const tags = Array.isArray(obs.tags) ? obs.tags : JSON.parse(obs.tags || '[]');
+      for (const tag of tags) {
+        if (tag === 'auto-capture' || tag === 'error-report' || tag === 'rca') continue;
+        const key = obs.project_path + '::' + tag;
+        const count = (_errorTagCounts.get(key) || 0) + 1;
+        _errorTagCounts.set(key, count);
+        // Prune periodically
+        if (_errorTagCounts.size > 200) {
+          const keys = [..._errorTagCounts.keys()];
+          for (const k of keys.slice(0, 50)) _errorTagCounts.delete(k);
+        }
+        if (count === EXPERIMENT_SPAWN_THRESHOLD) {
+          console.warn('[self-improve] Recurring error tag "%s" detected (%d times), spawning experiment...', tag, count);
+          await spawnExperiment(db, { project: obs.project_path, errorTag: tag });
+        }
+      }
+    } catch { /* best-effort */ }
   });
 
   console.error('[self-improve] Continuous improvement loop initialized');
@@ -470,6 +548,196 @@ function resetState() {
   _verifiedRecently.clear();
 }
 
+// ─── 5. Experiment Spawning (AutoGTM's Hypothesis Testing) ──────────
+
+/**
+ * Spawn a structured experiment when recurring errors are detected.
+ *
+ * AutoGTM pattern: isolated single-variable hypothesis testing.
+ * When errors with the same tag appear 3+ times, this creates an
+ * experiment observation with:
+ *   - hypothesis: What we think the fix is
+ *   - variable_changed: The ONE thing we're changing
+ *   - fixed_metric: The constant ruler to measure against
+ *   - before_state: Current failing state
+ *
+ * The agent is expected to report back via recordAction() with the
+ * experiment as the intent, so Hook 3 can evaluate the outcome.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Object} opts
+ * @param {string} opts.project - Project path
+ * @param {string} opts.errorTag - The recurring error tag
+ * @returns {Promise<Object|null>} Created experiment observation or null
+ */
+async function spawnExperiment(db, opts = {}) {
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const errorTag = opts.errorTag || 'unknown';
+
+  // Find recent errors with this tag
+  const recentErrors = db.prepare(
+    "SELECT id, title, content, tags FROM observations WHERE project_path = ? AND type = 'error' AND is_active = 1 AND tags LIKE ? ORDER BY created_at DESC LIMIT 3"
+  ).all(project, '%' + errorTag + '%');
+
+  if (recentErrors.length < 2) return null;
+
+  // Check if we already spawned an experiment for this tag recently
+  const existing = db.prepare(
+    "SELECT id FROM observations WHERE project_path = ? AND type = 'experiment' AND is_active = 1 AND tags LIKE ? AND created_at > datetime('now', '-7 days')"
+  ).get(project, '%' + errorTag + '%');
+  if (existing) return null;
+
+  // Generate experiment via LLM
+  const prompt = `You are designing a controlled experiment to fix a recurring error. Follow the scientific method: change ONE variable at a time, measure against a fixed metric.
+
+Recurring error tag: "${errorTag}"
+
+Recent occurrences:
+${recentErrors.map((e, i) => `${i + 1}. ${e.title || 'Error'}: ${e.content.slice(0, 300)}`).join('\n\n')}
+
+Return JSON:
+- hypothesis: What you believe will fix this (max 200 chars)
+- variable_changed: The ONE thing to change (max 100 chars)
+- fixed_metric: The constant metric to measure success against (e.g., "build success", "test passes", "no TypeError")
+- before_state: Current failing behavior (max 200 chars)
+- expected_after: What success looks like (max 200 chars)`;
+
+  let experiment;
+  try {
+    const result = await callLLM([
+      { role: 'system', content: 'You design controlled software engineering experiments. Respond ONLY with valid JSON.' },
+      { role: 'user', content: prompt },
+    ], { temperature: 0.2, maxTokens: 800, timeout: 30000 });
+    experiment = JSON.parse(result || '{}');
+  } catch {
+    experiment = {
+      hypothesis: 'Change the approach to fix recurring ' + errorTag,
+      variable_changed: 'approach',
+      fixed_metric: 'error resolution',
+      before_state: recentErrors[0]?.content?.slice(0, 200) || 'Recurring error',
+      expected_after: 'Error no longer occurs',
+    };
+  }
+
+  if (!_saveFn) return null;
+
+  const experimentObs = await _saveFn({
+    project,
+    type: 'experiment',
+    title: 'Experiment: ' + (experiment.hypothesis || 'Fix ' + errorTag).slice(0, 80),
+    content: `## Hypothesis\n${experiment.hypothesis || 'N/A'}\n\n## Variable Changed\n${experiment.variable_changed || 'N/A'}\n\n## Fixed Metric\n${experiment.fixed_metric || 'N/A'}\n\n## Before State\n${experiment.before_state || 'N/A'}\n\n## Expected After\n${experiment.expected_after || 'N/A'}`,
+    tags: [errorTag, 'experiment', 'auto-spawned', 'hypothesis-test'],
+    confidence: 70,
+    importance: 8,
+    provenance: 'inferred',
+    steps: [
+      '1. Apply the variable change described in the hypothesis',
+      '2. Test against the fixed metric',
+      '3. Report outcome via recordAction (intent=this experiment, action=what you did, outcome=result)',
+    ],
+    triggers: [errorTag],
+  });
+
+  if (experimentObs && experimentObs.id) {
+    // Link errors to experiment
+    for (const e of recentErrors) {
+      try {
+        await addRelation(db, { sourceId: experimentObs.id, targetId: e.id, relationType: 'derives_from', confidence: 85 });
+      } catch {}
+    }
+  }
+
+  console.warn('[self-improve] Experiment spawned for tag "%s": #%d', errorTag, experimentObs?.id);
+  return experimentObs;
+}
+
+// ─── 6. Immutable Evaluation Log (AutoGTM's results.tsv) ─────────────
+
+/**
+ * Write an immutable row to the evaluation_log table.
+ * This is AutoGTM's append-only results.tsv pattern — every evaluation
+ * is preserved forever for auditing, benchmarking, and plateau detection.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Object} entry
+ * @param {string} entry.project - Project path
+ * @param {number} [entry.intentId] - Intent observation ID
+ * @param {string} [entry.intentContent] - Intent text (truncated)
+ * @param {number} [entry.actionId] - Action observation ID
+ * @param {string} [entry.actionContent] - Action text (truncated)
+ * @param {number} [entry.outcomeId] - Outcome observation ID
+ * @param {string} [entry.outcomeContent] - Outcome text (truncated)
+ * @param {string} entry.verdict - SUCCESS, FAILURE, NEUTRAL, REINFORCE, CONTRADICT
+ * @param {string} [entry.verdictReason] - Reason for verdict
+ * @param {number} [entry.confidenceDelta] - Confidence delta applied
+ * @param {string} [entry.variableChanged] - What variable was changed (for experiments)
+ */
+function writeEvalLog(db, entry) {
+  db.prepare(
+    'INSERT INTO evaluation_log (project_path, intent_id, intent_content, action_id, action_content, outcome_id, outcome_content, llm_verdict, verdict_reason, confidence_delta, variable_changed) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(
+    entry.project || process.cwd(),
+    entry.intentId || null,
+    (entry.intentContent || '').slice(0, 500),
+    entry.actionId || null,
+    (entry.actionContent || '').slice(0, 500),
+    entry.outcomeId || null,
+    (entry.outcomeContent || '').slice(0, 500),
+    entry.verdict || 'UNKNOWN',
+    (entry.verdictReason || '').slice(0, 300) || null,
+    entry.confidenceDelta || 0,
+    (entry.variableChanged || '').slice(0, 200) || null,
+  );
+}
+
+/**
+ * Query the evaluation log with optional filters.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Object} [opts]
+ * @param {string} [opts.project] - Project path
+ * @param {string} [opts.verdict] - Filter by verdict
+ * @param {number} [opts.limit=50] - Max rows
+ * @returns {Array<Object>}
+ */
+function getEvaluationLog(db, opts = {}) {
+  const project = opts.project || null;
+  const verdict = opts.verdict || null;
+  const limit = opts.limit || 50;
+
+  let sql = 'SELECT * FROM evaluation_log WHERE 1=1';
+  const params = [];
+  if (project) { sql += ' AND project_path = ?'; params.push(project); }
+  if (verdict) { sql += ' AND llm_verdict = ?'; params.push(verdict); }
+  sql += ' ORDER BY evaluated_at DESC LIMIT ?';
+  params.push(limit);
+
+  return db.prepare(sql).all(...params);
+}
+
+/**
+ * Get evaluation log summary stats for a project.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project
+ * @returns {{total: number, successRate: number, avgConfidenceDelta: number, recentVerdicts: Array}}
+ */
+function getEvalLogStats(db, project) {
+  const total = db.prepare('SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ?').get(project).c;
+  if (total === 0) return { total: 0, successRate: 0, avgConfidenceDelta: 0, recentVerdicts: [] };
+
+  const successCount = db.prepare("SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ? AND llm_verdict = 'SUCCESS'").get(project).c;
+  const avgDelta = db.prepare('SELECT AVG(confidence_delta) as avg FROM evaluation_log WHERE project_path = ?').get(project).avg || 0;
+  const recent = db.prepare('SELECT llm_verdict, confidence_delta, evaluated_at FROM evaluation_log WHERE project_path = ? ORDER BY evaluated_at DESC LIMIT 10').all(project);
+
+  return {
+    total,
+    successRate: Math.round((successCount / total) * 10000) / 100,
+    avgConfidenceDelta: Math.round(avgDelta * 100) / 100,
+    recentVerdicts: recent,
+  };
+}
+
 // ─── Exports ──────────────────────────────────────────────────────────
 
 module.exports = {
@@ -477,6 +745,10 @@ module.exports = {
   learnFromError,
   autoResolveConflicts,
   verifyLearning,
+  spawnExperiment,
+  writeEvalLog,
+  getEvaluationLog,
+  getEvalLogStats,
   initHooks,
   setSaveFunction,
   resetState,
