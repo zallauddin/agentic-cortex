@@ -1,7 +1,7 @@
 {
-  "generated": "2026-07-21T02:54:29.744Z",
-  "fingerprint": "2cc98e1d0593fa1a",
-  "fileCount": 42,
+  "generated": "2026-07-21T03:12:56.273Z",
+  "fingerprint": "3cb645e539bd2162",
+  "fileCount": 45,
   "apiRoutes": [],
   "services": {},
   "prismaSchema": {
@@ -12,7 +12,7 @@
     "layerCounts": {
       "UI": 0,
       "API": 1,
-      "Service": 35,
+      "Service": 38,
       "Data": 0
     },
     "crossLayerEdges": {},
@@ -105,7 +105,7 @@
           "isAsync": true
         }
       ],
-      "size": 66177,
+      "size": 71611,
       "layer": "Service"
     },
     "scripts/auto-setup.js": {
@@ -1787,7 +1787,7 @@
           "isAsync": false
         }
       ],
-      "size": 121900,
+      "size": 125188,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1921,7 +1921,7 @@
           "isAsync": false
         }
       ],
-      "size": 13647,
+      "size": 16039,
       "layer": "Service"
     },
     "src/core/embedding.js": {
@@ -2133,6 +2133,294 @@
         }
       ],
       "size": 16345,
+      "layer": "Service"
+    },
+    "src/core/fsm.js": {
+      "path": "src/core/fsm.js",
+      "role": "library",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "_fireOnEnter",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "machine",
+              "type": null
+            },
+            {
+              "name": "stateName",
+              "type": null
+            },
+            {
+              "name": "agentId",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_fireOnExit",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "machine",
+              "type": null
+            },
+            {
+              "name": "stateName",
+              "type": null
+            },
+            {
+              "name": "agentId",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_transitionFromDB",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "dbState",
+              "type": null
+            },
+            {
+              "name": "trigger",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_transitionFromState",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "state",
+              "type": null
+            },
+            {
+              "name": "trigger",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "defineMachine",
+          "params": [
+            {
+              "name": "definition",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "fsm.js — Finite-State Machine engine for agentic-cortex.  Provides the orchestration layer that transforms agentic-corte",
+          "isAsync": false
+        },
+        {
+          "name": "getAgentState",
+          "params": [
+            {
+              "name": "agentId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get an agent's current state across all machines. @param {string} agentId @returns {Object|null}",
+          "isAsync": false
+        },
+        {
+          "name": "getAvailableTransitions",
+          "params": [
+            {
+              "name": "agentId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get available transitions from an agent's current state. @param {string} agentId @returns {Array<{trigger: string, to: s",
+          "isAsync": false
+        },
+        {
+          "name": "getMachine",
+          "params": [
+            {
+              "name": "name",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get a machine definition by name. @param {string} name @returns {Object|undefined}",
+          "isAsync": false
+        },
+        {
+          "name": "getStateContext",
+          "params": [
+            {
+              "name": "agentId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get the context hint for an agent's current state — used by context() to inject phase-specific content.  @param {string}",
+          "isAsync": false
+        },
+        {
+          "name": "initDefaultMachines",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Seed default machines into the database and in-memory cache. Called once during API initialization.  @param {import('bet",
+          "isAsync": false
+        },
+        {
+          "name": "listAgentStates",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List all agent states, optionally filtered by machine. @param {import('better-sqlite3').Database} db @param {Object} [op",
+          "isAsync": false
+        },
+        {
+          "name": "listMachines",
+          "params": [],
+          "returnType": null,
+          "doc": "List all registered machines. @returns {Array<{name: string, description: string, states: number, initialState: string}>",
+          "isAsync": false
+        },
+        {
+          "name": "resetState",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "setRuleEngine",
+          "params": [
+            {
+              "name": "re",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "setSaveFunction",
+          "params": [
+            {
+              "name": "fn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "startAgent",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "agentId",
+              "type": null
+            },
+            {
+              "name": "machineName",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Start an agent in a state machine.  @param {import('better-sqlite3').Database} db @param {string} agentId @param {string",
+          "isAsync": false
+        },
+        {
+          "name": "transition",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "agentId",
+              "type": null
+            },
+            {
+              "name": "trigger",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Transition an agent from one state to another.  @param {import('better-sqlite3').Database} db @param {string} agentId @p",
+          "isAsync": false
+        }
+      ],
+      "size": 18627,
       "layer": "Service"
     },
     "src/core/hooks.js": {
@@ -2375,7 +2663,7 @@
       "exports": [],
       "imports": [],
       "functions": [],
-      "size": 729,
+      "size": 818,
       "layer": "Service"
     },
     "src/core/reflection.js": {
@@ -2644,6 +2932,196 @@
         }
       ],
       "size": 6235,
+      "layer": "Service"
+    },
+    "src/core/rules.js": {
+      "path": "src/core/rules.js",
+      "role": "library",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "_checkCondition",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "rule",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "_executeAction",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "rule",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        },
+        {
+          "name": "defineRule",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "def",
+              "type": null
+            },
+            {
+              "name": "persist",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "rules.js — Declarative Rule Engine for agentic-cortex.  Provides a priority-based condition→action rule system that inte",
+          "isAsync": false
+        },
+        {
+          "name": "deleteRule",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "id",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Delete a persisted rule. @param {import('better-sqlite3').Database} db @param {number} id @returns {Object}",
+          "isAsync": false
+        },
+        {
+          "name": "evaluate",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "event",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Evaluate all matching rules for an event.  @param {import('better-sqlite3').Database} db @param {string} event — 'post_s",
+          "isAsync": true
+        },
+        {
+          "name": "initRuleHook",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Register rules as a hook so they fire automatically on every save. @param {import('better-sqlite3').Database} db",
+          "isAsync": false
+        },
+        {
+          "name": "listRules",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List all rules (in-memory + persisted). @param {import('better-sqlite3').Database} db @param {Object} [opts] — { event?,",
+          "isAsync": false
+        },
+        {
+          "name": "setFsm",
+          "params": [
+            {
+              "name": "fsm",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "setRuleEnabled",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "id",
+              "type": null
+            },
+            {
+              "name": "enabled",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Enable/disable a persisted rule. @param {import('better-sqlite3').Database} db @param {number} id @param {boolean} enabl",
+          "isAsync": false
+        },
+        {
+          "name": "setSaveFunction",
+          "params": [
+            {
+              "name": "fn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "tpl",
+          "params": [
+            {
+              "name": "str",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 12554,
       "layer": "Service"
     },
     "src/core/search.js": {
@@ -3329,6 +3807,171 @@
       "size": 7451,
       "layer": "Service"
     },
+    "src/core/workflow.js": {
+      "path": "src/core/workflow.js",
+      "role": "library",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "advanceWorkflow",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "instanceId",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Advance a workflow by completing the current step and moving to the next.  @param {import('better-sqlite3').Database} db",
+          "isAsync": false
+        },
+        {
+          "name": "cancelWorkflow",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "instanceId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Cancel a running workflow.  @param {import('better-sqlite3').Database} db @param {number} instanceId @returns {Object}",
+          "isAsync": false
+        },
+        {
+          "name": "defineWorkflow",
+          "params": [
+            {
+              "name": "definition",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "workflow.js — Workflow/Procedure Executor for agentic-cortex.  Executes multi-step procedures with dependency ordering, ",
+          "isAsync": false
+        },
+        {
+          "name": "getWorkflow",
+          "params": [
+            {
+              "name": "name",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get a workflow definition by name. @param {string} name @returns {Object|undefined}",
+          "isAsync": false
+        },
+        {
+          "name": "getWorkflowInstance",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "instanceId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get a workflow instance by ID.  @param {import('better-sqlite3').Database} db @param {number} instanceId @returns {Objec",
+          "isAsync": false
+        },
+        {
+          "name": "initDefaultWorkflows",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Seed default workflows. @param {import('better-sqlite3').Database} db",
+          "isAsync": false
+        },
+        {
+          "name": "listWorkflowInstances",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List workflow instances with optional filters.  @param {import('better-sqlite3').Database} db @param {Object} [opts] — {",
+          "isAsync": false
+        },
+        {
+          "name": "listWorkflows",
+          "params": [],
+          "returnType": null,
+          "doc": "List all registered workflows.",
+          "isAsync": false
+        },
+        {
+          "name": "setFsm",
+          "params": [
+            {
+              "name": "fsm",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "setSaveFunction",
+          "params": [
+            {
+              "name": "fn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "startWorkflow",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "workflowName",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Start a new workflow instance.  @param {import('better-sqlite3').Database} db @param {string} workflowName @param {Objec",
+          "isAsync": false
+        }
+      ],
+      "size": 12135,
+      "layer": "Service"
+    },
     "src/editor/vscode-logic.js": {
       "path": "src/editor/vscode-logic.js",
       "role": "source",
@@ -3507,7 +4150,7 @@
           "isAsync": true
         }
       ],
-      "size": 48037,
+      "size": 52288,
       "layer": "Service"
     },
     "src/sync/git-sync.js": {

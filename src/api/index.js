@@ -823,6 +823,22 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
     }
   } catch { /* best-effort */ }
 
+  // ── Layer 0.7: FSM State Awareness (v5.0.0 brain orchestration) ──
+  try {
+    const fsmAgentId = process.env.AGENTIC_CORTEX_AGENT_ID || null;
+    if (fsmAgentId) {
+      const stateCtx = fsm.getStateContext(fsmAgentId);
+      if (stateCtx) {
+        const available = fsm.getAvailableTransitions(fsmAgentId);
+        output += `  <agent_state machine="${_xmlEscape(stateCtx.machineName)}" current="${_xmlEscape(stateCtx.state)}" phase="${_xmlEscape(stateCtx.phase)}">\n`;
+        if (available.length > 0) {
+          output += `    <available_transitions>${_xmlEscape(available.map(t => t.trigger + '→' + t.to).join(', '))}</available_transitions>\n`;
+        }
+        output += '  </agent_state>\n';
+      }
+    }
+  } catch { /* best-effort */ }
+
   // ── Layer 1: Actionable Insights (LLM summary of relevant memories) ──
   try {
     const insights = await _summarizeMemories(db, project, workingOn);

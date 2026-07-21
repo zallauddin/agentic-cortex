@@ -218,7 +218,7 @@ function advanceWorkflow(db, instanceId, opts = {}) {
 
     return {
       id: instanceId, workflowName: inst.workflow_name, status,
-      completedSteps, stepResults, completedAt: allCompleted ? now : null,
+      currentStep: null, completedSteps, stepResults, completedAt: allCompleted ? now : null,
     };
   }
 
