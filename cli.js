@@ -1510,6 +1510,93 @@ commands['mcp-config'] = {
   }
 };
 
+// ─── Crystallize: Tiered memory compression (AutoGTM's brain layers) ──
+
+commands.crystallize = {
+  desc: 'Compress raw observations into synthesis, harden syntheses into principles (AutoGTM\'s compounding brain)',
+  args: ['[--project PATH]', '[--dry-run]', '[--from-layer N]', '[--min-count N]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--dry-run') opts.dryRun = true;
+      if (args[i] === '--from-layer') opts.fromLayer = parseInt(args[++i], 10);
+      if (args[i] === '--min-count') opts.minCount = parseInt(args[++i], 10);
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    try {
+      const result = await api.crystallize(opts);
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error('Crystallization failed:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+// ─── Experiment: Hypothesis testing (AutoGTM's single-variable experiments) ──
+
+commands.experiment = {
+  desc: 'Spawn or list hypothesis-testing experiments (AutoGTM\'s single-variable experiment loop)',
+  args: ['[--spawn]', '[--tag ERROR_TAG]', '[--list]', '[--project PATH]', '[--limit N]'],
+  parse(args) {
+    const opts = { action: 'list', limit: 20 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--spawn') opts.action = 'spawn';
+      if (args[i] === '--tag') opts.errorTag = args[++i];
+      if (args[i] === '--list') opts.action = 'list';
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    try {
+      if (opts.action === 'spawn') {
+        const result = await api.spawnExperiment(opts);
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        const experiments = api.listExperiments(opts);
+        console.log(JSON.stringify(experiments, null, 2));
+      }
+    } catch (err) {
+      console.error('Experiment failed:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
+// ─── Eval-log: Immutable audit trail (AutoGTM's results.tsv) ──
+
+commands['eval-log'] = {
+  desc: 'Query the immutable evaluation log (AutoGTM\'s results.tsv audit trail)',
+  args: ['[--project PATH]', '[--verdict SUCCESS|FAILURE|NEUTRAL]', '[--limit N]', '[--stats]'],
+  parse(args) {
+    const opts = { limit: 50 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--verdict') opts.verdict = args[++i];
+      if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+      if (args[i] === '--stats') opts.stats = true;
+    }
+    return opts;
+  },
+  run(db, opts) {
+    try {
+      if (opts.stats) {
+        console.log(JSON.stringify(api.getEvalLogStats(opts), null, 2));
+      } else {
+        console.log(JSON.stringify(api.getEvaluationLog(opts), null, 2));
+      }
+    } catch (err) {
+      console.error('Eval-log query failed:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
 commands.inject = {
