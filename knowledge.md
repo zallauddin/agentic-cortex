@@ -43,7 +43,7 @@ Use to skip rediscovery of known files and decisions.
 </agentic_cortex>
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-07-21T02:54:29.816Z -->
+<!-- Auto-injected by agentic-cortex at 2026-07-21T03:12:56.346Z -->
 
 # Agentic Cortex - Project Context
 
@@ -134,9 +134,9 @@ These standards are pre-loaded and always active. You MUST apply them at every p
 ### Event
 - README v4.7.0 update (★0)
 - README v4.7.0 update (★0)
-<codebase_graph files="42" api_routes="0" generated="2026-07-21T02:54:29.744Z">
+<codebase_graph files="45" api_routes="0" generated="2026-07-21T03:12:56.273Z">
   <architecture patterns="Repository Pattern, Event-Driven, CLI Tool" stack="Databases: SQLite | Tools: Xenova Transformers (AI/ML)"/>
-  <layers dataflow="API → Service" ui="0" api="1" service="35" data="0"/>
+  <layers dataflow="API → Service" ui="0" api="1" service="38" data="0"/>
   <hub_files>scripts/inject-memory.mjs, scripts/generate-graph.mjs, src/sync/git-sync.js, cli.js, scripts/auto-setup.js, scripts/create-discovery-files.js, scripts/import-community-knowledge.js, scripts/seed-memory-repo.js</hub_files>
   <libraries>
     <file path="src/core/conflict.js" layer="Service" fns="checkConflicts(db,opts)"/>
@@ -145,15 +145,15 @@ These standards are pre-loaded and always active. You MUST apply them at every p
     <file path="src/core/db.js" layer="Service" fns="ensureSchema(db); getDb(); getDbPath_()"/>
     <file path="src/core/embedding.js" layer="Service" fns="_cacheGet(key); _cacheSet(key,value); clearEmbeddingCache(); computeEmbedding(text); cosineSimilarity(a,b); disposePipelines()"/>
     <file path="src/core/export.js" layer="Service" fns="exportJSON(db,opts); exportMarkdown(db,opts); findRelated(obs,allObs); importJSON(db,data,opts); sanitizeFilename(title,id)"/>
+    <file path="src/core/fsm.js" layer="Service" fns="_fireOnEnter(db,machine,stateName,agentId,project); _fireOnExit(db,machine,stateName,agentId,project); _transitionFromDB(db,dbState,trigger,opts); _transitionFromState(db,state,trigger,opts); defineMachine(definition); getAgentState(agentId)"/>
     <file path="src/core/hooks.js" layer="Service" fns="createHook(db,opts); deleteHook(db,id); evaluateCondition(type,value,observation,context); executePersistedHook(db,hook,observation,context); getPersistedHooks(db,event); interpolate(str,observation,context)"/>
     <file path="src/core/index.js" layer="Service"/>
     <file path="src/core/reflection.js" layer="Service" fns="_projectRelativeThreshold(count); archiveSuperseded(db,opts); consolidateMemories(db,opts); crystallize(db,opts); findSimilarClusters(observations,threshold); generateConsolidatedSummary(cluster)"/>
     <file path="src/core/relations.js" layer="Service" fns="addRelation(db,opts); deleteRelation(db,relationId); getGraph(db,opts); getRelations(db,observationId); listRelationTypes(db)"/>
+    <file path="src/core/rules.js" layer="Service" fns="_checkCondition(db,rule,context); _executeAction(db,rule,context); defineRule(db,def,persist); deleteRule(db,id); evaluate(db,event,context); initRuleHook(db)"/>
     <file path="src/core/search.js" layer="Service" fns="buildWhereClause(opts); hybridSearch(db,query,queryVec,opts); keywordSearch(db,opts); rerankResults(query,results); sanitizeDate(dateStr); semanticSearch(db,queryVec,opts)"/>
     <file path="src/core/self-improve.js" layer="Service" fns="_keywordClassify(outcomeText); autoResolveConflicts(db,opts); classifyOutcome(outcomeText); getEvalLogStats(db,project); getEvaluationLog(db,opts); initHooks(saveFn)"/>
     <file path="src/core/session.js" layer="Service" fns="callLLM(messages,opts); endSession(db,sessionId,summary); listSessions(db,opts); startSession(db,opts); summarizeSession(db,opts); templateSummary(obs,reason)"/>
-    <file path="src/core/standards.js" layer="Service" fns="addStandard(db,project,def,saveFn); ensureStandardsExist(db,project,saveFn); getStandardsAsObservations(project); getStandardsContext(db,project); listCustomStandards(db,project,opts); listStandards(db,project,opts)"/>
-    <file path="src/core/watcher.js" layer="Service" fns="_flushBatch(onBatch); _onChange(eventType,filename,onBatch); _walkForChanges(dir,prefix,since,onBatch); _watchWithPolling(dir,onBatch); getStatus(); setAPI(api)"/>
   </libraries>
   <scripts>
     <file path="scripts/auto-setup.js"/>
