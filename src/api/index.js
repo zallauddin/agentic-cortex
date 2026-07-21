@@ -255,8 +255,8 @@ async function save(opts) {
   const projectScope = opts.project_scope || 'local';
 
   const r = db.prepare(
-    'INSERT INTO observations (session_id, project_path, agent_id, type, title, content, tags, importance, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, project_scope) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(session, project, agentId, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, projectScope);
+    'INSERT INTO observations (session_id, project_path, agent_id, type, title, content, tags, importance, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, project_scope, layer) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(session, project, agentId, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, projectScope, opts.layer || 1);
 
   const savedId = Number(r.lastInsertRowid);
   const saved = { id: savedId, status: 'saved', type, confidence, provenance, project, agent_id: agentId, embedded: !!embedding };
@@ -662,6 +662,20 @@ async function context(opts) {
   ).all(project);
 
   let pack = '# Agentic Cortex - Project Context\n\n';
+
+  // Layer 3: Principles — hardened, battle-tested knowledge (AutoGTM's seed layer)
+  try {
+    const principles = core.reflection.getPrinciples(db, project, 5);
+    if (principles.length > 0) {
+      pack += '## 🔷 Hardened Principles (always in effect)\n';
+      for (const p of principles) {
+        let tags = '';
+        try { const arr = JSON.parse(p.tags || '[]'); tags = arr.filter(t => !['principle', 'auto-crystallized', 'synthesis'].includes(t)).join(', '); } catch {}
+        pack += `- **${p.title || '(untitled)'}** (conf: ${p.confidence}%, util: ${p.predicted_utility || 0})${tags ? ' — ' + tags : ''}\n`;
+      }
+      pack += '\n';
+    }
+  } catch { /* best-effort */ }
 
   // Coding standards: always injected, phase-aware, pre-loaded
   pack += standards.getStandardsContext();
@@ -2813,7 +2827,106 @@ function analytics(opts) {
 
   const freshness = { ...freshBuckets, avg: avgFreshness };
 
-  return { rca, conflicts, utility, feedback, freshness };
+  // ── Eval log stats (AutoGTM's results.tsv analytics) ──
+  let evalLog = { total: 0, successRate: 0, avgConfidenceDelta: 0, recentVerdicts: [] };
+  try {
+    evalLog = selfImprove.getEvalLogStats(db, project);
+  } catch { /* best-effort */ }
+
+  // ── Layer stats (AutoGTM's crystallized brain analytics) ──
+  let layers = { raw: 0, synthesis: 0, principle: 0 };
+  try {
+    layers.raw = db.prepare('SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1 AND (layer IS NULL OR layer = 1)').get(project).c;
+    layers.synthesis = db.prepare('SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND is_active = 1 AND layer = 2').get(project).c;
+    layers.principle = db.prepare('SELECT COUNT(*) as c FROM observations WHERE (project_path = ? OR (project_scope = ? AND is_active = 1)) AND is_active = 1 AND (layer = 3 OR type = ?)').get(project, 'global', 'principle').c;
+  } catch { /* best-effort */ }
+
+  // ── Experiment stats (AutoGTM's hypothesis testing analytics) ──
+  let experiments = { active: 0, resolved: 0, successRate: 0 };
+  try {
+    experiments.active = db.prepare("SELECT COUNT(*) as c FROM observations WHERE project_path = ? AND type = 'experiment' AND is_active = 1").get(project).c;
+    const resolved = db.prepare("SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ? AND intent_id IN (SELECT id FROM observations WHERE project_path = ? AND type = 'experiment')").get(project, project).c;
+    const resolvedSuccess = db.prepare("SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ? AND llm_verdict = 'SUCCESS' AND intent_id IN (SELECT id FROM observations WHERE project_path = ? AND type = 'experiment')").get(project, project).c;
+    experiments.resolved = resolved;
+    experiments.successRate = resolved > 0 ? Math.round((resolvedSuccess / resolved) * 10000) / 100 : 0;
+  } catch { /* best-effort */ }
+
+  return { rca, conflicts, utility, feedback, freshness, evalLog, layers, experiments };
+}
+
+// ─── Crystallization (AutoGTM's Compounding Brain) ──────────────────
+
+/**
+ * Run memory crystallization: compress raw observations upward through
+ * tiered layers (raw → synthesis → principle).
+ *
+ * @param {Object} [opts] - { project?, fromLayer?, minCount?, dryRun? }
+ * @returns {Promise<{rawToSynthesis: number, synthesisToPrinciple: number, dryRun: boolean}>}
+ */
+async function crystallize(opts) {
+  return core.reflection.crystallize(_getDB(), opts || {});
+}
+
+/**
+ * Get principles (layer 3) for a project.
+ *
+ * @param {Object} [opts] - { project?, limit? }
+ * @returns {Array<Object>}
+ */
+function getPrinciples(opts) {
+  const db = _getDB();
+  const project = (opts && opts.project) || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  return core.reflection.getPrinciples(db, project, (opts && opts.limit) || 10);
+}
+
+// ─── Experiment (AutoGTM's Hypothesis Testing) ──────────────────────
+
+/**
+ * Spawn a hypothesis-testing experiment for a recurring error.
+ *
+ * @param {Object} [opts] - { project?, errorTag? }
+ * @returns {Promise<Object|null>}
+ */
+async function spawnExperiment(opts) {
+  return selfImprove.spawnExperiment(_getDB(), opts || {});
+}
+
+/**
+ * List active experiments for a project.
+ *
+ * @param {Object} [opts] - { project?, limit? }
+ * @returns {Array<Object>}
+ */
+function listExperiments(opts) {
+  const db = _getDB();
+  const project = (opts && opts.project) || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  return db.prepare(
+    "SELECT id, title, content, tags, confidence, created_at FROM observations WHERE project_path = ? AND type = 'experiment' AND is_active = 1 ORDER BY created_at DESC LIMIT ?"
+  ).all(project, (opts && opts.limit) || 20);
+}
+
+// ─── Evaluation Log (AutoGTM's results.tsv) ─────────────────────────
+
+/**
+ * Query the immutable evaluation log.
+ *
+ * @param {Object} [opts] - { project?, verdict?, limit? }
+ * @returns {Array<Object>}
+ */
+function getEvaluationLog(opts) {
+  return selfImprove.getEvaluationLog(_getDB(), opts || {});
+}
+
+/**
+ * Get evaluation log summary stats.
+ *
+ * @param {Object} [opts] - { project? }
+ * @returns {{total: number, successRate: number, avgConfidenceDelta: number, recentVerdicts: Array}}
+ */
+function getEvalLogStats(opts) {
+  const db = _getDB();
+  const project = (opts && opts.project) || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  return selfImprove.getEvalLogStats(db, project);
 }
 
 // ─── Exports ───────────────────────────────────────────────────────────
@@ -2843,4 +2956,11 @@ module.exports = {
   listStandards: standards.listStandards,
   searchStandards: standards.searchStandards,
   getStandardsAsObservations: standards.getStandardsAsObservations,
+  // ── v4.7.0: AutoGTM-inspired self-improvement ──
+  crystallize,
+  getPrinciples,
+  spawnExperiment,
+  listExperiments,
+  getEvaluationLog,
+  getEvalLogStats,
 };
