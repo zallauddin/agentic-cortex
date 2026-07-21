@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-13T19:04:40.396Z",
-  "fingerprint": "4287045b6656e55d",
+  "generated": "2026-07-21T02:18:37.413Z",
+  "fingerprint": "9b2756e2acd75555",
   "fileCount": 42,
   "apiRoutes": [],
   "services": {},
@@ -105,7 +105,7 @@
           "isAsync": true
         }
       ],
-      "size": 63098,
+      "size": 66177,
       "layer": "Service"
     },
     "scripts/auto-setup.js": {
@@ -1076,6 +1076,18 @@
           "isAsync": false
         },
         {
+          "name": "crystallize",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Run memory crystallization: compress raw observations upward through tiered layers (raw → synthesis → principle).  @para",
+          "isAsync": true
+        },
+        {
           "name": "deleteHook",
           "params": [
             {
@@ -1240,6 +1252,30 @@
           "isAsync": false
         },
         {
+          "name": "getEvalLogStats",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get evaluation log summary stats.  @param {Object} [opts] - { project? } @returns {{total: number, successRate: number, ",
+          "isAsync": false
+        },
+        {
+          "name": "getEvaluationLog",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Query the immutable evaluation log.  @param {Object} [opts] - { project?, verdict?, limit? } @returns {Array<Object>}",
+          "isAsync": false
+        },
+        {
           "name": "getGlobalVault",
           "params": [
             {
@@ -1261,6 +1297,18 @@
           ],
           "returnType": null,
           "doc": "Get a subgraph around an observation. @param {Object} opts - { observationId, depth?, limit? } @returns {Object} { nodes",
+          "isAsync": false
+        },
+        {
+          "name": "getPrinciples",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get principles (layer 3) for a project.  @param {Object} [opts] - { project?, limit? } @returns {Array<Object>}",
           "isAsync": false
         },
         {
@@ -1387,6 +1435,18 @@
           ],
           "returnType": null,
           "doc": "List agent sessions. @param {Object} [opts] - { agentId?, project?, limit? } @returns {Object[]}",
+          "isAsync": false
+        },
+        {
+          "name": "listExperiments",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "List active experiments for a project.  @param {Object} [opts] - { project?, limit? } @returns {Array<Object>}",
           "isAsync": false
         },
         {
@@ -1603,6 +1663,18 @@
           "isAsync": false
         },
         {
+          "name": "spawnExperiment",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Spawn a hypothesis-testing experiment for a recurring error.  @param {Object} [opts] - { project?, errorTag? } @returns ",
+          "isAsync": true
+        },
+        {
           "name": "startAgentSession",
           "params": [
             {
@@ -1715,7 +1787,7 @@
           "isAsync": false
         }
       ],
-      "size": 116698,
+      "size": 121900,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -1763,7 +1835,7 @@
           "isAsync": false
         }
       ],
-      "size": 2690,
+      "size": 2754,
       "layer": "Service"
     },
     "src/core/db-path.js": {
@@ -1849,7 +1921,7 @@
           "isAsync": false
         }
       ],
-      "size": 12059,
+      "size": 13647,
       "layer": "Service"
     },
     "src/core/embedding.js": {
@@ -2357,6 +2429,22 @@
           "isAsync": true
         },
         {
+          "name": "crystallize",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Default minimum verification count before a synthesis can become a principle. @type {number} /\nconst DEFAULT_PRINCIPLE_V",
+          "isAsync": true
+        },
+        {
           "name": "findSimilarClusters",
           "params": [
             {
@@ -2405,6 +2493,26 @@
           "isAsync": false
         },
         {
+          "name": "getPrinciples",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            },
+            {
+              "name": "limit",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get principles (layer 3) for a project — always-injected, load-bearing knowledge.  @param {import('better-sqlite3').Data",
+          "isAsync": false
+        },
+        {
           "name": "pickCanonical",
           "params": [
             {
@@ -2449,7 +2557,7 @@
           "isAsync": true
         }
       ],
-      "size": 20708,
+      "size": 29322,
       "layer": "Service"
     },
     "src/core/relations.js": {
@@ -2695,6 +2803,38 @@
           "isAsync": true
         },
         {
+          "name": "getEvalLogStats",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get evaluation log summary stats for a project.  @param {import('better-sqlite3').Database} db @param {string} project @",
+          "isAsync": false
+        },
+        {
+          "name": "getEvaluationLog",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Query the evaluation log with optional filters.  @param {import('better-sqlite3').Database} db @param {Object} [opts] @p",
+          "isAsync": false
+        },
+        {
           "name": "initHooks",
           "params": [
             {
@@ -2742,6 +2882,22 @@
           "isAsync": false
         },
         {
+          "name": "spawnExperiment",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Spawn a structured experiment when recurring errors are detected.  AutoGTM pattern: isolated single-variable hypothesis ",
+          "isAsync": true
+        },
+        {
           "name": "verifyLearning",
           "params": [
             {
@@ -2756,9 +2912,25 @@
           "returnType": null,
           "doc": "When a new observation is saved, check if it contradicts or reinforces existing learnings. Adjust confidence scores acco",
           "isAsync": true
+        },
+        {
+          "name": "writeEvalLog",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "entry",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Write an immutable row to the evaluation_log table. This is AutoGTM's append-only results.tsv pattern — every evaluation",
+          "isAsync": false
         }
       ],
-      "size": 18500,
+      "size": 30039,
       "layer": "Service"
     },
     "src/core/session.js": {
@@ -3335,7 +3507,7 @@
           "isAsync": true
         }
       ],
-      "size": 45183,
+      "size": 48037,
       "layer": "Service"
     },
     "src/sync/git-sync.js": {

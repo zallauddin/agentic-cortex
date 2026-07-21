@@ -597,7 +597,7 @@ async function crystallize(db, opts = {}) {
     const raws = db.prepare(
       'SELECT id, type, title, content, tags, confidence, embedding ' +
       'FROM observations WHERE project_path = ? AND is_active = 1 ' +
-      'AND (layer IS NULL OR layer = 1) AND embedding IS NOT NULL ' +
+      'AND (layer IS NULL OR layer = 1) ' +
       'ORDER BY created_at DESC LIMIT 200'
     ).all(project);
 
@@ -620,7 +620,7 @@ async function crystallize(db, opts = {}) {
 
         // Check if synthesis for this tag already exists recently
         const existingSynth = db.prepare(
-          "SELECT id FROM observations WHERE project_path = ? AND type = 'synthesis' AND is_active = 1 AND tags LIKE ? AND created_at > datetime('now', '-30 days')"
+          "SELECT id FROM observations WHERE project_path = ? AND type = 'learning' AND is_active = 1 AND tags LIKE ? AND created_at > datetime('now', '-30 days')"
         ).get(project, '%"' + tag + '"%');
         if (existingSynth) continue;
 
@@ -641,7 +641,13 @@ Return JSON with:
             { role: 'user', content: prompt },
           ], { temperature: 0.2, maxTokens: 1200, timeout: 30000 });
           synthesized = JSON.parse(result || '{}');
+          if (!synthesized || !synthesized.title || !synthesized.content) {
+            synthesized = null;
+          }
         } catch {
+          synthesized = null;
+        }
+        if (!synthesized) {
           synthesized = {
             title: `Synthesis: ${tag}`,
             content: cluster.slice(0, 5).map(r => `- ${r.title || r.content.slice(0, 100)}`).join('\n'),

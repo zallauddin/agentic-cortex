@@ -609,7 +609,14 @@ Return JSON:
       { role: 'user', content: prompt },
     ], { temperature: 0.2, maxTokens: 800, timeout: 30000 });
     experiment = JSON.parse(result || '{}');
+    // If LLM returned empty or invalid, use fallback
+    if (!experiment || !experiment.hypothesis) {
+      experiment = null;
+    }
   } catch {
+    experiment = null;
+  }
+  if (!experiment) {
     experiment = {
       hypothesis: 'Change the approach to fix recurring ' + errorTag,
       variable_changed: 'approach',
