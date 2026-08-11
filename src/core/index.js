@@ -28,4 +28,5 @@ module.exports = {
   fsm: require('./fsm'),
   rules: require('./rules'),
   workflow: require('./workflow'),
+  prompts: require('./prompts'),
 };

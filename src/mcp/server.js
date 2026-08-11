@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -730,15 +730,58 @@ const TOOLS = [
   },
   {
     name: 'memory_workflow',
-    description: '⚡ WORKFLOW EXECUTOR — Run multi-step procedures with dependency ordering: start, advance steps, check progress, cancel. Built-in workflows: deploy-pipeline, bug-fix-cycle, memory-maintenance.',
+    description: '⚡ WORKFLOW EXECUTOR — Run multi-step procedures with dependency ordering: start, advance steps, check progress, cancel. Built-in workflows: deploy-pipeline, bug-fix-cycle, memory-maintenance, plus multi-agent: code-review-team, incident-response-squad.',
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', description: 'What to do: list, start, advance, get, cancel', default: 'list' },
+        action: { type: 'string', description: 'What to do: list, start, advance, get, cancel, agents (list sub-agents)', default: 'list' },
         workflowName: { type: 'string', description: 'Workflow name (for action=start)' },
-        instanceId: { type: 'integer', description: 'Instance ID (for advance/get/cancel)' },
+        instanceId: { type: 'integer', description: 'Instance ID (for advance/get/cancel/agents)' },
         agentId: { type: 'string', description: 'Agent identifier' },
         project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_workflow_agents',
+    description: '🤖 MULTI-AGENT WORKFLOW — List all sub-agents spawned by a multi-agent workflow instance. Each step with agentRole config creates an FSM-tracked sub-agent. Use this to inspect multi-agent collaboration state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        instanceId: { type: 'integer', description: 'Workflow instance ID to inspect sub-agents for' },
+      },
+      required: ['instanceId'],
+    },
+  },
+  {
+    name: 'memory_prompts_list',
+    description: '📝 PROMPT REGISTRY — List all available prompt templates in the registry. Each template has a name, version, description, and outcome tracking flag. Layer 1 of Graph Engineering: Prompt Engineering.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'memory_prompts_render',
+    description: '🎨 PROMPT RENDERING — Render a prompt template with variable substitution. Returns the system message, user message, and default LLM params. Use this to inspect or use templates by name (e.g., classify-outcome, rca-from-error, design-experiment).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        templateName: { type: 'string', description: 'Template name: classify-outcome, rca-from-error, consolidate-observations, promote-pattern, resolve-conflict, verify-learning, design-experiment, extract-skill, crystallize-raw-to-synthesis, analyze-plateau' },
+        vars: { type: 'object', description: 'Variable substitutions for the template (e.g., { "outcomeText": "test passed" })' },
+      },
+      required: ['templateName'],
+    },
+  },
+  {
+    name: 'memory_plateau_check',
+    description: '📉 PLATEAU DETECTION — Check if the self-improvement loop has stalled for a project. Analyzes the evaluation log to detect flatlining success rates. When a plateau is found, triggers LLM analysis for breakthrough strategies and saves a learning observation. Layer 4 of Graph Engineering: Loop Engineering.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+        windowDays: { type: 'integer', description: 'Days to analyze for stall detection (default 7)', default: 7 },
+        force: { type: 'boolean', description: 'Bypass debounce check (default false)', default: false },
       },
     },
   },
@@ -1071,8 +1114,27 @@ async function callTool(name, args) {
       if (args.action === 'get') {
         return api.getWorkflowInstance(args.instanceId);
       }
+      if (args.action === 'agents') {
+        return api.getWorkflowAgents(args.instanceId);
+      }
       return api.listWorkflows();
     }
+
+    case 'memory_workflow_agents':
+      return api.getWorkflowAgents(args.instanceId);
+
+    case 'memory_prompts_list':
+      return api.listPromptTemplates();
+
+    case 'memory_prompts_render':
+      return api.renderPrompt(args.templateName, args.vars || {});
+
+    case 'memory_plateau_check':
+      return api.checkPlateau({
+        project: args.project,
+        windowDays: args.windowDays,
+        force: args.force,
+      });
 
     case 'memory_auto_capture': {
       const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();

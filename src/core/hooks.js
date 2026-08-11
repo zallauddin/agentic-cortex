@@ -147,7 +147,21 @@ async function executePersistedHook(db, hook, observation, context) {
       break;
     }
     case 'webhook': {
-      // Future: HTTP webhook call
+      // HTTP webhook call — bridges agentic-cortex to external systems
+      const { url, headers, body_template, method, retries } = (actionConfig || {});
+      if (!url) break;
+
+      const renderedBody = interpolate(body_template || '{}', observation, context);
+      const renderedHeaders = {};
+      if (headers) {
+        for (const [k, v] of Object.entries(headers)) {
+          renderedHeaders[k] = interpolate(String(v), observation, context);
+        }
+      }
+
+      // Fire-and-forget with optional retry
+      const maxRetries = retries || 0;
+      _fireWebhook(url, method || 'POST', renderedHeaders, renderedBody, maxRetries, hook.name);
       break;
     }
   }
@@ -291,6 +305,55 @@ function deleteHook(db, id) {
  */
 function setHookEnabled(db, id, enabled) {
   return updateHook(db, id, { enabled });
+}
+
+// ─── Webhook Fire-and-Forget ──────────────────────────────────────
+
+/**
+ * Fire an HTTP webhook with optional retry on failure.
+ * Runs asynchronously; errors are logged but never thrown to the caller.
+ *
+ * @param {string} url - Webhook URL
+ * @param {string} method - HTTP method (POST, PUT, etc.)
+ * @param {Object} headers - Request headers
+ * @param {string} body - Request body string
+ * @param {number} retries - Number of retry attempts (0 = no retry)
+ * @param {string} hookName - Hook name for error logging
+ */
+async function _fireWebhook(url, method, headers, body, retries, hookName) {
+  let lastError = null;
+  const maxAttempts = retries + 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(url, {
+        method: method || 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'agentic-cortex-webhook/1.0',
+          ...headers,
+        },
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) return; // Success
+      lastError = new Error('HTTP ' + res.status + ': ' + (await res.text().catch(() => '')).slice(0, 200));
+    } catch (err) {
+      lastError = err;
+    }
+
+    // Exponential backoff between retries
+    if (attempt < maxAttempts) {
+      await new Promise(r => setTimeout(r, Math.min(1000 * Math.pow(2, attempt - 1), 8000)));
+    }
+  }
+
+  console.error('[hooks] Webhook "' + hookName + '" failed after ' + maxAttempts + ' attempt(s):', lastError?.message || lastError);
 }
 
 module.exports = {

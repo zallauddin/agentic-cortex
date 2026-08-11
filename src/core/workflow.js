@@ -175,10 +175,13 @@ function startWorkflow(db, workflowName, opts = {}) {
 
 /**
  * Advance a workflow by completing the current step and moving to the next.
+ * Automatically handles multi-agent FSM integration when steps have
+ * `action: 'spawn_agent'` config — spawns sub-agents, tracks their FSM
+ * states, and includes sub-agent info in step results.
  *
  * @param {import('better-sqlite3').Database} db
  * @param {number} instanceId — Workflow instance ID
- * @param {Object} [opts] — { stepResult?, stepStatus? }
+ * @param {Object} [opts] — { stepResult?, stepStatus?, fsmTrigger? }
  * @returns {Object|null} Updated instance or null if workflow complete
  */
 function advanceWorkflow(db, instanceId, opts = {}) {
@@ -189,18 +192,47 @@ function advanceWorkflow(db, instanceId, opts = {}) {
   const wf = _workflows.get(inst.workflow_name);
   if (!wf) return null;
 
+  const project = inst.project_path || process.cwd();
   const completedSteps = JSON.parse(inst.completed_steps || '[]');
   const stepResults = JSON.parse(inst.step_results || '{}');
   const now = new Date().toISOString();
 
+  // FSM integration: manage sub-agent for current step if configured
+  if (inst.current_step) {
+    const currentStepDef = wf.steps.find(s => s.id === inst.current_step);
+    if (currentStepDef?.action === 'spawn_agent' && currentStepDef?.config) {
+      const key = instanceId + '::' + inst.current_step;
+      if (!_workflowAgents.has(key)) {
+        _spawnWorkflowAgent(db, instanceId, inst.current_step, currentStepDef.config, project);
+      }
+      if (opts.fsmTrigger) {
+        _transitionWorkflowAgent(db, instanceId, inst.current_step, opts.fsmTrigger, project);
+      }
+    }
+  }
+
   // Mark current step as completed
   if (inst.current_step) {
     completedSteps.push(inst.current_step);
-    stepResults[inst.current_step] = {
+    const stepResult = {
       completedAt: now,
       status: opts.stepStatus || 'completed',
       result: opts.stepResult || null,
     };
+
+    // Include sub-agent info if applicable
+    const key = instanceId + '::' + inst.current_step;
+    const agent = _workflowAgents.get(key);
+    if (agent) {
+      stepResult.subAgent = {
+        agentId: agent.agentId,
+        role: agent.role,
+        machineName: agent.machineName,
+        currentState: agent.state?.currentState || 'unknown',
+      };
+    }
+
+    stepResults[inst.current_step] = stepResult;
   }
 
   // Find next eligible step(s) — all dependencies completed
@@ -210,16 +242,28 @@ function advanceWorkflow(db, instanceId, opts = {}) {
   });
 
   if (!nextStep) {
-    // Workflow complete
+    // Workflow complete — clean up sub-agents
     const allCompleted = wf.steps.every(s => completedSteps.includes(s.id));
     const status = allCompleted ? 'completed' : 'failed';
+    _cleanupWorkflowAgents(instanceId);
+
     db.prepare('UPDATE workflow_instances SET status = ?, completed_steps = ?, step_results = ?, completed_at = ? WHERE id = ?')
       .run(status, JSON.stringify(completedSteps), JSON.stringify(stepResults), allCompleted ? now : null, instanceId);
+
+    // Fire workflow_done transition on parent agent if FSM is available
+    if (allCompleted && inst.agent_id && _fsm) {
+      try { _fsm.transition(db, inst.agent_id, 'workflow_done', { project }); } catch {}
+    }
 
     return {
       id: instanceId, workflowName: inst.workflow_name, status,
       currentStep: null, completedSteps, stepResults, completedAt: allCompleted ? now : null,
     };
+  }
+
+  // Spawn agent for next step if it has agent config
+  if (nextStep.action === 'spawn_agent' && nextStep.config) {
+    _spawnWorkflowAgent(db, instanceId, nextStep.id, nextStep.config, project);
   }
 
   // Advance to next step
@@ -297,6 +341,10 @@ function cancelWorkflow(db, instanceId) {
   const r = db.prepare(`UPDATE workflow_instances SET status = ?, completed_at = datetime('now') WHERE id = ? AND status = ?`)
     .run('cancelled', instanceId, 'running');
   if (r.changes === 0) throw new Error('Workflow instance not found or not running: ' + instanceId);
+
+  // Clean up any spawned sub-agents
+  _cleanupWorkflowAgents(instanceId);
+
   return { id: instanceId, status: 'cancelled' };
 }
 
@@ -327,6 +375,244 @@ function initDefaultWorkflows(db) {
   }
 }
 
+// ─── Workflow-FSM Bridge (Layer 5: Graph Engineering) ──────────────
+
+/** @type {Map<string, Object>} Active sub-agent FSM sessions spawned by workflows */
+const _workflowAgents = new Map();
+
+/**
+ * Add a multi-agent collaborative workflow definition.
+ * Steps with `agentRole` config spawn sub-agents tracked in the FSM.
+ *
+ * Multi-agent workflows represent Layer 5 of Graph Engineering:
+ * "Teams of AI working together" — each step can be handled by a
+ * different specialized agent with its own FSM state machine.
+ */
+const DEFAULT_MULTI_AGENT_WORKFLOWS = {
+  'code-review-team': {
+    name: 'code-review-team',
+    description: 'Multi-agent code review: analyzer → reviewer → tester → approver',
+    steps: [
+      {
+        id: 'analyze',
+        action: 'spawn_agent',
+        description: 'Static analysis agent reviews code structure',
+        dependsOn: [],
+        config: { agentRole: 'analyzer', fsmMachine: 'review-workflow' },
+      },
+      {
+        id: 'review',
+        action: 'spawn_agent',
+        description: 'Human-style review agent checks logic and patterns',
+        dependsOn: ['analyze'],
+        config: { agentRole: 'reviewer', fsmMachine: 'review-workflow' },
+      },
+      {
+        id: 'test',
+        action: 'spawn_agent',
+        description: 'Testing agent runs and validates tests',
+        dependsOn: ['review'],
+        config: { agentRole: 'tester', fsmMachine: 'coding-workflow' },
+      },
+      {
+        id: 'approve',
+        action: 'check',
+        description: 'Final approval gate',
+        dependsOn: ['test'],
+      },
+    ],
+  },
+  'incident-response-squad': {
+    name: 'incident-response-squad',
+    description: 'Multi-agent incident response: triage → diagnose → fix → verify → postmortem',
+    steps: [
+      {
+        id: 'triage',
+        action: 'spawn_agent',
+        description: 'Triage agent assesses severity and scope',
+        dependsOn: [],
+        config: { agentRole: 'triage', fsmMachine: 'debug-workflow' },
+      },
+      {
+        id: 'diagnose',
+        action: 'spawn_agent',
+        description: 'Diagnostic agent finds root cause',
+        dependsOn: ['triage'],
+        config: { agentRole: 'diagnostician', fsmMachine: 'debug-workflow' },
+      },
+      {
+        id: 'fix',
+        action: 'spawn_agent',
+        description: 'Fix agent implements the solution',
+        dependsOn: ['diagnose'],
+        config: { agentRole: 'fixer', fsmMachine: 'coding-workflow' },
+      },
+      {
+        id: 'verify',
+        action: 'spawn_agent',
+        description: 'Verification agent confirms fix works',
+        dependsOn: ['fix'],
+        config: { agentRole: 'verifier', fsmMachine: 'coding-workflow' },
+      },
+      {
+        id: 'postmortem',
+        action: 'check',
+        description: 'Create postmortem and learnings',
+        dependsOn: ['verify'],
+      },
+    ],
+  },
+};
+
+/**
+ * Spawn a sub-agent for a workflow step. Creates an FSM-tracked agent
+ * and returns the agent ID so the step can reference it.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} workflowInstanceId — Parent workflow instance ID
+ * @param {string} stepId — Current step ID
+ * @param {Object} config — Step config with { agentRole, fsmMachine }
+ * @param {string} project — Project path
+ * @returns {{ agentId: string, fsmMachine: string, state: Object }|null}
+ */
+function _spawnWorkflowAgent(db, workflowInstanceId, stepId, config, project) {
+  if (!_fsm) {
+    console.warn('[workflow] FSM not injected — cannot spawn sub-agent for step "%s"', stepId);
+    return null;
+  }
+
+  const machineName = config.fsmMachine || 'coding-workflow';
+  const agentId = 'wf-' + workflowInstanceId + '-' + stepId + '-' + Date.now().toString(36);
+
+  try {
+    const state = _fsm.startAgent(db, agentId, machineName, { project });
+    const key = workflowInstanceId + '::' + stepId;
+    _workflowAgents.set(key, {
+      agentId,
+      machineName,
+      role: config.agentRole || 'worker',
+      state,
+      spawnedAt: new Date().toISOString(),
+    });
+
+    if (_saveFn) {
+      _saveFn({
+        project,
+        type: 'context',
+        title: 'Workflow sub-agent spawned: ' + (config.agentRole || stepId),
+        content: `Sub-agent "${agentId}" spawned for workflow #${workflowInstanceId}, step "${stepId}" (role: ${config.agentRole || 'worker'}, machine: ${machineName}).`,
+        tags: ['workflow', 'multi-agent', 'fsm-bridge', 'auto-capture'],
+        importance: 5,
+        provenance: 'inferred',
+        agentId,
+      }).catch(() => {});
+    }
+
+    return { agentId, fsmMachine: machineName, state };
+  } catch (e) {
+    console.warn('[workflow] Failed to spawn sub-agent for step "%s": %s', stepId, e.message);
+    return null;
+  }
+}
+
+/**
+ * Transition a workflow sub-agent's FSM state. Called when a workflow
+ * step with a spawned agent completes.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} workflowInstanceId
+ * @param {string} stepId
+ * @param {string} trigger — FSM transition trigger
+ * @param {string} project — Project path
+ * @returns {Object|null} New FSM state or null
+ */
+function _transitionWorkflowAgent(db, workflowInstanceId, stepId, trigger, project) {
+  if (!_fsm) return null;
+
+  const key = workflowInstanceId + '::' + stepId;
+  const agent = _workflowAgents.get(key);
+  if (!agent) return null;
+
+  try {
+    const newState = _fsm.transition(db, agent.agentId, trigger, { project });
+    if (newState) {
+      agent.state = newState;
+      _workflowAgents.set(key, agent);
+    }
+    return newState;
+  } catch (e) {
+    console.warn('[workflow] Failed to transition sub-agent for step "%s": %s', stepId, e.message);
+    return null;
+  }
+}
+
+/**
+ * Get all sub-agents spawned by a workflow instance.
+ *
+ * @param {number} workflowInstanceId
+ * @returns {Array<{stepId: string, agentId: string, role: string, machineName: string, currentState: string}>}
+ */
+function getWorkflowAgents(workflowInstanceId) {
+  const prefix = workflowInstanceId + '::';
+  const result = [];
+  for (const [key, agent] of _workflowAgents) {
+    if (key.startsWith(prefix)) {
+      result.push({
+        stepId: key.slice(prefix.length),
+        agentId: agent.agentId,
+        role: agent.role,
+        machineName: agent.machineName,
+        currentState: agent.state?.currentState || 'unknown',
+        spawnedAt: agent.spawnedAt,
+      });
+    }
+  }
+  return result;
+}
+
+/**
+ * Clean up sub-agents for a completed/cancelled workflow instance.
+ *
+ * @param {number} workflowInstanceId
+ */
+function _cleanupWorkflowAgents(workflowInstanceId) {
+  const prefix = workflowInstanceId + '::';
+  for (const key of _workflowAgents.keys()) {
+    if (key.startsWith(prefix)) _workflowAgents.delete(key);
+  }
+}
+
+// ─── Backward-compat wrapper (now unified in advanceWorkflow) ────────
+
+/**
+ * @deprecated Use advanceWorkflow() directly — it now handles FSM integration.
+ * This wrapper exists for backward compatibility only.
+ */
+function advanceWorkflowWithFSM(db, instanceId, opts = {}) {
+  return advanceWorkflow(db, instanceId, opts);
+}
+
+// ─── Initialization (Extended) ──────────────────────────────────────
+
+/**
+ * Seed default workflows including multi-agent workflows.
+ * @param {import('better-sqlite3').Database} db
+ */
+function initDefaultWorkflowsExtended(db) {
+  // Load base workflows
+  initDefaultWorkflows(db);
+
+  // Load multi-agent workflows
+  for (const [name, wf] of Object.entries(DEFAULT_MULTI_AGENT_WORKFLOWS)) {
+    _workflows.set(name, wf);
+    const existing = db.prepare('SELECT id FROM workflow_definitions WHERE name = ?').get(name);
+    if (!existing) {
+      db.prepare('INSERT INTO workflow_definitions (name, steps) VALUES (?,?)')
+        .run(name, JSON.stringify(wf.steps));
+    }
+  }
+}
+
 // ─── Dependency Injection ───────────────────────────────────────────
 
 function setSaveFunction(fn) { _saveFn = fn; }
@@ -336,15 +622,19 @@ function setFsm(fsm) { _fsm = fsm; }
 
 module.exports = {
   DEFAULT_WORKFLOWS,
+  DEFAULT_MULTI_AGENT_WORKFLOWS,
   defineWorkflow,
   getWorkflow,
   listWorkflows,
   startWorkflow,
   advanceWorkflow,
+  advanceWorkflowWithFSM,
   getWorkflowInstance,
   listWorkflowInstances,
   cancelWorkflow,
+  getWorkflowAgents,
   initDefaultWorkflows,
+  initDefaultWorkflowsExtended,
   setSaveFunction,
   setFsm,
 };
