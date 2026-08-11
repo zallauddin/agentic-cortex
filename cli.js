@@ -1468,7 +1468,7 @@ commands.rules = {
 
 commands.workflow = {
   desc: 'Execute multi-step workflows with dependencies (brain procedure engine)',
-  args: ['[--list]', '[--start NAME]', '[--advance ID]', '[--cancel ID]', '[--get ID]', '[--agent-id ID]', '[--project PATH]'],
+  args: ['[--list]', '[--start NAME]', '[--advance ID]', '[--cancel ID]', '[--get ID]', '[--agents ID]', '[--agent-id ID]', '[--project PATH]'],
   parse(args) {
     const opts = { action: 'list' };
     for (let i = 0; i < args.length; i++) {
@@ -1477,6 +1477,7 @@ commands.workflow = {
       if (args[i] === '--advance') { opts.action = 'advance'; opts.instanceId = parseInt(args[++i], 10); }
       if (args[i] === '--cancel') { opts.action = 'cancel'; opts.instanceId = parseInt(args[++i], 10); }
       if (args[i] === '--get') { opts.action = 'get'; opts.instanceId = parseInt(args[++i], 10); }
+      if (args[i] === '--agents') { opts.action = 'agents'; opts.instanceId = parseInt(args[++i], 10); }
       if (args[i] === '--agent-id') opts.agentId = args[++i];
       if (args[i] === '--project') opts.project = args[++i];
     }
@@ -1497,6 +1498,9 @@ commands.workflow = {
         console.log(JSON.stringify(r, null, 2));
       } else if (opts.action === 'get') {
         const r = api.getWorkflowInstance(opts.instanceId);
+        console.log(JSON.stringify(r, null, 2));
+      } else if (opts.action === 'agents') {
+        const r = api.getWorkflowAgents(opts.instanceId);
         console.log(JSON.stringify(r, null, 2));
       }
     } catch (err) { console.error('Workflow error:', err.message); process.exit(1); }
@@ -1711,6 +1715,160 @@ commands['eval-log'] = {
   }
 };
 
+// ─── TOV Editor: Tales of Vesperia save file web editor ──────
+
+commands['tov-editor'] = {
+  desc: '⚔️ Launch Tales of Vesperia save file web editor (HTTP server)',
+  args: ['[port]'],
+  parse(args) {
+    return { port: parseInt(args[0] || '37778', 10) };
+  },
+  run(db, opts) {
+    if (opts.port) process.env.TOV_EDITOR_PORT = String(opts.port);
+    require('./src/tov/server');
+  }
+};
+
+// ─── Cortex UI: 5-Layer Desktop Dashboard ──────────────────
+
+commands['cortex-ui'] = {
+  desc: '🧠 Launch the 5-Layer Cortex Dashboard (Electron desktop app)',
+  args: ['[--devtools]'],
+  parse(args) {
+    return { devtools: args.includes('--devtools') };
+  },
+  run(db, opts) {
+    const { spawn } = require('child_process');
+    const electronPath = require('electron');
+    const args = [path.join(__dirname, 'electron-cortex.js')];
+    if (opts.devtools) args.push('--devtools');
+
+    console.error('[agentic-cortex] Launching 5-Layer Dashboard...');
+
+    const child = spawn(electronPath, args, {
+      stdio: 'inherit',
+      detached: true,
+      env: { ...process.env },
+    });
+
+    child.on('error', (err) => {
+      console.error('[agentic-cortex] Failed to launch Electron:', err.message);
+      console.error('Make sure Electron is installed: npm install --save-dev electron');
+      process.exit(1);
+    });
+
+    child.unref();
+
+    // Wait briefly for the window to open, then exit CLI
+    setTimeout(() => {
+      console.error('[agentic-cortex] Dashboard launched. Close the Electron window to exit.');
+      process.exit(0);
+    }, 2000);
+  }
+};
+
+// ─── Prompts: Prompt Template Registry (Layer 1: Prompt Engineering) ──
+
+commands.prompts = {
+  desc: '📝 Manage the 10-versioned prompt template registry (Layer 1: Prompt Engineering)',
+  args: ['<list|render>', '[template-name]', '[--vars JSON]', '[--json]'],
+  parse(args) {
+    const opts = { action: args[0] || 'list' };
+    if (opts.action === 'render') {
+      opts.templateName = args[1];
+      for (let i = 2; i < args.length; i++) {
+        if (args[i] === '--vars') {
+          try { opts.vars = JSON.parse(args[++i]); } catch { opts.vars = {}; }
+        }
+        if (args[i] === '--json') opts.outputJson = true;
+      }
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    if (opts.action === 'list') {
+      const templates = api.listPromptTemplates();
+      if (opts.outputJson) {
+        console.log(JSON.stringify(templates, null, 2));
+      } else {
+        console.log('# 📝 Prompt Template Registry (' + templates.length + ' templates)\n');
+        const byLayer = {};
+        for (const t of templates) {
+          const layer = t.layer || '?';
+          (byLayer[layer] = byLayer[layer] || []).push(t);
+        }
+        for (const [layer, items] of Object.entries(byLayer)) {
+          console.log('## ' + layer);
+          for (const t of items) {
+            console.log('  • ' + t.name + ' (v' + t.version + ')' + (t.outcomeTracked ? ' 🔬' : '') + ' — ' + t.description);
+          }
+          console.log('');
+        }
+      }
+      return;
+    }
+    if (opts.action === 'render') {
+      if (!opts.templateName) {
+        console.error('Usage: prompts render <template-name> [--vars \'{"key":"val"}\'] [--json]');
+        console.error('Use "prompts list" to see available templates.');
+        process.exit(1);
+      }
+      try {
+        const rendered = api.renderPrompt(opts.templateName, opts.vars || {});
+        if (!rendered) {
+          console.error('Unknown template: ' + opts.templateName);
+          process.exit(1);
+        }
+        if (opts.outputJson) {
+          console.log(JSON.stringify(rendered, null, 2));
+        } else {
+          console.log('# Template: ' + rendered.templateName + ' (v' + rendered.version + ')\n');
+          if (rendered.system) {
+            console.log('## System\n```\n' + (rendered.system || '').trim() + '\n```\n');
+          }
+          if (rendered.user) {
+            console.log('## User\n```\n' + (rendered.user || '').trim() + '\n```\n');
+          }
+          if (rendered.defaults && Object.keys(rendered.defaults).length) {
+            console.log('## Defaults\n' + JSON.stringify(rendered.defaults, null, 2));
+          }
+        }
+      } catch (err) {
+        console.error('Error:', err.message);
+        process.exit(1);
+      }
+      return;
+    }
+    console.error('Usage: prompts <list|render> [template-name] [--vars \'{"key":"val"}\'] [--json]');
+    process.exit(1);
+  }
+};
+
+// ─── Plateau Check: Detect stalled improvement (Layer 4: Loop Engineering) ──
+
+commands['plateau-check'] = {
+  desc: '📉 Check eval log for stalled improvement — triggers breakthrough analysis if plateau found (Layer 4: Loop Engineering)',
+  args: ['[--project PATH]', '[--window-days N]', '[--force]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--window-days') opts.windowDays = parseInt(args[++i], 10);
+      if (args[i] === '--force') opts.force = true;
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    try {
+      const result = await api.checkPlateau(opts);
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error('Plateau check error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
 commands.inject = {
@@ -1795,7 +1953,7 @@ async function main() {
     console.error('Error:', err.message);
     process.exit(1);
   } finally {
-    if (cmd !== 'serve' && db) db.close();
+    if (cmd !== 'serve' && cmd !== 'tov-editor' && cmd !== 'cortex-ui' && db) db.close();
   }
 }
 

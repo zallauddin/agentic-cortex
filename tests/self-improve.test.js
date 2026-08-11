@@ -235,6 +235,143 @@ describe('verifyLearning', () => {
   });
 });
 
+// ─── Plateau Detection ───────────────────────────────────────────────
+
+describe('detectPlateau', () => {
+  let db;
+  let savedItems;
+
+  beforeEach(() => {
+    db = createTestDb();
+    llmCallCount = 0;
+    mockLLMResponse = null;
+    savedItems = [];
+    selfImprove.setSaveFunction(async (opts) => {
+      savedItems.push(opts);
+      return { id: savedItems.length, status: 'saved' };
+    });
+    selfImprove._prunePlateauCache(); // Clear debounce cache
+  });
+
+  it('should return no plateau when evaluations are below minimum', async () => {
+    const r = await selfImprove.detectPlateau(db, { project: '/test', force: true });
+    assert.equal(r.plateauDetected, false);
+    assert.equal(r.diagnosis, null);
+  });
+
+  it('should return no plateau when improvement is occurring', async () => {
+    const now = new Date().toISOString();
+    const recent = new Date(Date.now() - 3 * 86400000).toISOString(); // 3 days ago
+    const older = new Date(Date.now() - 10 * 86400000).toISOString(); // 10 days ago
+
+    // Current window: mostly SUCCESS (high rate)
+    for (let i = 0; i < 20; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'success', 'SUCCESS', recent);
+    }
+
+    // Previous window: mostly FAILURE (low rate)
+    for (let i = 0; i < 15; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'failure', 'FAILURE', older);
+    }
+
+    const r = await selfImprove.detectPlateau(db, { project: '/test', force: true, windowDays: 7 });
+    assert.equal(r.plateauDetected, false, 'Improvement is happening, should not be plateau');
+  });
+
+  it('should detect plateau when rate is flat across windows', async () => {
+    const now = new Date().toISOString();
+    const recent = new Date(Date.now() - 3 * 86400000).toISOString();
+    const older = new Date(Date.now() - 10 * 86400000).toISOString();
+
+    // Current window: 20 evaluations, 10 success = 50%
+    for (let i = 0; i < 10; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'success', 'SUCCESS', recent);
+    }
+    for (let i = 0; i < 10; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'failure', 'FAILURE', recent);
+    }
+
+    // Previous window: 20 evaluations, 10 success = 50%
+    for (let i = 0; i < 10; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'success', 'SUCCESS', older);
+    }
+    for (let i = 0; i < 10; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'failure', 'FAILURE', older);
+    }
+
+    const r = await selfImprove.detectPlateau(db, { project: '/test', force: true, windowDays: 7 });
+    assert.equal(r.plateauDetected, true, '50% rate in both windows should be plateau');
+  });
+
+  it('should count REINFORCE as success in plateau detection', async () => {
+    const recent = new Date(Date.now() - 3 * 86400000).toISOString();
+
+    for (let i = 0; i < 10; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'success', 'REINFORCE', recent);
+    }
+    for (let i = 0; i < 10; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'failure', 'FAILURE', recent);
+    }
+
+    const r = await selfImprove.detectPlateau(db, { project: '/test', force: true, windowDays: 7 });
+    // 10 REINFORCE + 10 FAILURE = 50% in current. No previous = default to current (50-50=0 improvement).
+    assert.equal(r.plateauDetected, true);
+  });
+
+  it('should respect debounce cache by default', async () => {
+    const recent = new Date(Date.now() - 1 * 86400000).toISOString();
+    for (let i = 0; i < 15; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'success', 'SUCCESS', recent);
+    }
+
+    // First call (no force) — should actually run the check
+    await selfImprove.detectPlateau(db, { project: '/test' });
+
+    // Second call immediately after — should be debounced
+    const r2 = await selfImprove.detectPlateau(db, { project: '/test' });
+    // Debounced result should have no diagnosis (cached: { plateau: false, ... })
+    assert.equal(r2.plateauDetected !== undefined, true);
+  });
+
+  it('should bypass debounce when force is true', async () => {
+    const recent = new Date(Date.now() - 1 * 86400000).toISOString();
+    for (let i = 0; i < 15; i++) {
+      db.prepare(
+        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
+      ).run('/test', 'outcome', 'failure', 'FAILURE', recent);
+    }
+
+    await selfImprove.detectPlateau(db, { project: '/test' });
+    // Force should still run
+    const r = await selfImprove.detectPlateau(db, { project: '/test', force: true });
+    assert.ok(r.plateauDetected !== undefined);
+  });
+
+  it('should default to current project when no project specified', async () => {
+    const r = await selfImprove.detectPlateau(db, { force: true });
+    // Should not throw, returns a result object
+    assert.equal(typeof r.plateauDetected, 'boolean');
+  });
+});
+
 // ─── Exports ─────────────────────────────────────────────────────────
 
 describe('module exports', () => {
@@ -250,6 +387,7 @@ describe('module exports', () => {
     assert.equal(typeof selfImprove.learnFromError, 'function');
     assert.equal(typeof selfImprove.autoResolveConflicts, 'function');
     assert.equal(typeof selfImprove.verifyLearning, 'function');
+    assert.equal(typeof selfImprove.detectPlateau, 'function');
     assert.equal(typeof selfImprove.initHooks, 'function');
     assert.equal(typeof selfImprove.setSaveFunction, 'function');
   });

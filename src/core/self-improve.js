@@ -38,6 +38,13 @@ const { checkConflicts } = require('./conflict');
 const { addRelation } = require('./relations');
 const hooks = require('./hooks');
 
+// Lazy-loaded prompt registry (Layer 1: Prompt Engineering)
+let _prompts = null;
+function _getPrompts() {
+  if (!_prompts) _prompts = require('./prompts');
+  return _prompts;
+}
+
 // Injected save function (avoids circular dependency on src/api)
 let _saveFn = null;
 
@@ -92,26 +99,15 @@ function _keywordClassify(outcomeText) {
  * @returns {Promise<'success'|'failure'|'neutral'>} Classification result
  */
 async function classifyOutcome(outcomeText) {
-  const systemPrompt = `You classify the outcome of a coding action. Respond with a single JSON object.
-
-Classification rules:
-- "success" = the action achieved its intended goal (work completed, test passes, bug fixed, build green, key created)
-- "failure" = the action did NOT achieve its goal (anything failed, broke, rejected, error, timeout, rollback, didn't work, didn't take, didn't fix)
-- "neutral" = outcome is ambiguous or neither success nor failure
-
-CRITICAL rules:
-- MUST handle negation: "didn't work", "didn't take", "didn't fix", "didn't pass", "not working" are FAILURES, not successes
-- MUST handle implicit failure: "the code crashed after applying" is a FAILURE
-- "fixed" alone is success; "didn't fix" is failure
-
-Respond ONLY with: {"outcome":"success|failure|neutral","reason":"brief reason"}`;
-
   _lastClassificationFallback = false;
   try {
-    const result = await callLLM([
-      { role: 'system', content: systemPrompt },
+    const tpl = _getPrompts().buildMessages('classify-outcome', {
+      outcomeText: (outcomeText || '').slice(0, 500),
+    });
+    const result = await callLLM(tpl ? tpl.messages : [
+      { role: 'system', content: 'You classify outcomes. Respond ONLY with valid JSON: {"outcome":"success|failure|neutral","reason":"brief reason"}' },
       { role: 'user', content: `Classify this outcome: "${(outcomeText || '').slice(0, 500)}"` },
-    ], { temperature: 0, maxTokens: 80, timeout: 8000 });
+    ], tpl ? tpl.defaults : { temperature: 0, maxTokens: 80, timeout: 8000 });
 
     const parsed = JSON.parse(result || '{}');
     if (['success', 'failure', 'neutral'].includes(parsed.outcome)) {
@@ -154,26 +150,17 @@ async function learnFromError(db, errorObs) {
     return null;
   }
 
-  const prompt = `Analyze this coding agent error and identify the root cause and a systemic fix.
-
-Error: "${errorObs.content}"
-
-Context: This error occurred while a coding agent was working on a software project.
-Identify:
-1. Root cause: Why did this happen? Was it a knowledge gap, a process flaw, or a code issue?
-2. Systemic fix: What rule, check, or practice would prevent this class of error in the future?
-
-Return JSON with:
-- title: Short fix title (max 80 chars, e.g., "Always validate input before transform")
-- content: The systemic fix described as a rule or practice (max 500 chars)
-- confidence: 1-100, how certain you are this fix addresses the root cause
-- tags: Array of relevant tags`;
-
   try {
-    const result = await callLLM([
-      { role: 'system', content: 'You are a root cause analysis agent for coding workflows. Respond ONLY with valid JSON.' },
-      { role: 'user', content: prompt },
-    ], { temperature: 0.2, maxTokens: 800, timeout: 60000 });
+    const tpl = _getPrompts().buildMessages('rca-from-error', {
+      errorContent: errorObs.content,
+    });
+    const result = await callLLM(
+      tpl ? tpl.messages : [
+        { role: 'system', content: 'You are a root cause analysis agent for coding workflows. Respond ONLY with valid JSON.' },
+        { role: 'user', content: `Analyze this error: "${errorObs.content}". Return JSON: {title, content, confidence, tags}` },
+      ],
+      tpl ? tpl.defaults : { temperature: 0.2, maxTokens: 800, timeout: 60000 },
+    );
 
     const parsed = JSON.parse(result || '{}');
     if (parsed.title && parsed.content) {
@@ -243,20 +230,17 @@ async function autoResolveConflicts(db, opts = {}) {
 
     try {
       // Ask LLM which version is correct
-      const prompt = `Two observations appear to contradict each other. Determine which is correct.
-
-A: "${c.a.preview || c.a.content?.slice(0, 300) || ''}"
-B: "${c.b.preview || c.b.content?.slice(0, 300) || ''}"
-
-Return JSON:
-- correct: "A", "B", or "both_partially"
-- reasoning: Brief explanation (max 200 chars)
-- resolution: How to reconcile them or which to trust (max 300 chars)`;
-
-      const result = await callLLM([
-        { role: 'system', content: 'You resolve knowledge conflicts. Respond ONLY with valid JSON.' },
-        { role: 'user', content: prompt },
-      ], { temperature: 0.1, maxTokens: 600, timeout: 30000 });
+      const tpl = _getPrompts().buildMessages('resolve-conflict', {
+        observationA: c.a.preview || c.a.content?.slice(0, 300) || '',
+        observationB: c.b.preview || c.b.content?.slice(0, 300) || '',
+      });
+      const result = await callLLM(
+        tpl ? tpl.messages : [
+          { role: 'system', content: 'You resolve knowledge conflicts. Respond ONLY with valid JSON.' },
+          { role: 'user', content: `A: "${c.a.preview || ''}" B: "${c.b.preview || ''}". Which is correct? JSON: {correct, reasoning, resolution}` },
+        ],
+        tpl ? tpl.defaults : { temperature: 0.1, maxTokens: 600, timeout: 30000 },
+      );
 
       const decision = JSON.parse(result || '{}');
 
@@ -323,21 +307,20 @@ async function verifyLearning(db, newObs) {
       continue; // skip — verified recently, deterministic on other learnings
     }
     try {
-      const prompt = `A learning rule exists: "${learning.title}: ${learning.content.slice(0, 200)}"
-
-A new observation was just recorded: "[${newObs.type}] ${newObs.title || ''}: ${(newObs.content || '').slice(0, 200)}"
-
-Does the new observation:
-- CONTRADICT the learning (the learning appears wrong or incomplete)?
-- REINFORCE the learning (it confirms the learning was correct)?
-- NEUTRAL (unrelated)?
-
-Return JSON: { \"verdict\": \"CONTRADICT\"|\"REINFORCE\"|\"NEUTRAL\", \"reason\": \"brief reason\" }`;
-
-      const result = await callLLM([
-        { role: 'system', content: 'You verify knowledge against new evidence. Respond ONLY with valid JSON.' },
-        { role: 'user', content: prompt },
-      ], { temperature: 0.1, maxTokens: 200, timeout: 15000 });
+      const tpl = _getPrompts().buildMessages('verify-learning', {
+        learningTitle: learning.title,
+        learningContent: learning.content.slice(0, 200),
+        obsType: newObs.type,
+        obsTitle: newObs.title || '',
+        obsContent: (newObs.content || '').slice(0, 200),
+      });
+      const result = await callLLM(
+        tpl ? tpl.messages : [
+          { role: 'system', content: 'You verify knowledge against new evidence. Respond ONLY with valid JSON.' },
+          { role: 'user', content: `Learning: "${learning.title}". New obs: "${newObs.title}". CONTRADICT/REINFORCE/NEUTRAL?` },
+        ],
+        tpl ? tpl.defaults : { temperature: 0.1, maxTokens: 200, timeout: 15000 },
+      );
 
       const parsed = JSON.parse(result || '{}');
 
@@ -527,7 +510,24 @@ function initHooks(saveFn) {
     } catch { /* best-effort */ }
   });
 
-  console.error('[self-improve] Continuous improvement loop initialized');
+  // Hook 6: Plateau detection — check eval log for stalled improvement (Layer 4: Loop Engineering)
+  // Runs on every 50th save to avoid expensive eval log queries on every write
+  hooks.registerHook('post_save', async (obs, ctx, db) => {
+    if (!obs.project_path) return;
+    const count = (_projectSaveCounts.get(obs.project_path) || 0);
+    // Check every 50 saves (already tracked in Hook 4)
+    if (count % 50 === 0 && count > 0) {
+      _prunePlateauCache();
+      try {
+        const result = await detectPlateau(db, { project: obs.project_path });
+        if (result.plateau) {
+          console.warn('[self-improve] 🛑 Improvement plateau — see evaluation log for details');
+        }
+      } catch { /* best-effort */ }
+    }
+  });
+
+  console.error('[self-improve] Continuous improvement loop initialized (6 hooks: Error RCA, Learning verify, Outcome tracking, Conflict check, Experiment spawn, Plateau detect)');
 }
 
 /**
@@ -588,26 +588,20 @@ async function spawnExperiment(db, opts = {}) {
   if (existing) return null;
 
   // Generate experiment via LLM
-  const prompt = `You are designing a controlled experiment to fix a recurring error. Follow the scientific method: change ONE variable at a time, measure against a fixed metric.
-
-Recurring error tag: "${errorTag}"
-
-Recent occurrences:
-${recentErrors.map((e, i) => `${i + 1}. ${e.title || 'Error'}: ${e.content.slice(0, 300)}`).join('\n\n')}
-
-Return JSON:
-- hypothesis: What you believe will fix this (max 200 chars)
-- variable_changed: The ONE thing to change (max 100 chars)
-- fixed_metric: The constant metric to measure success against (e.g., "build success", "test passes", "no TypeError")
-- before_state: Current failing behavior (max 200 chars)
-- expected_after: What success looks like (max 200 chars)`;
-
+  const recentErrorsText = recentErrors.map((e, i) => `${i + 1}. ${e.title || 'Error'}: ${e.content.slice(0, 300)}`).join('\n\n');
   let experiment;
   try {
-    const result = await callLLM([
-      { role: 'system', content: 'You design controlled software engineering experiments. Respond ONLY with valid JSON.' },
-      { role: 'user', content: prompt },
-    ], { temperature: 0.2, maxTokens: 800, timeout: 30000 });
+    const tpl = _getPrompts().buildMessages('design-experiment', {
+      errorTag,
+      recentErrors: recentErrorsText,
+    });
+    const result = await callLLM(
+      tpl ? tpl.messages : [
+        { role: 'system', content: 'You design controlled software engineering experiments. Respond ONLY with valid JSON.' },
+        { role: 'user', content: `Design experiment for recurring error "${errorTag}". Recent: ${recentErrorsText}` },
+      ],
+      tpl ? tpl.defaults : { temperature: 0.2, maxTokens: 800, timeout: 30000 },
+    );
     experiment = JSON.parse(result || '{}');
     // If LLM returned empty or invalid, use fallback
     if (!experiment || !experiment.hypothesis) {
@@ -745,6 +739,168 @@ function getEvalLogStats(db, project) {
   };
 }
 
+// ─── 7. Plateau Detection (Layer 4: Loop Engineering) ───────────────
+
+/**
+ * Default number of days to look back for plateau detection.
+ * @type {number}
+ */
+const PLATEAU_WINDOW_DAYS = 7;
+
+/**
+ * Minimum number of evaluations required before checking for plateau.
+ * @type {number}
+ */
+const PLATEAU_MIN_EVALS = 10;
+
+/**
+ * Maximum improvement in success rate over the window to consider it "stalled."
+ * @type {number}
+ */
+const PLATEAU_MAX_IMPROVEMENT_PCT = 2;
+
+// Track the last plateau check per project to avoid checking too frequently
+const _lastPlateauCheck = new Map();
+const PLATEAU_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // Check at most every 6 hours
+
+/**
+ * Detect whether improvement has plateaued (stalled) for a project.
+ *
+ * Examines the evaluation_log: if success rate hasn't improved by more than
+ * PLATEAU_MAX_IMPROVEMENT_PCT in the last PLATEAU_WINDOW_DAYS compared to
+ * the previous window, the system is stalled.
+ *
+ * When a plateau is detected, triggers an LLM analysis to suggest a
+ * breakthrough strategy and saves it as a 'learning' observation.
+ *
+ * This is Layer 4 of the Graph Engineering framework: evidence-driven
+ * feedback that stops only when objective criteria are met (in this case,
+ * improvement in success rate).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Object} opts
+ * @param {string} [opts.project] - Project path
+ * @param {number} [opts.windowDays=7] - Days to analyze
+ * @param {boolean} [opts.force=false] - Bypass debounce check
+ * @returns {Promise<{plateau: boolean, diagnosis: string|null, strategy: string|null}>}
+ */
+async function detectPlateau(db, opts = {}) {
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const windowDays = opts.windowDays || PLATEAU_WINDOW_DAYS;
+  const force = opts.force || false;
+
+  // Debounce: don't check more than once per interval unless forced
+  if (!force) {
+    const lastCheck = _lastPlateauCheck.get(project) || 0;
+    if (Date.now() - lastCheck < PLATEAU_CHECK_INTERVAL_MS) {
+      return { plateau: false, diagnosis: null, strategy: null };
+    }
+  }
+  _lastPlateauCheck.set(project, Date.now());
+
+  // Get eval counts for two consecutive windows
+  const now = new Date().toISOString();
+  const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const prevWindowStart = new Date(Date.now() - 2 * windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  // Current window stats
+  const currentTotal = db.prepare(
+    'SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ? AND evaluated_at >= ?'
+  ).get(project, windowStart).c;
+
+  if (currentTotal < PLATEAU_MIN_EVALS) {
+    return { plateau: false, diagnosis: null, strategy: null };
+  }
+
+  const currentSuccess = db.prepare(
+    "SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ? AND evaluated_at >= ? AND llm_verdict IN ('SUCCESS','REINFORCE')"
+  ).get(project, windowStart).c;
+  const currentRate = (currentSuccess / currentTotal) * 100;
+
+  // Previous window stats
+  const prevTotal = db.prepare(
+    'SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ? AND evaluated_at >= ? AND evaluated_at < ?'
+  ).get(project, prevWindowStart, windowStart).c;
+
+  let prevRate = currentRate; // Default: assume same rate
+  if (prevTotal > 0) {
+    const prevSuccess = db.prepare(
+      "SELECT COUNT(*) as c FROM evaluation_log WHERE project_path = ? AND evaluated_at >= ? AND evaluated_at < ? AND llm_verdict IN ('SUCCESS','REINFORCE')"
+    ).get(project, prevWindowStart, windowStart).c;
+    prevRate = (prevSuccess / prevTotal) * 100;
+  }
+
+  // Check if rate is stalled
+  const improvement = currentRate - prevRate;
+  const isPlateau = improvement <= PLATEAU_MAX_IMPROVEMENT_PCT;
+
+  if (!isPlateau) {
+    return { plateau: false, diagnosis: null, strategy: null };
+  }
+
+  // Plateau detected — get recent verdicts for analysis
+  const recent = db.prepare(
+    'SELECT llm_verdict, confidence_delta, evaluated_at FROM evaluation_log WHERE project_path = ? ORDER BY evaluated_at DESC LIMIT 10'
+  ).all(project);
+  const recentSummary = recent.map(r => r.llm_verdict + ' (' + (r.confidence_delta >= 0 ? '+' : '') + r.confidence_delta + ')').join(', ');
+
+  console.warn('[self-improve] ⚠️ Plateau detected for %s: %.1f%% → %.1f%% (Δ%+.1f%%) over %d days (%d evals)',
+    project, prevRate, currentRate, improvement, windowDays, currentTotal);
+
+  // Try LLM analysis for breakthrough strategy
+  let diagnosis = null;
+  let strategy = null;
+  try {
+    const { callLLM } = require('./session');
+
+    const tpl = _getPrompts().buildMessages('analyze-plateau', {
+      project: project.replace(/\\/g, '\\\\'),
+      totalEvals: String(currentTotal),
+      windowDays: String(windowDays),
+      successRate: currentRate.toFixed(1),
+      previousRate: prevRate.toFixed(1),
+      plateauDays: String(windowDays),
+      recentVerdicts: recentSummary,
+    });
+
+    const result = await callLLM(tpl.messages, tpl.defaults);
+
+    const parsed = JSON.parse(result || '{}');
+    diagnosis = parsed.diagnosis || null;
+    strategy = parsed.strategy || null;
+  } catch (e) {
+    console.warn('[self-improve] Plateau analysis failed:', e.message);
+    diagnosis = 'Improvement has stalled — success rate flat for ' + windowDays + ' days';
+    strategy = 'Consider running a full reflection cycle or trying a different approach';
+  }
+
+  // Save plateau alert as a learning observation
+  if (_saveFn && strategy) {
+    try {
+      await _saveFn({
+        project,
+        type: 'learning',
+        title: 'Plateau detected: ' + (diagnosis || 'Improvement stalled').slice(0, 60),
+        content: `## Plateau Alert\n\n**Diagnosis:** ${diagnosis || 'N/A'}\n\n**Strategy:** ${strategy || 'N/A'}\n\n**Context:** Success rate ${currentRate.toFixed(1)}% over ${windowDays} days (${currentTotal} evaluations). Previous rate: ${prevRate.toFixed(1)}%.`,
+        tags: ['plateau-detected', 'loop-engineering', 'meta-cognition', 'auto-capture'],
+        confidence: 75,
+        importance: 9,
+        provenance: 'inferred',
+      });
+    } catch { /* best-effort */ }
+  }
+
+  return { plateau: true, diagnosis, strategy };
+}
+
+// Prune plateau check cache periodically (called from Hook 4)
+function _prunePlateauCache() {
+  if (_lastPlateauCheck.size > 50) {
+    const keys = [..._lastPlateauCheck.keys()];
+    for (const k of keys.slice(0, 20)) _lastPlateauCheck.delete(k);
+  }
+}
+
 // ─── Exports ──────────────────────────────────────────────────────────
 
 module.exports = {
@@ -756,6 +912,7 @@ module.exports = {
   writeEvalLog,
   getEvaluationLog,
   getEvalLogStats,
+  detectPlateau,
   initHooks,
   setSaveFunction,
   resetState,

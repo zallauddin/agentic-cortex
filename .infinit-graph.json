@@ -1,7 +1,7 @@
 {
-  "generated": "2026-07-21T03:12:56.273Z",
-  "fingerprint": "3cb645e539bd2162",
-  "fileCount": 45,
+  "generated": "2026-07-21T03:59:54.174Z",
+  "fingerprint": "c62ab593235dbd29",
+  "fileCount": 49,
   "apiRoutes": [],
   "services": {},
   "prismaSchema": {
@@ -12,7 +12,7 @@
     "layerCounts": {
       "UI": 0,
       "API": 1,
-      "Service": 38,
+      "Service": 41,
       "Data": 0
     },
     "crossLayerEdges": {},
@@ -43,11 +43,11 @@
         "imports": 0
       },
       {
-        "path": "scripts/import-community-knowledge.js",
+        "path": "scripts/demo-nonllm-agent.js",
         "imports": 0
       },
       {
-        "path": "scripts/seed-memory-repo.js",
+        "path": "scripts/import-community-knowledge.js",
         "imports": 0
       }
     ]
@@ -205,6 +205,114 @@
         }
       ],
       "size": 20823,
+      "layer": "Unknown"
+    },
+    "scripts/demo-nonllm-agent.js": {
+      "path": "scripts/demo-nonllm-agent.js",
+      "role": "script",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "divider",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "header",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "info",
+          "params": [
+            {
+              "name": "label",
+              "type": null
+            },
+            {
+              "name": "value",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        },
+        {
+          "name": "rule",
+          "params": [
+            {
+              "name": "label",
+              "type": null
+            },
+            {
+              "name": "result",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "step",
+          "params": [
+            {
+              "name": "n",
+              "type": null
+            },
+            {
+              "name": "label",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "success",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "warn",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 16872,
       "layer": "Unknown"
     },
     "scripts/generate-graph.mjs": {
@@ -1787,7 +1895,7 @@
           "isAsync": false
         }
       ],
-      "size": 125188,
+      "size": 125943,
       "layer": "API"
     },
     "src/core/conflict.js": {
@@ -3969,7 +4077,7 @@
           "isAsync": false
         }
       ],
-      "size": 12135,
+      "size": 12154,
       "layer": "Service"
     },
     "src/editor/vscode-logic.js": {
@@ -4525,6 +4633,30 @@
       "size": 7364,
       "layer": "Service"
     },
+    "tests/fsm.test.js": {
+      "path": "tests/fsm.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "fn",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        }
+      ],
+      "size": 16001,
+      "layer": "Service"
+    },
     "tests/hooks.test.js": {
       "path": "tests/hooks.test.js",
       "role": "source",
@@ -4703,6 +4835,30 @@
       "size": 11300,
       "layer": "Service"
     },
+    "tests/rules.test.js": {
+      "path": "tests/rules.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "fn",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        }
+      ],
+      "size": 13008,
+      "layer": "Service"
+    },
     "tests/search.test.js": {
       "path": "tests/search.test.js",
       "role": "source",
@@ -4782,6 +4938,30 @@
       "imports": [],
       "functions": [],
       "size": 4500,
+      "layer": "Service"
+    },
+    "tests/workflow.test.js": {
+      "path": "tests/workflow.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createTestDb",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "fn",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        }
+      ],
+      "size": 10664,
       "layer": "Service"
     }
   }

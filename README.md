@@ -1,6 +1,6 @@
-# agentic-cortex v4.7.0
+# agentic-cortex v5.0.1 — The 5-Layer Agent Brain
 
-Persistent, self-improving memory for AI coding agents (Codebuff, Claude Code, Cursor, Codex, OpenCode). Install & forget — auto-injects context via git hooks, infers what you're working on, and prevents the same mistakes from repeating across projects.
+Persistent, self-improving memory **and orchestration** for AI coding agents (Codebuff, Claude Code, Cursor, Codex, OpenCode). Implements the full **5-Layer Graph Engineering** framework: Prompt Engineering → Context Engineering → Harness Engineering → Loop Engineering → Graph Engineering. Install & forget — auto-injects context via git hooks, infers what you're working on, detects when improvement stalls, coordinates multi-agent teams, and prevents the same mistakes from repeating across projects.
 
 ## Features
 
@@ -10,14 +10,22 @@ Persistent, self-improving memory for AI coding agents (Codebuff, Claude Code, C
 - **Auto-promotion with relative thresholds** — top 20% confidence + 2× median utility auto-promote to global vault during reflection. Self-tunes as your project grows.
 - **XML codebase graph** — deterministic static analysis, SHA-256 cached, zero LLM cost. Injected as structured XML, not markdown.
 - **Agent-optimized knowledge.md** — XML-structured, 4× token reduction vs markdown. Built for LLM consumption, not human skimming.
-- **39+ MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, and more. Stdio JSON-RPC.
+- **47 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus new v5.0 tools for prompts, plateau detection, multi-agent workflows, FSM orchestration, rule engine, and more. Stdio JSON-RPC.
 - **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error.
 - **Hybrid search** — FTS5 keyword + BGE semantic embeddings (768-dim) + cross-encoder reranking. Falls back gracefully when embeddings unavailable.
 - **Confidence & provenance tracking** — every memory scores 0-100 confidence and source (explicit, inferred, observed).
-- **Self-improving loop** — error RCA generates systemic learnings. Conflict detection finds contradictions. Evidence-based confidence scoring.
+- **5-Layer Graph Engineering** — full implementation of Prompt Engineering (versioned template registry), Context Engineering (hybrid search + reranking), Harness Engineering (MCP tools + webhooks), Loop Engineering (self-improvement + plateau detection), and Graph Engineering (FSM + rules + multi-agent DAG workflows).
+- **Prompt template registry** — 10 versioned, outcome-tracked templates for every LLM call. Render templates with variable substitution via API or MCP. Centralized prompt evolution powered by eval log feedback.
+- **Self-improving loop with meta-cognition** — error RCA generates systemic learnings. Conflict detection finds contradictions. Evidence-based confidence scoring. **Plateau detection** identifies stalled improvement and triggers breakthrough analysis.
+- **Multi-agent workflows** — DAG-based workflow executor with FSM bridge. Workflow steps can spawn sub-agents tracked in state machines. Built-in multi-agent workflows: `code-review-team`, `incident-response-squad`.
+- **FSM orchestration engine** — state machines for coding, debugging, and review workflows. Agents transition between states with guard conditions and entry/exit actions.
+- **Declarative rule engine** — priority-based condition→action rules that fire on events. Built-in rules for error escalation, auto-crystallization, and context capture.
+- **Webhook support** — hook actions can POST to external HTTP endpoints with template interpolation and configurable retries. Bridge agentic-cortex to Slack, PagerDuty, CI pipelines, or any HTTP service.
 - **Save-time deduplication** — cosine similarity ≥ 0.97 reinforces existing memories instead of creating duplicates.
 - **Freshness scoring** — 0-100 score combining access recency, confidence, and utility. Auto-archives stale memories.
 - **Auto-maintenance scheduler** — runs freshness updates and archival every ~50 saves, minimum 6 hours between full cycles.
+- **Tiered memory crystallization** — raw observations compress upward through layers: raw (1) → synthesis (2) → principle (3). Principles are always-injected, load-bearing knowledge.
+- **Immutable evaluation log** — append-only audit trail (AutoGTM's results.tsv pattern). Every evaluation preserved forever for benchmarking and plateau detection.
 - **Intent → Action → Outcome tracking** — linked triplets with relations for evidence-based learning verification.
 - **Multi-agent sharing** — namespaced agent sessions with shared memory discovery.
 - **Skill/procedure extraction** — structured fields (steps, triggers, preconditions, postconditions) with dedicated search.
@@ -124,7 +132,10 @@ agentic-cortex promote-global 42
 `bootstrap` `save` `search` `get` `edit` `forget` `list` `bulk`
 
 ### Intelligence
-`conflicts` `answer` `analytics` `daily-summary` `reflect` `maintenance` `freshness`
+`conflicts` `answer` `analytics` `daily-summary` `reflect` `maintenance` `freshness` `crystallize` `eval-log`
+
+### Brain Orchestration (v5.0)
+`fsm` `rules` `workflow` `experiment`
 
 ### Cross-Project
 `machine-memory` `machine-search` `promote-global` `transfer` `feedback`
@@ -133,7 +144,7 @@ agentic-cortex promote-global 42
 `setup` `init` `graph` `inject` `hook` `embed`
 
 ### Advanced
-`upload` `watch` `action` `trail` `utility` `ingest` `export` `serve` `standards` `context` `session` `timeline`
+`upload` `watch` `action` `trail` `utility` `ingest` `export` `serve` `standards` `context` `session` `timeline` `tov-editor`
 
 ## MCP Server
 
@@ -141,11 +152,34 @@ agentic-cortex promote-global 42
 agentic-cortex-mcp
 ```
 
-39+ tools over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
+**47 tools** over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
 
-## 13 Memory Types
+### New v5.0 Graph Engineering Tools
 
-`instruction` `fact` `decision` `goal` `commitment` `preference` `relationship` `context` `event` `learning` `observation` `artifact` `error`
+| Tool | Layer | Description |
+|------|-------|-------------|
+| `memory_prompts_list` | Layer 1: Prompt Engineering | List all 10 versioned prompt templates |
+| `memory_prompts_render` | Layer 1: Prompt Engineering | Render a template with variable substitution |
+| `memory_plateau_check` | Layer 4: Loop Engineering | Detect stalled improvement; triggers breakthrough analysis |
+| `memory_workflow_agents` | Layer 5: Graph Engineering | List FSM-tracked sub-agents in multi-agent workflows |
+| `memory_fsm` | Layer 5: Graph Engineering | Manage agent state machines (start, transition, query) |
+| `memory_rules` | Layer 5: Graph Engineering | Manage declarative brain rules (list, enable, disable, evaluate) |
+| `memory_workflow` | Layer 5: Graph Engineering | Run multi-step DAG workflows with dependency ordering |
+| `memory_crystallize` | Layer 4: Loop Engineering | Compress raw observations upward through tiered layers |
+| `memory_experiment` | Layer 4: Loop Engineering | Spawn/list controlled experiments (hypothesis testing) |
+| `memory_eval_log` | Layer 4: Loop Engineering | Query the immutable evaluation log for benchmarking |
+
+## 18 Memory Types
+
+`instruction` `fact` `decision` `goal` `commitment` `preference` `relationship` `context` `event` `learning` `observation` `artifact` `error` `pattern` `synthesis` `principle` `experiment` `action`
+
+### Tiered Memory Layers (AutoGTM's Compounding Brain)
+
+| Layer | Type | Description |
+|-------|------|-------------|
+| 1 — Raw | `observation`, `error`, `fact`, `decision`, etc. | Direct observations from agent activity |
+| 2 — Synthesis | `learning`, `synthesis`, `pattern` | LLM-compressed clusters of related raw observations |
+| 3 — Principle | `principle` | Battle-tested knowledge verified 3+ times; always injected in context |
 
 ## Environment
 
@@ -155,6 +189,22 @@ agentic-cortex-mcp
 | `AGENTIC_CORTEX_SESSION` | — | Current session ID |
 | `AGENTIC_CORTEX_PORT` | 37777 | HTTP server port |
 | `LLAMA_CPP_BASE_URL` | http://127.0.0.1:8081 | LLM for summaries/QA |
+
+## Architecture: The 5-Layer Graph Engineering Brain
+
+```
+Layer 1: Prompt Engineering  ──  src/core/prompts.js     (10 versioned templates)
+Layer 2: Context Engineering  ──  src/core/search.js       (hybrid FTS5 + semantic)
+                                  src/core/embedding.js    (BGE-base, cross-encoder)
+                                  src/core/relations.js    (memory graph)
+Layer 3: Harness Engineering  ──  src/mcp/server.js       (47 MCP tools, webhooks)
+                                  src/core/hooks.js        (event-driven automation)
+Layer 4: Loop Engineering     ──  src/core/self-improve.js (6 improvement hooks)
+                                  src/core/reflection.js   (consolidate, crystallize)
+Layer 5: Graph Engineering    ──  src/core/fsm.js          (state machine engine)
+                                  src/core/rules.js        (declarative rule engine)
+                                  src/core/workflow.js     (DAG workflow + multi-agent)
+```
 
 ## License
 
