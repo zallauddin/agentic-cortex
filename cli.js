@@ -1869,6 +1869,90 @@ commands['plateau-check'] = {
   }
 };
 
+// ─── Benchmark: LoCoMo, LongMemEval, BEAM evaluation runner ───
+
+commands.benchmark = {
+  desc: '📊 Run memory benchmarks (LoCoMo, LongMemEval, BEAM)',
+  args: ['<locomo>', '[--conversations 0-9]', '[--top-k 10]', '[--judge]', '[--skip-ingest]'],
+  parse(args) {
+    const opts = { topK: 10, judge: false, skipIngest: false };
+    let bench = null;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === 'locomo') bench = 'locomo';
+      else if (args[i] === '--conversations') opts.conversations = args[++i].split(',').map(Number);
+      else if (args[i] === '--top-k') opts.topK = parseInt(args[++i], 10);
+      else if (args[i] === '--judge') opts.judge = true;
+      else if (args[i] === '--skip-ingest') opts.skipIngest = true;
+    }
+    return { bench, ...opts };
+  },
+  async run(db, opts) {
+    if (opts.bench !== 'locomo') {
+      console.error('Usage: benchmark locomo [--conversations 0-9] [--top-k 10] [--judge]');
+      console.error('  Supported benchmarks: locomo');
+      console.error('  Dataset auto-downloaded from snap-research/locomo');
+      process.exit(1);
+    }
+    try {
+      const bench = require('./src/bench/locomo');
+      console.error('📊 Running LoCoMo benchmark...');
+
+      const result = await bench.runBenchmark({
+        conversations: opts.conversations,
+        topK: opts.topK,
+        judge: opts.judge,
+        skipIngest: opts.skipIngest,
+        onProgress: ({ phase, current, total, message }) => {
+          if (phase === 'ingest') {
+            console.error(`  [${phase}] ${message}`);
+          } else if (phase === 'evaluate') {
+            process.stderr.write(`\r  [${phase}] QA #${current} — ${message}`);
+          }
+        },
+      });
+
+      console.error('\n');
+
+      // Print results
+      console.log('═══════════════════════════════════════════');
+      console.log('  LoCoMo Benchmark — agentic-cortex');
+      console.log('═══════════════════════════════════════════');
+      console.log(`  Evidence Recall:  ${result.overall.recall}%`);
+      console.log(`  Single-hop:       ${result.byCategory.single_hop.recall}%  (${result.byCategory.single_hop.count} QA)`);
+      console.log(`  Temporal:         ${result.byCategory.temporal.recall}%  (${result.byCategory.temporal.count} QA)`);
+      console.log(`  Multi-hop:        ${result.byCategory.multi_hop.recall}%  (${result.byCategory.multi_hop.count} QA)`);
+      if (result.overall.judgeScore != null) {
+        console.log(`  Judge Score:      ${result.overall.judgeScore}%  (LLM-judged — comparable to mem0)`);
+      }
+      console.log(`  Total QA Pairs:   ${result.overall.totalQA}`);
+      console.log(`  Duration:         ${(result.durationMs / 1000).toFixed(1)}s`);
+      console.log(`  Top-K:            ${result.config.topK}`);
+      console.log('───────────────────────────────────────────');
+      console.log('  Note: Evidence Recall = % of QA where ground-truth');
+      console.log('  dialog turn was found in top-k results. This is');
+      console.log('  a retrieval metric, NOT LLM-judged answer accuracy.');
+      console.log('  Use --judge for LLM-judged scores (requires LLM).');
+      console.log('═══════════════════════════════════════════');
+
+      // Output machine-readable JSON
+      console.log('\n' + JSON.stringify({
+        benchmark: result.benchmark,
+        overall: result.overall,
+        byCategory: result.byCategory,
+        config: result.config,
+      }, null, 2));
+    } catch (err) {
+      console.error('Benchmark error:', err.message);
+      if (err.message.includes('not found') || err.message.includes('Download')) {
+        console.error('\nDownload the dataset first:');
+        console.error('  git clone https://github.com/snap-research/locomo.git /tmp/locomo');
+        console.error('  cp /tmp/locomo/data/locomo10.json src/bench/');
+      }
+      process.exit(1);
+    }
+  }
+};
+
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
 commands.inject = {
@@ -1953,7 +2037,7 @@ async function main() {
     console.error('Error:', err.message);
     process.exit(1);
   } finally {
-    if (cmd !== 'serve' && cmd !== 'tov-editor' && cmd !== 'cortex-ui' && db) db.close();
+    if (cmd !== 'serve' && cmd !== 'tov-editor' && cmd !== 'cortex-ui' && cmd !== 'benchmark' && db) db.close();
   }
 }
 

@@ -75,3 +75,6 @@ builder-fix-*.js
 fix-securechat*.js
 docs/
 dist-electron/
+
+# Benchmark datasets (large files — download on first run)
+src/bench/locomo10.json
