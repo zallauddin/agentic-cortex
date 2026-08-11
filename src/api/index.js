@@ -1519,7 +1519,7 @@ async function init() {
   // Seed default FSM machines, rules, and workflows on first init
   try {
     fsm.initDefaultMachines(_getDB());
-    workflow.initDefaultWorkflows(_getDB());
+    workflow.initDefaultWorkflowsExtended(_getDB());
   } catch (err) {
     console.warn('[agentic-cortex] FSM/workflow init warning: ' + (err && err.message ? err.message : err));
   }
@@ -2960,6 +2960,55 @@ async function spawnExperiment(opts) {
   return selfImprove.spawnExperiment(_getDB(), opts || {});
 }
 
+// ─── Prompt Registry (Layer 1: Prompt Engineering) ──────────────────
+
+/** List all prompt templates in the registry */
+function listPromptTemplates() {
+  return core.prompts.listTemplates();
+}
+
+/**
+ * Render a prompt template with variable substitution.
+ * @param {string} templateName — Template name (e.g., 'classify-outcome')
+ * @param {Object} [vars={}] — Variable substitutions
+ * @returns {{ templateName: string, version: string, system: string, user: string, defaults: Object, messages: Array }}
+ */
+function renderPrompt(templateName, vars = {}) {
+  const rendered = core.prompts.renderPrompt(templateName, vars);
+  if (!rendered) throw new Error('Unknown template: ' + templateName);
+  const built = core.prompts.buildMessages(templateName, vars);
+  return {
+    templateName: rendered.name,
+    version: rendered.version,
+    system: rendered.system,
+    user: rendered.user,
+    defaults: rendered.defaults,
+    messages: built ? built.messages : null,
+  };
+}
+
+// ─── Plateau Detection (Layer 4: Loop Engineering) ──────────────────
+
+/**
+ * Check if improvement has stalled for a project.
+ * @param {Object} [opts] — { project?, windowDays?, force? }
+ * @returns {Promise<{plateau: boolean, diagnosis: string|null, strategy: string|null}>}
+ */
+async function checkPlateau(opts) {
+  return selfImprove.detectPlateau(_getDB(), opts || {});
+}
+
+// ─── Multi-Agent Workflow (Layer 5: Graph Engineering) ──────────────
+
+/**
+ * Get all sub-agents spawned by a multi-agent workflow instance.
+ * @param {number} instanceId — Workflow instance ID
+ * @returns {Array<{stepId: string, agentId: string, role: string, machineName: string, currentState: string}>}
+ */
+function getWorkflowAgents(instanceId) {
+  return workflow.getWorkflowAgents(instanceId);
+}
+
 /**
  * List active experiments for a project.
  *
@@ -3056,4 +3105,12 @@ module.exports = {
   listWorkflows: () => workflow.listWorkflows(),
   listWorkflowInstances: (opts) => workflow.listWorkflowInstances(_getDB(), opts || {}),
   cancelWorkflow: (instanceId) => workflow.cancelWorkflow(_getDB(), instanceId),
+  getWorkflowAgents,
+
+  // Prompt registry (Layer 1)
+  listPromptTemplates,
+  renderPrompt,
+
+  // Plateau detection (Layer 4)
+  checkPlateau,
 };

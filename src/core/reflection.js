@@ -26,6 +26,13 @@ const { cosineSimilarity } = require('./embedding');
 const { callLLM } = require('./session');
 const embedding = require('./embedding');
 
+// Lazy-loaded prompt registry (Layer 1: Prompt Engineering)
+let _prompts = null;
+function _getPrompts() {
+  if (!_prompts) _prompts = require('./prompts');
+  return _prompts;
+}
+
 // Save function injected to avoid circular dependency on src/api
 let _saveFn = null;  // (opts) => Promise<{id, status, ...}>
 
@@ -135,21 +142,22 @@ function pickCanonical(cluster) {
  * @returns {Promise<{title: string, content: string}>}
  */
 async function generateConsolidatedSummary(cluster) {
-  const prompt = `You are consolidating ${cluster.length} related observations into a single canonical entry.
-Extract the key facts, remove redundancy, and write a clear, concise summary.
-
-Observations:
-${cluster.map((o, i) => `${i + 1}. [${o.type}] ${o.title || '(untitled)'}: ${o.content}`).join('\n\n')}
-
-Return JSON with:
-- title: Short descriptive title (max 80 chars)
-- content: Consolidated content (markdown ok, max 1000 chars)`;
+  const observationsText = cluster.map((o, i) =>
+    `${i + 1}. [${o.type}] ${o.title || '(untitled)'}: ${o.content}`
+  ).join('\n\n');
 
   try {
-    const result = await callLLM([
-      { role: 'system', content: 'You are a knowledge consolidation assistant. Respond ONLY with valid JSON.' },
-      { role: 'user', content: prompt },
-    ], { temperature: 0.2, maxTokens: 1500 });
+    const tpl = _getPrompts().buildMessages('consolidate-observations', {
+      count: String(cluster.length),
+      observations: observationsText,
+    });
+    const result = await callLLM(
+      tpl ? tpl.messages : [
+        { role: 'system', content: 'You are a knowledge consolidation assistant. Respond ONLY with valid JSON.' },
+        { role: 'user', content: `Consolidate ${cluster.length} observations: ${observationsText}` },
+      ],
+      tpl ? tpl.defaults : { temperature: 0.2, maxTokens: 1500 },
+    );
 
     const parsed = JSON.parse(result || '{}');
     if (parsed.title && parsed.content) return parsed;
@@ -327,23 +335,25 @@ async function promotePatterns(db, opts = {}) {
 
     if (samples.length < minCount) continue;
 
-    const prompt = `You noticed a recurring theme "${p.theme}" (${p.type}) appearing ${p.count} times in recent observations.
-Summarize the key pattern/insight in one learning observation.
-
-Sample observations:
-${samples.map((s, i) => `${i + 1}. [${s.type}] ${s.title || '(untitled)'}: ${s.content.slice(0, 300)}`).join('\n\n')}
-
-Return JSON with:
-- title: "Pattern: ${p.theme}" (max 80 chars)
-- content: Brief insight (markdown ok, max 1000 chars)
-- tags: ["pattern", "${p.theme}", "${p.type}"]`;
+    const samplesText = samples.map((s, i) =>
+      `${i + 1}. [${s.type}] ${s.title || '(untitled)'}: ${s.content.slice(0, 300)}`
+    ).join('\n\n');
 
     let summary;
     try {
-      const result = await callLLM([
-        { role: 'system', content: 'You extract recurring patterns from observations. Respond ONLY with valid JSON.' },
-        { role: 'user', content: prompt },
-      ], { temperature: 0.3, maxTokens: 1500 });
+      const tpl = _getPrompts().buildMessages('promote-pattern', {
+        theme: p.theme,
+        themeType: p.type,
+        count: String(p.count),
+        samples: samplesText,
+      });
+      const result = await callLLM(
+        tpl ? tpl.messages : [
+          { role: 'system', content: 'You extract recurring patterns from observations. Respond ONLY with valid JSON.' },
+          { role: 'user', content: `Pattern "${p.theme}" (${p.type}) appeared ${p.count} times. Samples: ${samplesText}` },
+        ],
+        tpl ? tpl.defaults : { temperature: 0.3, maxTokens: 1500 },
+      );
       summary = JSON.parse(result || '{}');
     } catch (e) {
       summary = {
@@ -388,13 +398,18 @@ Return JSON with:
 
     let structured;
     try {
-      const prompt = `Convert this high-confidence learning into a structured instruction with actionable steps.\n\nLearning: "${learning.title}: ${learning.content}"\n\nReturn JSON with:\n- title: Instruction title (max 80 chars)\n- content: Clear instructional content (max 500 chars)\n- steps: Array of actionable step strings (3-5 steps)\n- triggers: Array of situations that trigger this instruction (e.g., "TypeError", "before PR")\n- preconditions: Array of conditions that must be true (e.g., "Node.js >= 18")\n- postconditions: Array of expected results (e.g., "No null pointer errors")`;
-
+      const tpl = _getPrompts().buildMessages('extract-skill', {
+        learningTitle: learning.title,
+        learningContent: learning.content,
+      });
       const { callLLM } = require('./session');
-      const result = await callLLM([
+      const result = await callLLM(
+        tpl ? tpl.messages : [
         { role: 'system', content: 'You convert learnings into structured instructions. Respond ONLY with valid JSON.' },
-        { role: 'user', content: prompt },
-      ], { temperature: 0.2, maxTokens: 1200, timeout: 30000 });
+        { role: 'user', content: `Convert learning: "${learning.title}: ${learning.content}" into JSON instruction.` },
+      ],
+      tpl ? tpl.defaults : { temperature: 0.2, maxTokens: 1200, timeout: 30000 },
+    );
       structured = JSON.parse(result || '{}');
     } catch {
       structured = {
@@ -625,21 +640,24 @@ async function crystallize(db, opts = {}) {
         if (existingSynth) continue;
 
         // Generate synthesis via LLM
-        const prompt = `You are compressing ${cluster.length} raw observations about "${tag}" into a single synthesis. Extract the key insights, remove redundancy, and write a concise summary.
-
-Observations:
-${cluster.slice(0, 10).map((r, i) => `${i + 1}. [${r.type}] ${r.title || '(untitled)'}: ${r.content.slice(0, 300)}`).join('\n\n')}
-
-Return JSON with:
-- title: Synthesis title (max 80 chars)
-- content: Key insights synthesized (max 800 chars, markdown ok)`;
+        const obsText = cluster.slice(0, 10).map((r, i) =>
+          `${i + 1}. [${r.type}] ${r.title || '(untitled)'}: ${r.content.slice(0, 300)}`
+        ).join('\n\n');
 
         let synthesized;
         try {
-          const result = await callLLM([
-            { role: 'system', content: 'You distill multiple observations into a single synthesis. Respond ONLY with valid JSON.' },
-            { role: 'user', content: prompt },
-          ], { temperature: 0.2, maxTokens: 1200, timeout: 30000 });
+          const tpl = _getPrompts().buildMessages('crystallize-raw-to-synthesis', {
+            count: String(cluster.length),
+            tag,
+            observations: obsText,
+          });
+          const result = await callLLM(
+            tpl ? tpl.messages : [
+              { role: 'system', content: 'You distill multiple observations into a single synthesis. Respond ONLY with valid JSON.' },
+              { role: 'user', content: `Compress ${cluster.length} observations about "${tag}" into a synthesis.` },
+            ],
+            tpl ? tpl.defaults : { temperature: 0.2, maxTokens: 1200, timeout: 30000 },
+          );
           synthesized = JSON.parse(result || '{}');
           if (!synthesized || !synthesized.title || !synthesized.content) {
             synthesized = null;

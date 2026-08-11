@@ -68,3 +68,10 @@ $HOME/
 
 # Windows reserved-name artifacts
 nul
+
+# Temporary cleanup / migration scripts
+_gen*.js
+builder-fix-*.js
+fix-securechat*.js
+docs/
+dist-electron/

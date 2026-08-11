@@ -6,6 +6,7 @@ const Database = require('better-sqlite3');
 const { ensureSchema } = require('../src/core/db');
 const {
   DEFAULT_WORKFLOWS,
+  DEFAULT_MULTI_AGENT_WORKFLOWS,
   defineWorkflow,
   getWorkflow,
   listWorkflows,
@@ -15,6 +16,9 @@ const {
   listWorkflowInstances,
   cancelWorkflow,
   initDefaultWorkflows,
+  initDefaultWorkflowsExtended,
+  getWorkflowAgents,
+  advanceWorkflowWithFSM,
   setSaveFunction,
   setFsm,
 } = require('../src/core/workflow');
@@ -282,6 +286,123 @@ describe('Workflow: multi-step dependencies', () => {
   });
 });
 
+// ─── Multi-Agent Workflows ────────────────────────────────────────────
+
+describe('Workflow: multi-agent workflows (DEFAULT_MULTI_AGENT_WORKFLOWS)', () => {
+  it('should have 2 multi-agent workflows', () => {
+    const names = Object.keys(DEFAULT_MULTI_AGENT_WORKFLOWS);
+    assert.equal(names.length, 2);
+  });
+
+  it('code-review-team should have 4 steps', () => {
+    const wf = DEFAULT_MULTI_AGENT_WORKFLOWS['code-review-team'];
+    assert.ok(wf);
+    assert.equal(wf.steps.length, 4);
+    const stepIds = wf.steps.map(s => s.id);
+    assert.deepEqual(stepIds, ['analyze', 'review', 'test', 'approve']);
+  });
+
+  it('incident-response-squad should have 5 steps', () => {
+    const wf = DEFAULT_MULTI_AGENT_WORKFLOWS['incident-response-squad'];
+    assert.ok(wf);
+    assert.equal(wf.steps.length, 5);
+    const stepIds = wf.steps.map(s => s.id);
+    assert.deepEqual(stepIds, ['triage', 'diagnose', 'fix', 'verify', 'postmortem']);
+  });
+
+  it('code-review-team steps should have agent roles for agent-spawning steps', () => {
+    const wf = DEFAULT_MULTI_AGENT_WORKFLOWS['code-review-team'];
+    const roles = wf.steps.map(s => s.config && s.config.agentRole);
+    // First 3 steps have agent roles, step 4 (approve) has no config
+    assert.deepEqual(roles, ['analyzer', 'reviewer', 'tester', undefined]);
+  });
+
+  it('code-review-team should use spawn_agent for first 3 steps, check for final', () => {
+    const wf = DEFAULT_MULTI_AGENT_WORKFLOWS['code-review-team'];
+    assert.equal(wf.steps[0].action, 'spawn_agent');
+    assert.equal(wf.steps[1].action, 'spawn_agent');
+    assert.equal(wf.steps[2].action, 'spawn_agent');
+    assert.equal(wf.steps[3].action, 'check', 'Final approval step uses check action');
+  });
+});
+
+// ─── Workflow-FSM Bridge: getWorkflowAgents ──────────────────────────
+
+describe('Workflow: getWorkflowAgents', () => {
+  let db;
+  beforeEach(() => { db = createTestDb(); });
+
+  it('should return empty array when no agents exist', () => {
+    const agents = getWorkflowAgents(9999);
+    assert.ok(Array.isArray(agents));
+    assert.equal(agents.length, 0);
+  });
+
+  it('should return empty array before any agents are spawned', () => {
+    const inst = startWorkflow(db, 'bug-fix-cycle');
+    const agents = getWorkflowAgents(inst.id);
+    assert.equal(agents.length, 0);
+  });
+});
+
+// ─── Workflow-FSM Bridge: advanceWorkflowWithFSM ─────────────────────
+
+describe('Workflow: advanceWorkflowWithFSM', () => {
+  let db;
+  beforeEach(() => { db = createTestDb(); });
+
+  it('should be a backward-compat wrapper around advanceWorkflow', () => {
+    assert.equal(typeof advanceWorkflowWithFSM, 'function');
+    // It's a thin wrapper, not the same reference
+    assert.notStrictEqual(advanceWorkflowWithFSM, advanceWorkflow);
+  });
+
+  it('should advance a workflow the same as advanceWorkflow', () => {
+    const inst = startWorkflow(db, 'bug-fix-cycle');
+    const s1 = advanceWorkflowWithFSM(db, inst.id);
+    assert.ok(s1.completedSteps.includes('reproduce'));
+    assert.equal(s1.currentStep, 'diagnose');
+
+    const s2 = advanceWorkflowWithFSM(db, inst.id);
+    assert.ok(s2.completedSteps.includes('diagnose'));
+    assert.equal(s2.currentStep, 'fix');
+  });
+
+  it('should return null for unknown instance (same as advanceWorkflow)', () => {
+    assert.equal(advanceWorkflowWithFSM(db, 9999), null);
+  });
+
+  it('should handle bug-fix-cycle full lifecycle', () => {
+    const inst = startWorkflow(db, 'bug-fix-cycle');
+    for (let i = 0; i < 5; i++) advanceWorkflowWithFSM(db, inst.id);
+    const final = advanceWorkflowWithFSM(db, inst.id);
+    assert.equal(final.status, 'completed');
+  });
+
+  it('should advance through all steps and complete', () => {
+    const inst = startWorkflow(db, 'bug-fix-cycle');
+    assert.equal(inst.currentStep, 'reproduce');
+
+    const s1 = advanceWorkflowWithFSM(db, inst.id);
+    assert.equal(s1.currentStep, 'diagnose');
+
+    const s2 = advanceWorkflowWithFSM(db, inst.id);
+    assert.equal(s2.currentStep, 'fix');
+
+    const s3 = advanceWorkflowWithFSM(db, inst.id);
+    assert.equal(s3.currentStep, 'test');
+
+    const s4 = advanceWorkflowWithFSM(db, inst.id);
+    assert.equal(s4.currentStep, 'review');
+
+    const s5 = advanceWorkflowWithFSM(db, inst.id);
+    assert.equal(s5.currentStep, 'merge');
+
+    const final = advanceWorkflowWithFSM(db, inst.id);
+    assert.equal(final.status, 'completed');
+  });
+});
+
 // ─── Dependency Injection ─────────────────────────────────────────────
 
 describe('Workflow: dependency injection', () => {
@@ -292,6 +413,15 @@ describe('Workflow: dependency injection', () => {
 
   it('should accept an FSM reference', () => {
     const fsm = { transition: () => {}, getAgentState: () => null };
+    assert.doesNotThrow(() => setFsm(fsm));
+  });
+
+  it('should accept FSM reference with startAgent for agent spawning', () => {
+    const fsm = {
+      startAgent: () => ({ agentId: 'test', machineName: 'test', currentState: 'idle' }),
+      transition: () => ({ currentState: 'next' }),
+      getAgentState: () => null,
+    };
     assert.doesNotThrow(() => setFsm(fsm));
   });
 });
@@ -311,5 +441,22 @@ describe('Workflow: module exports', () => {
     assert.equal(typeof initDefaultWorkflows, 'function');
     assert.equal(typeof setSaveFunction, 'function');
     assert.equal(typeof setFsm, 'function');
+    assert.equal(typeof getWorkflowAgents, 'function');
+    assert.equal(typeof advanceWorkflowWithFSM, 'function');
+    assert.equal(typeof initDefaultWorkflowsExtended, 'function');
+  });
+
+  it('should export DEFAULT_MULTI_AGENT_WORKFLOWS', () => {
+    assert.equal(typeof DEFAULT_MULTI_AGENT_WORKFLOWS, 'object');
+    assert.ok(Object.keys(DEFAULT_MULTI_AGENT_WORKFLOWS).length >= 2);
+  });
+
+  it('advanceWorkflowWithFSM should be the backward-compat wrapper', () => {
+    // The FSM bridge is now integrated directly into advanceWorkflow.
+    // advanceWorkflowWithFSM is a backward-compat wrapper that delegates to advanceWorkflow.
+    assert.equal(typeof advanceWorkflowWithFSM, 'function');
+    assert.equal(typeof advanceWorkflow, 'function');
+    assert.notStrictEqual(advanceWorkflowWithFSM, advanceWorkflow,
+      'Wrapper should be a distinct function from the core implementation');
   });
 });
