@@ -43,7 +43,7 @@ Use to skip rediscovery of known files and decisions.
 </agentic_cortex>
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-08-11T02:39:00.991Z -->
+<!-- Auto-injected by agentic-cortex at 2026-08-12T05:37:28.127Z -->
 
 # Agentic Cortex - Project Context
 
@@ -137,35 +137,38 @@ These standards are pre-loaded and always active. You MUST apply them at every p
 ### Event
 - README v4.7.0 update (★0)
 - README v4.7.0 update (★0)
-<codebase_graph files="67" api_routes="0" generated="2026-08-11T02:39:00.914Z">
-  <architecture patterns="Repository Pattern, Event-Driven, CLI Tool" stack="Databases: SQLite | Tools: Xenova Transformers (AI/ML)"/>
-  <layers dataflow="API → Service" ui="0" api="1" service="59" data="0"/>
-  <hub_files>_gen3.js, scripts/inject-memory.mjs, scripts/generate-graph.mjs, _gen2.js, src/sync/git-sync.js, _gen1.js, builder-fix-iter3.js, cli.js</hub_files>
-  <libraries>
-    <file path="src/core/conflict.js" layer="Service" fns="checkConflicts(db,opts)"/>
-    <file path="src/core/constants.js" layer="Service" fns="getProjectDefault(opts)"/>
-    <file path="src/core/db-path.js" layer="Service" fns="ensureDir(filePath); getDbDir(); getDbPath(); getLegacyDbPath(); getLegacyDbPathIfExists()"/>
-    <file path="src/core/db.js" layer="Service" fns="ensureSchema(db); getDb(); getDbPath_()"/>
-    <file path="src/core/embedding.js" layer="Service" fns="_cacheGet(key); _cacheSet(key,value); clearEmbeddingCache(); computeEmbedding(text); cosineSimilarity(a,b); disposePipelines()"/>
-    <file path="src/core/export.js" layer="Service" fns="exportJSON(db,opts); exportMarkdown(db,opts); findRelated(obs,allObs); importJSON(db,data,opts); sanitizeFilename(title,id)"/>
-    <file path="src/core/fsm.js" layer="Service" fns="_fireOnEnter(db,machine,stateName,agentId,project); _fireOnExit(db,machine,stateName,agentId,project); _transitionFromDB(db,dbState,trigger,opts); _transitionFromState(db,state,trigger,opts); defineMachine(definition); getAgentState(agentId)"/>
-    <file path="src/core/hooks.js" layer="Service" fns="_fireWebhook(url,method,headers,body,retries,hookName); createHook(db,opts); deleteHook(db,id); evaluateCondition(type,value,observation,context); executePersistedHook(db,hook,observation,context); getPersistedHooks(db,event)"/>
-    <file path="src/core/index.js" layer="Service"/>
-    <file path="src/core/prompts.js" layer="Service" fns="_loadBuiltins(); buildMessages(templateName,vars); defineTemplate(def); getTemplate(name); listTemplates(); renderPrompt(templateName,vars)"/>
-    <file path="src/core/reflection.js" layer="Service" fns="_projectRelativeThreshold(count); archiveSuperseded(db,opts); consolidateMemories(db,opts); crystallize(db,opts); findSimilarClusters(observations,threshold); generateConsolidatedSummary(cluster)"/>
-    <file path="src/core/relations.js" layer="Service" fns="addRelation(db,opts); deleteRelation(db,relationId); getGraph(db,opts); getRelations(db,observationId); listRelationTypes(db)"/>
-    <file path="src/core/rules.js" layer="Service" fns="_checkCondition(db,rule,context); _executeAction(db,rule,context); defineRule(db,def,persist); deleteRule(db,id); evaluate(db,event,context); initRuleHook(db)"/>
-    <file path="src/core/search.js" layer="Service" fns="buildWhereClause(opts); hybridSearch(db,query,queryVec,opts); keywordSearch(db,opts); rerankResults(query,results); sanitizeDate(dateStr); semanticSearch(db,queryVec,opts)"/>
-    <file path="src/core/self-improve.js" layer="Service" fns="_keywordClassify(outcomeText); _prunePlateauCache(); autoResolveConflicts(db,opts); classifyOutcome(outcomeText); detectPlateau(db,opts); getEvalLogStats(db,project)"/>
-  </libraries>
-  <scripts>
-    <file path="scripts/auto-setup.js"/>
-    <file path="scripts/create-discovery-files.js"/>
-    <file path="scripts/demo-nonllm-agent.js"/>
-    <file path="scripts/generate-graph.mjs"/>
-    <file path="scripts/import-community-knowledge.js"/>
-    <file path="scripts/inject-memory.mjs"/>
-    <file path="scripts/seed-memory-repo.js"/>
-  </scripts>
-</codebase_graph>
+## Codebase Graph
+*67 source files | 0 API routes | Generated 2026-08-11T02:39:00.914Z*
+
+### Architecture
+**Patterns:** Repository Pattern, Event-Driven, CLI Tool
+**Stack:** Databases: SQLite | Tools: Xenova Transformers (AI/ML)
+
+### Data Flow
+`API → Service`
+Files per layer: UI=0 API=1 Service=59 Data=0
+**Hub files (most imported):** `_gen3.js`, `scripts/inject-memory.mjs`, `scripts/generate-graph.mjs`, `_gen2.js`, `src/sync/git-sync.js`
+
+### Core Libraries (19)
+- `src/core/conflict.js` — fns: checkConflicts(db, opts)
+- `src/core/constants.js` — fns: getProjectDefault(opts)
+- `src/core/db-path.js` — fns: ensureDir(filePath), getDbDir(), getDbPath(), getLegacyDbPath(), getLegacyDbPathIfExists()
+- `src/core/db.js` — fns: ensureSchema(db), getDb(), getDbPath_()
+- `src/core/embedding.js` — fns: _cacheGet(key), _cacheSet(key, value), clearEmbeddingCache(), computeEmbedding(text), cosineSimilarity(a, b)
+- `src/core/export.js` — fns: exportJSON(db, opts), exportMarkdown(db, opts), findRelated(obs, allObs), importJSON(db, data, opts), sanitizeFilename(title, id)
+- `src/core/fsm.js` — fns: _fireOnEnter(db, machine, stateName, agentId, project), _fireOnExit(db, machine, stateName, agentId, project), _transitionFromDB(db, dbState, trigger, opts), _transitionFromState(db, state, trigger, opts), defineMachine(definition)
+- `src/core/hooks.js` — fns: _fireWebhook(url, method, headers, body, retries, hookName), createHook(db, opts), deleteHook(db, id), evaluateCondition(type, value, observation, context), executePersistedHook(db, hook, observation, context)
+- `src/core/index.js`
+- `src/core/prompts.js` — fns: _loadBuiltins(), buildMessages(templateName, vars), defineTemplate(def), getTemplate(name), listTemplates()
+- `src/core/reflection.js` — fns: _projectRelativeThreshold(count), archiveSuperseded(db, opts), consolidateMemories(db, opts), crystallize(db, opts), findSimilarClusters(observations, threshold)
+- `src/core/relations.js` — fns: addRelation(db, opts), deleteRelation(db, relationId), getGraph(db, opts), getRelations(db, observationId), listRelationTypes(db)
+
+### Scripts
+- `scripts/auto-setup.js`
+- `scripts/create-discovery-files.js`
+- `scripts/demo-nonllm-agent.js`
+- `scripts/generate-graph.mjs`
+- `scripts/import-community-knowledge.js`
+- `scripts/inject-memory.mjs`
+- `scripts/seed-memory-repo.js`
 <!-- MEMORY_CONTEXT_END -->
