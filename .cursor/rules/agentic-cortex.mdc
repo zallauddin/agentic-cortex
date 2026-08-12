@@ -1,4 +1,4 @@
-<!-- agentic-cortex:start:v4.7.6 -->
+<!-- agentic-cortex:start:v6.1.0 -->
 ---
 description: agentic-cortex — persistent self-improving agent memory with bootstrap, auto-save, cross-project immune system
 alwaysApply: true
@@ -36,3 +36,4 @@ CLI fallback: agentic-cortex bootstrap | save "t" "c" | search "q" --project .
 <mcp>agentic-cortex-mcp configured in .cursor/mcp.json. 43 tools on stdio JSON-RPC.</mcp>
 </agentic_cortex>
 <!-- agentic-cortex:end -->
+

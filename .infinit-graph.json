@@ -1,7 +1,7 @@
 {
-  "generated": "2026-07-21T03:59:54.174Z",
-  "fingerprint": "c62ab593235dbd29",
-  "fileCount": 49,
+  "generated": "2026-08-11T02:39:00.914Z",
+  "fingerprint": "16ff37d852591f8c",
+  "fileCount": 67,
   "apiRoutes": [],
   "services": {},
   "prismaSchema": {
@@ -12,12 +12,16 @@
     "layerCounts": {
       "UI": 0,
       "API": 1,
-      "Service": 41,
+      "Service": 59,
       "Data": 0
     },
     "crossLayerEdges": {},
     "requestPath": "API → Service",
     "hubFiles": [
+      {
+        "path": "_gen3.js",
+        "imports": 6
+      },
       {
         "path": "scripts/inject-memory.mjs",
         "imports": 5
@@ -27,27 +31,23 @@
         "imports": 4
       },
       {
+        "path": "_gen2.js",
+        "imports": 1
+      },
+      {
         "path": "src/sync/git-sync.js",
         "imports": 1
       },
       {
+        "path": "_gen1.js",
+        "imports": 0
+      },
+      {
+        "path": "builder-fix-iter3.js",
+        "imports": 0
+      },
+      {
         "path": "cli.js",
-        "imports": 0
-      },
-      {
-        "path": "scripts/auto-setup.js",
-        "imports": 0
-      },
-      {
-        "path": "scripts/create-discovery-files.js",
-        "imports": 0
-      },
-      {
-        "path": "scripts/demo-nonllm-agent.js",
-        "imports": 0
-      },
-      {
-        "path": "scripts/import-community-knowledge.js",
         "imports": 0
       }
     ]
@@ -68,6 +68,331 @@
     ]
   },
   "graph": {
+    "_gen1.js": {
+      "path": "_gen1.js",
+      "role": "source",
+      "exports": [
+        "isAvailable",
+        "proposePlan",
+        "runSh",
+        "runPwsh",
+        "runNode",
+        "runNoop"
+      ],
+      "imports": [],
+      "functions": [
+        {
+          "name": "isAvailable",
+          "params": [],
+          "returnType": null,
+          "doc": "schema.ts - TypeScript interface declarations for cortex-os-agent. These are also valid as JSDoc type references since w",
+          "isAsync": false
+        },
+        {
+          "name": "proposePlan",
+          "params": [
+            {
+              "name": "intent",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Propose a plan for a parsed intent. @param {Object} intent @returns {Promise<{steps: Array, source: string}|null>}",
+          "isAsync": true
+        },
+        {
+          "name": "runNode",
+          "params": [
+            {
+              "name": "fn",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "executors/node.js - Pure Node.js executor for built-in operations. @module executors/node /\n\n/   Execute an async functi",
+          "isAsync": true
+        },
+        {
+          "name": "runNoop",
+          "params": [
+            {
+              "name": "command",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "executors/noop.js - No-op executor for dry-run and smoke testing. @module executors/noop /\n\n/   Simulate command executi",
+          "isAsync": false
+        },
+        {
+          "name": "runPwsh",
+          "params": [
+            {
+              "name": "command",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "executors/powershell.js - PowerShell executor for Windows commands. @module executors/powershell /\n\nimport { spawn } fro",
+          "isAsync": false
+        },
+        {
+          "name": "runSh",
+          "params": [
+            {
+              "name": "command",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "executors/sh.js - Shell executor for POSIX sh/bash commands. @module executors/sh /\n\nimport { spawn } from 'node:child_p",
+          "isAsync": false
+        },
+        {
+          "name": "w",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 7722,
+      "layer": "Service"
+    },
+    "_gen2.js": {
+      "path": "_gen2.js",
+      "role": "source",
+      "exports": [
+        "evaluateGuards",
+        "parseIntent",
+        "Registry",
+        "importSeeds",
+        "McpConsumer"
+      ],
+      "imports": [
+        "js-yaml"
+      ],
+      "functions": [
+        {
+          "name": "evaluateGuards",
+          "params": [
+            {
+              "name": "tool",
+              "type": null
+            },
+            {
+              "name": "context",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "guards.js - Guardrail evaluator for tool dispatch. Every tool MUST have a guards block. Guardless tools are refused. Red",
+          "isAsync": false
+        },
+        {
+          "name": "importSeeds",
+          "params": [
+            {
+              "name": "seedDir",
+              "type": null
+            },
+            {
+              "name": "cortex",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "registry.js - Tool registry for OS operations. Central catalog of all executable tools, queryable by id or tags.  @modul",
+          "isAsync": true
+        },
+        {
+          "name": "parseIntent",
+          "params": [
+            {
+              "name": "raw",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "parser.js - Intent parser for natural language OS commands.  Three layers: 1. Exact template map of ~30 common forms 2. ",
+          "isAsync": false
+        },
+        {
+          "name": "w",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 16809,
+      "layer": "Service"
+    },
+    "_gen3.js": {
+      "path": "_gen3.js",
+      "role": "source",
+      "exports": [
+        "initBrain",
+        "handleCommand"
+      ],
+      "imports": [
+        "./parser.js",
+        "./guards.js",
+        "./llm-shim.js",
+        "./executors/noop.js",
+        "./boot.js",
+        "./orchestrator.js"
+      ],
+      "functions": [
+        {
+          "name": "createStub",
+          "params": [],
+          "returnType": null,
+          "doc": "Create a minimal in-memory stub of the cortex API for dry-run mode. @returns {Object} Stub API",
+          "isAsync": false
+        },
+        {
+          "name": "handleCommand",
+          "params": [
+            {
+              "name": "rawInput",
+              "type": null
+            },
+            {
+              "name": "agentId",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Handle a single OS command through the full FSM lifecycle.  @param {string} rawInput - Raw user command @param {string} ",
+          "isAsync": true
+        },
+        {
+          "name": "initBrain",
+          "params": [],
+          "returnType": null,
+          "doc": "boot.js - Programs the cortex brain.  Calls cortex.init(), defines custom machines, rules, and workflows, then imports s",
+          "isAsync": true
+        },
+        {
+          "name": "log",
+          "params": [
+            {
+              "name": "msg",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        },
+        {
+          "name": "procedureToPlan",
+          "params": [
+            {
+              "name": "procedure",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "orchestrator.js - Main command loop for cortex-os-agent.  Orchestrates the full lifecycle: parse intent, search memory f",
+          "isAsync": false
+        },
+        {
+          "name": "w",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 21814,
+      "layer": "Service"
+    },
+    "builder-fix-iter3.js": {
+      "path": "builder-fix-iter3.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "readFile",
+          "params": [
+            {
+              "name": "filePath",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "writeFile",
+          "params": [
+            {
+              "name": "filePath",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 8012,
+      "layer": "Service"
+    },
     "cli.js": {
       "path": "cli.js",
       "role": "source",
@@ -105,7 +430,237 @@
           "isAsync": true
         }
       ],
-      "size": 71611,
+      "size": 81120,
+      "layer": "Service"
+    },
+    "electron-cortex.js": {
+      "path": "electron-cortex.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "createWindow",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "getAPI",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 5874,
+      "layer": "Service"
+    },
+    "electron-main.js": {
+      "path": "electron-main.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "buildMenu",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "createWindow",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 5917,
+      "layer": "Service"
+    },
+    "fix-securechat-iter2.js": {
+      "path": "fix-securechat-iter2.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "readFile",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "writeFile",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 9050,
+      "layer": "Service"
+    },
+    "fix-securechat-iter3.js": {
+      "path": "fix-securechat-iter3.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "readFile",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "writeFile",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 545,
+      "layer": "Service"
+    },
+    "fix-securechat-iter4.js": {
+      "path": "fix-securechat-iter4.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "readFile",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "writeFile",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 659,
+      "layer": "Service"
+    },
+    "fix-securechat.js": {
+      "path": "fix-securechat.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "backup",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "readFile",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "writeFile",
+          "params": [
+            {
+              "name": "rel",
+              "type": null
+            },
+            {
+              "name": "content",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 20109,
+      "layer": "Service"
+    },
+    "preload-cortex.js": {
+      "path": "preload-cortex.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [],
+      "size": 1494,
+      "layer": "Service"
+    },
+    "preload.js": {
+      "path": "preload.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [],
+      "size": 903,
       "layer": "Service"
     },
     "scripts/auto-setup.js": {
@@ -1129,6 +1684,18 @@
           "isAsync": true
         },
         {
+          "name": "checkPlateau",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Check if improvement has stalled for a project. @param {Object} [opts] — { project?, windowDays?, force? } @returns {Pro",
+          "isAsync": true
+        },
+        {
           "name": "close",
           "params": [],
           "returnType": null,
@@ -1460,6 +2027,18 @@
           "isAsync": false
         },
         {
+          "name": "getWorkflowAgents",
+          "params": [
+            {
+              "name": "instanceId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get all sub-agents spawned by a multi-agent workflow instance. @param {number} instanceId — Workflow instance ID @return",
+          "isAsync": false
+        },
+        {
           "name": "health",
           "params": [],
           "returnType": null,
@@ -1565,6 +2144,13 @@
           "isAsync": false
         },
         {
+          "name": "listPromptTemplates",
+          "params": [],
+          "returnType": null,
+          "doc": "List all prompt templates in the registry",
+          "isAsync": false
+        },
+        {
           "name": "listRelationTypes",
           "params": [],
           "returnType": null,
@@ -1656,6 +2242,22 @@
           ],
           "returnType": null,
           "doc": "Register an in-memory hook callback. @param {string} event @param {Function} callback",
+          "isAsync": false
+        },
+        {
+          "name": "renderPrompt",
+          "params": [
+            {
+              "name": "templateName",
+              "type": null
+            },
+            {
+              "name": "vars",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Render a prompt template with variable substitution. @param {string} templateName — Template name (e.g., 'classify-outco",
           "isAsync": false
         },
         {
@@ -1895,8 +2497,308 @@
           "isAsync": false
         }
       ],
-      "size": 125943,
+      "size": 127854,
       "layer": "API"
+    },
+    "src/bench/locomo-standalone.js": {
+      "path": "src/bench/locomo-standalone.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "bm25Score",
+          "params": [
+            {
+              "name": "queryLemmas",
+              "type": null
+            },
+            {
+              "name": "docIdx",
+              "type": null
+            },
+            {
+              "name": "bm25",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "BM25 score for one document given query lemmas.",
+          "isAsync": false
+        },
+        {
+          "name": "buildBM25",
+          "params": [
+            {
+              "name": "turns",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Build BM25 index from turns. Returns { idf, docLen, avgdl, docTerms } for scoring.",
+          "isAsync": false
+        },
+        {
+          "name": "buildEntityGraph",
+          "params": [
+            {
+              "name": "turns",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Build entity adjacency: for each turn, find other turns that share entities. Returns Map<turnIndex, Set<connectedTurnInd",
+          "isAsync": false
+        },
+        {
+          "name": "computeStats",
+          "params": [
+            {
+              "name": "scores",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "entityOverlap",
+          "params": [
+            {
+              "name": "queryEntities",
+              "type": null
+            },
+            {
+              "name": "turnEntities",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "extractDateTokens",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "extractEntities",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "extractTurns",
+          "params": [
+            {
+              "name": "conv",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "lemmatize",
+          "params": [
+            {
+              "name": "word",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "locomo-standalone.js — LoCoMo Benchmark (Database-Free, v3).  v3 improvements over v2:   Step 1: BGE-large-en-v1.5 (1024",
+          "isAsync": true
+        },
+        {
+          "name": "normalizeBM25",
+          "params": [
+            {
+              "name": "scores",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Normalize BM25 scores to 0-1 range for fusion.",
+          "isAsync": false
+        },
+        {
+          "name": "run",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": true
+        },
+        {
+          "name": "simpleKeywordScore",
+          "params": [
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "turnText",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "temporalScore",
+          "params": [
+            {
+              "name": "query",
+              "type": null
+            },
+            {
+              "name": "turnText",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "tokenize",
+          "params": [
+            {
+              "name": "text",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Tokenize + lemmatize text, return array of lemmas.",
+          "isAsync": false
+        }
+      ],
+      "size": 20526,
+      "layer": "Service"
+    },
+    "src/bench/locomo.js": {
+      "path": "src/bench/locomo.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "_safeTags",
+          "params": [
+            {
+              "name": "tags",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "computeStats",
+          "params": [
+            {
+              "name": "scores",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "evaluateRetrieval",
+          "params": [
+            {
+              "name": "api",
+              "type": null
+            },
+            {
+              "name": "qa",
+              "type": null
+            },
+            {
+              "name": "topK",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Compute retrieval recall: for a given QA pair, does our search find the ground-truth evidence dialog turns?  We can't ex",
+          "isAsync": true
+        },
+        {
+          "name": "ingestConversation",
+          "params": [
+            {
+              "name": "api",
+              "type": null
+            },
+            {
+              "name": "conv",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "locomo.js — LoCoMo Benchmark Runner for agentic-cortex.  Runs the LoCoMo (Long-Term Conversational Memory) benchmark aga",
+          "isAsync": true
+        },
+        {
+          "name": "judgeAnswer",
+          "params": [
+            {
+              "name": "answerCtx",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Use an LLM judge to evaluate whether our system would answer the LoCoMo question correctly based on retrieved context.  ",
+          "isAsync": true
+        },
+        {
+          "name": "runBenchmark",
+          "params": [
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Run the full LoCoMo benchmark against agentic-cortex.  @param {Object} opts @param {string} [opts.dataPath] - Path to lo",
+          "isAsync": true
+        }
+      ],
+      "size": 15361,
+      "layer": "Service"
     },
     "src/core/conflict.js": {
       "path": "src/core/conflict.js",
@@ -2538,6 +3440,38 @@
       "imports": [],
       "functions": [
         {
+          "name": "_fireWebhook",
+          "params": [
+            {
+              "name": "url",
+              "type": null
+            },
+            {
+              "name": "method",
+              "type": null
+            },
+            {
+              "name": "headers",
+              "type": null
+            },
+            {
+              "name": "body",
+              "type": null
+            },
+            {
+              "name": "retries",
+              "type": null
+            },
+            {
+              "name": "hookName",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Fire an HTTP webhook with optional retry on failure. Runs asynchronously; errors are logged but never thrown to the call",
+          "isAsync": true
+        },
+        {
           "name": "createHook",
           "params": [
             {
@@ -2762,7 +3696,7 @@
           "isAsync": false
         }
       ],
-      "size": 9648,
+      "size": 11941,
       "layer": "Service"
     },
     "src/core/index.js": {
@@ -2771,7 +3705,94 @@
       "exports": [],
       "imports": [],
       "functions": [],
-      "size": 818,
+      "size": 851,
+      "layer": "Service"
+    },
+    "src/core/prompts.js": {
+      "path": "src/core/prompts.js",
+      "role": "library",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "_loadBuiltins",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "buildMessages",
+          "params": [
+            {
+              "name": "templateName",
+              "type": null
+            },
+            {
+              "name": "vars",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Build a messages array for callLLM() from a template. Convenience wrapper around renderPrompt.  @param {string} template",
+          "isAsync": false
+        },
+        {
+          "name": "defineTemplate",
+          "params": [
+            {
+              "name": "def",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Register or update a custom prompt template at runtime. Custom templates override built-ins with the same name.  @param ",
+          "isAsync": false
+        },
+        {
+          "name": "getTemplate",
+          "params": [
+            {
+              "name": "name",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "prompts.js — Prompt Template Registry for agentic-cortex.  Layer 1 of the 5-Layer Graph Engineering framework: \"Prompt E",
+          "isAsync": false
+        },
+        {
+          "name": "listTemplates",
+          "params": [],
+          "returnType": null,
+          "doc": "List all registered templates.  @returns {Array<{name: string, version: string, description: string, source: string}>}",
+          "isAsync": false
+        },
+        {
+          "name": "renderPrompt",
+          "params": [
+            {
+              "name": "templateName",
+              "type": null
+            },
+            {
+              "name": "vars",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Render a prompt template by substituting {{placeholders}} with values. Returns the system message and rendered user mess",
+          "isAsync": false
+        },
+        {
+          "name": "resetTemplates",
+          "params": [],
+          "returnType": null,
+          "doc": "Reset templates to built-in defaults only (for testing).",
+          "isAsync": false
+        }
+      ],
+      "size": 14688,
       "layer": "Service"
     },
     "src/core/reflection.js": {
@@ -2953,7 +3974,7 @@
           "isAsync": true
         }
       ],
-      "size": 29483,
+      "size": 29389,
       "layer": "Service"
     },
     "src/core/relations.js": {
@@ -3361,6 +4382,13 @@
           "isAsync": false
         },
         {
+          "name": "_prunePlateauCache",
+          "params": [],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
           "name": "autoResolveConflicts",
           "params": [
             {
@@ -3386,6 +4414,22 @@
           ],
           "returnType": null,
           "doc": "Classify an outcome text as success, failure, or neutral using an LLM. Falls back to keyword-based classification if the",
+          "isAsync": true
+        },
+        {
+          "name": "detectPlateau",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Default number of days to look back for plateau detection. @type {number} /\nconst PLATEAU_WINDOW_DAYS = 7;\n\n/   Minimum ",
           "isAsync": true
         },
         {
@@ -3516,7 +4560,7 @@
           "isAsync": false
         }
       ],
-      "size": 30221,
+      "size": 36351,
       "layer": "Service"
     },
     "src/core/session.js": {
@@ -3922,6 +4966,74 @@
       "imports": [],
       "functions": [
         {
+          "name": "_cleanupWorkflowAgents",
+          "params": [
+            {
+              "name": "workflowInstanceId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Clean up sub-agents for a completed/cancelled workflow instance.  @param {number} workflowInstanceId",
+          "isAsync": false
+        },
+        {
+          "name": "_spawnWorkflowAgent",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "workflowInstanceId",
+              "type": null
+            },
+            {
+              "name": "stepId",
+              "type": null
+            },
+            {
+              "name": "config",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "@type {Map<string, Object>} Active sub-agent FSM sessions spawned by workflows /\nconst _workflowAgents = new Map();\n\n/  ",
+          "isAsync": false
+        },
+        {
+          "name": "_transitionWorkflowAgent",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "workflowInstanceId",
+              "type": null
+            },
+            {
+              "name": "stepId",
+              "type": null
+            },
+            {
+              "name": "trigger",
+              "type": null
+            },
+            {
+              "name": "project",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Transition a workflow sub-agent's FSM state. Called when a workflow step with a spawned agent completes.  @param {import",
+          "isAsync": false
+        },
+        {
           "name": "advanceWorkflow",
           "params": [
             {
@@ -3938,7 +5050,27 @@
             }
           ],
           "returnType": null,
-          "doc": "Advance a workflow by completing the current step and moving to the next.  @param {import('better-sqlite3').Database} db",
+          "doc": "Advance a workflow by completing the current step and moving to the next. Automatically handles multi-agent FSM integrat",
+          "isAsync": false
+        },
+        {
+          "name": "advanceWorkflowWithFSM",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            },
+            {
+              "name": "instanceId",
+              "type": null
+            },
+            {
+              "name": "opts",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "@deprecated Use advanceWorkflow() directly — it now handles FSM integration. This wrapper exists for backward compatibil",
           "isAsync": false
         },
         {
@@ -3982,6 +5114,18 @@
           "isAsync": false
         },
         {
+          "name": "getWorkflowAgents",
+          "params": [
+            {
+              "name": "workflowInstanceId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Get all sub-agents spawned by a workflow instance.  @param {number} workflowInstanceId @returns {Array<{stepId: string, ",
+          "isAsync": false
+        },
+        {
           "name": "getWorkflowInstance",
           "params": [
             {
@@ -4007,6 +5151,18 @@
           ],
           "returnType": null,
           "doc": "Seed default workflows. @param {import('better-sqlite3').Database} db",
+          "isAsync": false
+        },
+        {
+          "name": "initDefaultWorkflowsExtended",
+          "params": [
+            {
+              "name": "db",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": "Seed default workflows including multi-agent workflows. @param {import('better-sqlite3').Database} db",
           "isAsync": false
         },
         {
@@ -4077,7 +5233,7 @@
           "isAsync": false
         }
       ],
-      "size": 12154,
+      "size": 21814,
       "layer": "Service"
     },
     "src/editor/vscode-logic.js": {
@@ -4258,7 +5414,7 @@
           "isAsync": true
         }
       ],
-      "size": 52288,
+      "size": 55357,
       "layer": "Service"
     },
     "src/sync/git-sync.js": {
@@ -4446,6 +5602,442 @@
         }
       ],
       "size": 8111,
+      "layer": "Service"
+    },
+    "src/tov/parser.js": {
+      "path": "src/tov/parser.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "itemName",
+          "params": [
+            {
+              "name": "id",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "modifyCharEquip",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "memberId",
+              "type": null
+            },
+            {
+              "name": "changes",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "modifyCharStat",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "memberId",
+              "type": null
+            },
+            {
+              "name": "changes",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "modifyGald",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "gald",
+              "type": null
+            },
+            {
+              "name": "maxGald",
+              "type": null
+            },
+            {
+              "name": "grade",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "modifyItem",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "itemId",
+              "type": null
+            },
+            {
+              "name": "count",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "modifyParty",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "slot",
+              "type": null
+            },
+            {
+              "name": "memberId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "modifySkill",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "memberId",
+              "type": null
+            },
+            {
+              "name": "skillId",
+              "type": null
+            },
+            {
+              "name": "enabled",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parse",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseCharacters",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseGald",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseHeader",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseItems",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseParty",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "parseZoneInfo",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "readCString",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "off",
+              "type": null
+            },
+            {
+              "name": "maxLen",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "readFloat",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "off",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "readU32",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "off",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "skillName",
+          "params": [
+            {
+              "name": "charId",
+              "type": null
+            },
+            {
+              "name": "skillId",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "tovr",
+          "params": [
+            {
+              "name": "addr",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "writeFloat",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "off",
+              "type": null
+            },
+            {
+              "name": "val",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "writeU32",
+          "params": [
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "off",
+              "type": null
+            },
+            {
+              "name": "val",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 30411,
+      "layer": "Service"
+    },
+    "src/tov/server.js": {
+      "path": "src/tov/server.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [
+        {
+          "name": "json",
+          "params": [
+            {
+              "name": "res",
+              "type": null
+            },
+            {
+              "name": "data",
+              "type": null
+            },
+            {
+              "name": "status",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "readBody",
+          "params": [
+            {
+              "name": "req",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "sendBinary",
+          "params": [
+            {
+              "name": "res",
+              "type": null
+            },
+            {
+              "name": "buf",
+              "type": null
+            },
+            {
+              "name": "status",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        },
+        {
+          "name": "serveFile",
+          "params": [
+            {
+              "name": "res",
+              "type": null
+            },
+            {
+              "name": "filePath",
+              "type": null
+            },
+            {
+              "name": "contentType",
+              "type": null
+            }
+          ],
+          "returnType": null,
+          "doc": null,
+          "isAsync": false
+        }
+      ],
+      "size": 6032,
       "layer": "Service"
     },
     "tests/cli.test.js": {
@@ -4751,6 +6343,15 @@
       "size": 7428,
       "layer": "Service"
     },
+    "tests/prompts.test.js": {
+      "path": "tests/prompts.test.js",
+      "role": "source",
+      "exports": [],
+      "imports": [],
+      "functions": [],
+      "size": 12248,
+      "layer": "Service"
+    },
     "tests/reflection.test.js": {
       "path": "tests/reflection.test.js",
       "role": "source",
@@ -4902,7 +6503,7 @@
           "isAsync": false
         }
       ],
-      "size": 10122,
+      "size": 16005,
       "layer": "Service"
     },
     "tests/session.test.js": {
@@ -4961,7 +6562,7 @@
           "isAsync": true
         }
       ],
-      "size": 10664,
+      "size": 16394,
       "layer": "Service"
     }
   }

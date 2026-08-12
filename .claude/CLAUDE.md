@@ -1,4 +1,4 @@
-<!-- agentic-cortex:start:v4.7.6 -->
+<!-- agentic-cortex:start:v6.1.0 -->
 <agentic_cortex>
 agentic-cortex is installed. Persistent, self-improving memory across sessions.
 MCP server is configured in .mcp.json — 43 tools available directly.
@@ -38,3 +38,4 @@ CLI fallback: agentic-cortex bootstrap | save "t" "c" | search "q" --project .
 Read knowledge.md for injected context (coding standards, session memories, codebase graph).
 </agentic_cortex>
 <!-- agentic-cortex:end -->
+
