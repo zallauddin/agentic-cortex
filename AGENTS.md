@@ -1,4 +1,4 @@
-<!-- agentic-cortex:start:v4.7.6 -->
+<!-- agentic-cortex:start:v6.1.0 -->
 # agentic-cortex
 
 Persistent, self-improving memory system for AI coding agents. 43 MCP tools.
@@ -58,3 +58,4 @@ MCP: agentic-cortex-mcp — 43 tools. Configured in .mcp.json, .cursor/mcp.json,
 
 Read knowledge.md for injected context (coding standards, session memories, codebase graph).
 <!-- agentic-cortex:end -->
+
