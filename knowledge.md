@@ -43,7 +43,7 @@ Use to skip rediscovery of known files and decisions.
 </agentic_cortex>
 
 <!-- MEMORY_CONTEXT_START -->
-<!-- Auto-injected by agentic-cortex at 2026-08-12T05:37:28.127Z -->
+<!-- Auto-injected by agentic-cortex at 2026-08-12T05:38:04.408Z -->
 
 # Agentic Cortex - Project Context
 
