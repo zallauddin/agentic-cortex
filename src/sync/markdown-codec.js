@@ -83,6 +83,10 @@ function encodeObservation(obs, relations) {
  * @returns {{ observation: Object, relations: Array<{target_id: number, relation_type: string}> }}
  */
 function decodeMarkdown(mdString) {
+  // Normalize Windows CRLF line endings (git core.autocrlf=true rewrites LF → CRLF
+  // on checkout) so frontmatter delimiters and field parsing work cross-platform.
+  mdString = String(mdString).replace(/\r\n?/g, '\n');
+
   const frontmatterEnd = mdString.indexOf('\n---\n');
   if (frontmatterEnd === -1) {
     throw new Error('Invalid markdown: no YAML frontmatter found');

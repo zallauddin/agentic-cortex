@@ -194,7 +194,7 @@ function _getDB() {
 
 /**
  * Save a new observation. Auto-embeds if the pipeline is available.
- * @param {Object} opts - { title?, content, type?, tags?, importance?, confidence?, provenance?, project?, session?, agentId?, steps?, triggers?, preconditions?, postconditions? }
+ * @param {Object} opts - { title?, content, type?, tags?, importance?, confidence?, provenance?, project?, session?, agentId?, steps?, triggers?, preconditions?, postconditions?, skipDedup? }
  * @returns {Promise<{id: number, status: string, type: string, confidence: number, provenance: string, project: string, embedded: boolean, agent_id: string|null}>}
  */
 async function save(opts) {
@@ -232,9 +232,11 @@ async function save(opts) {
     console.warn('[agentic-cortex] Embedding failed for save: ' + (err && err.message ? err.message : err));
   }
 
-  // #1 Save-time deduplication: check for highly similar existing observations
+  // #1 Save-time deduplication: check for highly similar existing observations.
+  // Skipped when opts.skipDedup is set — queue/snapshot entries must persist as
+  // distinct rows even when semantically identical (e.g. pending approval actions).
   let dedupResult = null;
-  if (embedding) {
+  if (embedding && !opts.skipDedup) {
     try {
       const vec = JSON.parse(embedding);
       const existing = db.prepare(
