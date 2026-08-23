@@ -37,4 +37,11 @@ module.exports = {
   reflexionLoop: require('./reflexion-loop'),
   selfConsistency: require('./self-consistency'),
   budgetForcing: require('./budget-forcing'),
+  failureClassifier: require('./failure-classifier'),
+  experienceReplay: require('./experience-replay'),
+  translationStore: require('./translation-store'),
+  burstBudget: require('./burst-budget'),
+  warRoom: require('./war-room'),
+  deterministicReasoner: require('./deterministic-reasoner'),
+  swarm: require('./swarm'),
 };

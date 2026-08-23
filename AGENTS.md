@@ -1,7 +1,7 @@
 <!-- agentic-cortex:start:v6.5.1 -->
 # agentic-cortex
 
-Persistent, self-improving memory system for AI coding agents. 67 MCP tools.
+Persistent, self-improving memory system for AI coding agents. 78 MCP tools.
 
 ## Test-Time Reasoning (NEW)
 

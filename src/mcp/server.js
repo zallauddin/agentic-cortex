@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -973,6 +973,214 @@ const TOOLS = [
       required: ['problem'],
     },
   },
+
+  // ── v6.5.0: Failure classifier + Exp replay + Translations (Phase 22-24) ─────
+  {
+    name: 'memory_classify_failure',
+    description: '🔍 FAILURE CLASSIFIER — Deterministically classify an error message into a condition family (network/timeout/file/element/app/auth/parse/other), extract a probe target, and suggest the corrected approach. No LLM: pure regex + heuristics.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        errorText: { type: 'string', description: 'Error message to classify' },
+      },
+      required: ['errorText'],
+    },
+  },
+  {
+    name: 'memory_retry_check',
+    description: '🔁 RETRY GATE — Check whether the underlying condition behind a failure has actually changed. Probes the network/file/app condition with live checks before offering a retry. Only offers a re-run when the cause is confirmed cleared.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commandKey: { type: 'string', description: 'Normalized command key from the failure' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['commandKey'],
+    },
+  },
+  {
+    name: 'memory_failure_lessons',
+    description: '📋 FAILURE LESSONS — List all failure lessons for a project, grouped by condition kind with aggregated stats.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_experience_scripts',
+    description: '📜 EXPERIENCE REPLAY — List all learned scripts (successful operations recorded as deterministic replays). Each script shows runs/successes/failures and estimated LLM cost saved.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        limit: { type: 'number', description: 'Max scripts to list', default: 50 },
+      },
+    },
+  },
+  {
+    name: 'memory_translation_lookup',
+    description: '📖 TRANSLATION LOOKUP — Check if a problem/input has a cached deterministic resolution. Every hit avoids an LLM call. Returns the cached solution + uses counter.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        namespace: { type: 'string', description: 'Namespace — "problem" | "verify"', default: 'problem' },
+        key: { type: 'string', description: 'Normalized input key' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['namespace', 'key'],
+    },
+  },
+
+  // ── v6.5.0: Burst budget + War room + Reasoner + Swarm (Phase 25-28) ─────
+  {
+    name: 'memory_burst_check',
+    description: '🛡️ BURST BUDGET — Check whether a tool is allowed to run within the rolling-window burst budget. Returns allowed/reason/remaining. Guards against runaway autonomous actions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toolName: { type: 'string', description: 'Tool name to check' },
+        project: { type: 'string', description: 'Project path' },
+        allowlist: { type: 'array', items: { type: 'string' }, description: 'Allowed tools' },
+        windowMs: { type: 'number', description: 'Rolling window in ms (default 300000 = 5 min)' },
+        maxPerWindow: { type: 'number', description: 'Max actions per window (default 5)' },
+      },
+      required: ['toolName'],
+    },
+  },
+  {
+    name: 'memory_burst_reset',
+    description: '🔓 RESET CIRCUIT BREAKER — Manually reset the burst-budget circuit breaker after it tripped. Fresh budget, no pending state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_war_room_scoreboard',
+    description: '🏟️ WAR ROOM SCOREBOARD — View the self-improvement arena results: rounds, per-difficulty averages, best/worst scores, trend, and recent round details.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_reason_deduce',
+    description: '🧠 DEDUCTION — Run transitive-closure reasoning over the knowledge graph + detect contradictions between opposing principles. Returns inferred insights.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Topic to deduce about' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['topic'],
+    },
+  },
+  {
+    name: 'memory_reason_induce',
+    description: '🔬 INDUCTION — Generalize recurring concepts across many observations into a reusable principle. Confidence ∝ support (observation count).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Topic to induce patterns from' },
+        project: { type: 'string', description: 'Project path' },
+        minSupport: { type: 'number', description: 'Minimum observation count to generalize (default 3)' },
+      },
+      required: ['topic'],
+    },
+  },
+  {
+    name: 'memory_reason_analogize',
+    description: '🔄 ANALOGY — Find past solutions matching the current topic and propose transferring that approach. Searches for high-confidence, solution-tagged observations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Topic to find analogies for' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['topic'],
+    },
+  },
+  {
+    name: 'memory_reason_abduce',
+    description: '💡 ABDUCTION — Rank candidate explanations by causal signals (because, root cause, fixed by) in the knowledge base. Emits the best explanation as a hypothesis.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Topic to abduce explanations for' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['topic'],
+    },
+  },
+  {
+    name: 'memory_reason_synthesize',
+    description: '🧩 SYNTHESIS — Combine related memories sharing a subject into a single multi-angle derived fact.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Subject to synthesize' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['topic'],
+    },
+  },
+  {
+    name: 'memory_reason_forecast',
+    description: '📈 FORECAST — Extract numeric series (years, versions, counts) from observations, fit a trend line, and extrapolate the next value.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Topic to forecast trends for' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['topic'],
+    },
+  },
+  {
+    name: 'memory_reason_all',
+    description: '🧠 REASON ALL — Run all six deterministic inference modes (deduction, induction, analogy, abduction, synthesis, forecast) over a topic and persist insights that clear the confidence floor. Grows the knowledge base.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Topic to reason about' },
+        project: { type: 'string', description: 'Project path' },
+        modes: { type: 'string', description: 'Comma-separated modes (default all: deduction,induction,analogy,abduction,synthesis,forecast)' },
+        minConfidence: { type: 'number', description: 'Min confidence to persist (default 50)', default: 50 },
+        maxInsights: { type: 'number', description: 'Max insights to persist (default 10)', default: 10 },
+      },
+      required: ['topic'],
+    },
+  },
+  {
+    name: 'memory_swarm_decompose',
+    description: '🐝 SWARM DECOMPOSE — Break a goal into a dependency DAG and dispatch subtasks to role-based personas (analyzer → planner → coder → tester → reviewer → verifier → orchestrator). Tasks coordinate through the shared brain.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'High-level goal to decompose' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['goal'],
+    },
+  },
+  {
+    name: 'memory_swarm_progress',
+    description: '📊 SWARM PROGRESS — Check the status of a decomposed goal: how many tasks pending/running/completed/failed, plus per-role results.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'Goal to check progress for' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['goal'],
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -1459,6 +1667,71 @@ async function callTool(name, args) {
           temperatureBase: args.temperatureBase,
         },
       });
+
+    // ── v6.5.0: Failure classifier + Exp replay + Translations ──
+    case 'memory_classify_failure':
+      return api.classifyFailure(args.errorText);
+
+    case 'memory_retry_check':
+      return api.checkRetryCleared(args.commandKey, args.project);
+
+    case 'memory_failure_lessons':
+      return api.lessonStats(args.project);
+
+    case 'memory_experience_scripts':
+      return { scripts: api.listScripts({ project: args.project, limit: args.limit || 50 }), stats: api.scriptStats(args.project) };
+
+    case 'memory_translation_lookup':
+      return api.translationLookup(args.namespace || 'problem', args.key, args.project);
+
+    // ── v6.5.0: Burst budget ──
+    case 'memory_burst_check':
+      return api.burstCheck(args.toolName, args.project, {
+        allowlist: args.allowlist || [],
+        windowMs: args.windowMs,
+        maxPerWindow: args.maxPerWindow,
+      });
+
+    case 'memory_burst_reset':
+      return api.burstReset(args.project);
+
+    // ── v6.5.0: War room ──
+    case 'memory_war_room_scoreboard':
+      return api.getScoreboard({ project: args.project });
+
+    // ── v6.5.0: Deterministic reasoner ──
+    case 'memory_reason_deduce':
+      return api.reasonDeduce(args.topic, { project: args.project });
+
+    case 'memory_reason_induce':
+      return api.reasonInduce(args.topic, { project: args.project, minSupport: args.minSupport });
+
+    case 'memory_reason_analogize':
+      return api.reasonAnalogize(args.topic, { project: args.project });
+
+    case 'memory_reason_abduce':
+      return api.reasonAbduce(args.topic, { project: args.project });
+
+    case 'memory_reason_synthesize':
+      return api.reasonSynthesize(args.topic, { project: args.project });
+
+    case 'memory_reason_forecast':
+      return api.reasonForecast(args.topic, { project: args.project });
+
+    case 'memory_reason_all':
+      return api.reasonAll(args.topic, {
+        project: args.project,
+        modes: args.modes,
+        minConfidence: args.minConfidence,
+        maxInsights: args.maxInsights,
+      });
+
+    // ── v6.5.0: Swarm ──
+    case 'memory_swarm_decompose':
+      return { tasks: api.swarmDecompose(args.goal, { project: args.project }) };
+
+    case 'memory_swarm_progress':
+      return api.swarmGoalProgress(args.goal, { project: args.project });
 
     default:
       throw new Error('Unknown tool: ' + name);
