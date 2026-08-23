@@ -62,7 +62,7 @@ const MCP_TOOLS = {
   ]
 };
 
-const MCP_TOOL_COUNT = 57; // 19 core + 26 advanced + 11 session + 1 bootstrap
+const MCP_TOOL_COUNT = 78; // core + session + reasoning + failure-classifier + experience-replay + translations + burst-budget + war-room + reasoner + swarm
 
 /**
  * Create multi-agent discovery files in the project directory.
