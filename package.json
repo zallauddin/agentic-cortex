@@ -1,7 +1,7 @@
 {
   "name": "agentic-cortex",
-  "version": "6.5.1",
-  "description": "Persistent self-improving agent memory with tree-of-thoughts reasoning: MCTS/beam search, PRM step verification, self-consistency voting, s1 budget forcing, REPL program-aided reasoning, reflexion self-correction, 67 MCP tools",
+  "version": "6.5.0",
+  "description": "Persistent self-improving agent memory with tree-of-thoughts reasoning: MCTS/beam search, PRM step verification, self-consistency voting, s1 budget forcing, REPL program-aided reasoning, reflexion self-correction, failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner, persona swarm, 78 MCP tools",
   "keywords": [
     "ai-agent",
     "memory",

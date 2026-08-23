@@ -66,6 +66,28 @@ const budgetForcing = require('../core/budget-forcing');
 core.budgetForcing = budgetForcing;
 budgetForcing.setSaveFunction(save);
 
+// Initialize Phase 22-24 modules (failure classifier, experience replay, translations)
+const failureClassifier = require('../core/failure-classifier');
+core.failureClassifier = failureClassifier;
+const experienceReplay = require('../core/experience-replay');
+core.experienceReplay = experienceReplay;
+const translationStore = require('../core/translation-store');
+core.translationStore = translationStore;
+
+// Initialize Phase 25: Burst budget — restore circuit state from DB
+const burstBudget = require('../core/burst-budget');
+core.burstBudget = burstBudget;
+
+// Initialize Phase 26-27: War room + Swarm
+const warRoom = require('../core/war-room');
+core.warRoom = warRoom;
+const swarm = require('../core/swarm');
+core.swarm = swarm;
+
+// Initialize Phase 28: Deterministic reasoner
+const deterministicReasoner = require('../core/deterministic-reasoner');
+core.deterministicReasoner = deterministicReasoner;
+
 // Rules hook is registered in init() to avoid TDZ with _apiDb
 let _rulesHookRegistered = false;
 
@@ -1712,6 +1734,11 @@ async function init() {
   } catch (err) {
     console.warn('[agentic-cortex] Standards seeding failed:', err.message);
   }
+
+  // Restore burst-budget circuit breaker state from DB (survives restarts)
+  try {
+    burstBudget.restoreFromDB(_getDB(), process.env.AGENTIC_CORTEX_PROJECT || process.cwd());
+  } catch { /* best-effort */ }
 
   return { status: 'initialized', dbPath: core.db.getDbPath() };
 }
@@ -3946,4 +3973,56 @@ module.exports = {
   selfConsistency: (params) => selfConsistency.selfConsistency({ ...params, db: _getDB() }),
   budgetForce: (params) => budgetForcing.budgetForce({ ...params }),
   generateForcedChain: (params) => budgetForcing.generateForcedChain({ ...params }),
+  // ── v6.5.0: Failure classifier + Experience replay + Translation store ──
+  classifyFailure: failureClassifier.classifyFailure,
+  probeCleared: failureClassifier.probeCleared,
+  recordFailure: (params) => failureClassifier.recordFailure(_getDB(), params),
+  recordSuccess: (commandKey, project) => failureClassifier.recordSuccess(_getDB(), commandKey, project),
+  getLesson: (commandKey, project) => failureClassifier.getLesson(_getDB(), commandKey, project),
+  listLessons: (opts) => failureClassifier.listLessons(_getDB(), opts),
+  checkRetryCleared: (commandKey, project) => failureClassifier.checkRetryCleared(_getDB(), commandKey, project),
+  markResolved: (commandKey, project) => failureClassifier.markResolved(_getDB(), commandKey, project),
+  lessonStats: (project) => failureClassifier.lessonStats(_getDB(), project),
+  // Experience replay
+  findScript: (commandKey, project) => experienceReplay.findScript(_getDB(), commandKey, project),
+  recordScript: (params) => experienceReplay.recordScript(_getDB(), params),
+  logReplay: (commandKey, outcome, project, durationMs, llmCallsSaved) => experienceReplay.logReplay(_getDB(), commandKey, outcome, project, durationMs, llmCallsSaved),
+  listScripts: (opts) => experienceReplay.listScripts(_getDB(), opts),
+  scriptStats: (project) => experienceReplay.scriptStats(_getDB(), project),
+  forgetScript: (commandKey, project) => experienceReplay.forgetScript(_getDB(), commandKey, project),
+  optimizeScript: experienceReplay.optimizeScript,
+  // Translation store
+  translationLookup: (namespace, key, project) => translationStore.lookup(_getDB(), namespace, key, project),
+  translationStore: (namespace, key, payload, project) => translationStore.store(_getDB(), namespace, key, payload, project),
+  translationForget: (namespace, key, project) => translationStore.forget(_getDB(), namespace, key, project),
+  translationList: (opts) => translationStore.list(_getDB(), opts),
+  translationStats: (project) => translationStore.stats(_getDB(), project),
+  // ── v6.5.0: Burst budget ──
+  burstCheck: (toolName, project, config) => burstBudget.check(toolName, project, config),
+  burstRecordSuccess: (toolName, project, summary) => { burstBudget.recordSuccess(toolName, project, summary); burstBudget.auditSuccess(_getDB(), toolName, project); },
+  burstRecordFailure: (db, toolName, project, reason) => burstBudget.recordFailure(_getDB(), toolName, project, reason),
+  burstReset: (project) => burstBudget.resetCircuit(_getDB(), project),
+  burstGetState: (project, config) => burstBudget.getBurstState(project, config),
+  burstAuditLog: (opts) => burstBudget.getAuditLog(_getDB(), opts),
+  // ── v6.5.0: War room (self-improvement arena) ──
+  WarRoom: warRoom.WarRoom,
+  getScoreboard: (opts) => warRoom.getScoreboard(_getDB(), opts),
+  // ── v6.5.0: Deterministic reasoner (6 inference modes) ──
+  reasonAll: (topic, opts) => deterministicReasoner.reasonAll(_getDB(), topic, opts),
+  reasonDeduce: (topic, opts) => deterministicReasoner.deduce(_getDB(), topic, opts),
+  reasonInduce: (topic, opts) => deterministicReasoner.induce(_getDB(), topic, opts),
+  reasonAnalogize: (topic, opts) => deterministicReasoner.analogize(_getDB(), topic, opts),
+  reasonAbduce: (topic, opts) => deterministicReasoner.abduce(_getDB(), topic, opts),
+  reasonSynthesize: (topic, opts) => deterministicReasoner.synthesize(_getDB(), topic, opts),
+  reasonForecast: (topic, opts) => deterministicReasoner.forecast(_getDB(), topic, opts),
+  // ── v6.5.0: Swarm (persona-based multi-agent orchestration) ──
+  swarmDecompose: (goal, opts) => swarm.decomposeGoal(_getDB(), goal, opts),
+  swarmNextTask: (role, opts) => swarm.getNextTask(_getDB(), role, opts),
+  swarmStartTask: (taskId) => swarm.startTask(_getDB(), taskId),
+  swarmCompleteTask: (taskId, summary, obsId) => swarm.completeTask(_getDB(), taskId, summary, obsId),
+  swarmFailTask: (taskId, reason) => swarm.failTask(_getDB(), taskId, reason),
+  swarmGoalTasks: (goal, opts) => swarm.getGoalTasks(_getDB(), goal, opts),
+  swarmGoalProgress: (goal, opts) => swarm.getGoalProgress(_getDB(), goal, opts),
+  swarmActiveGoals: (opts) => swarm.listActiveGoals(_getDB(), opts),
+  swarmSynthesize: (goal, opts) => swarm.synthesizeGoal(_getDB(), goal, opts),
 };

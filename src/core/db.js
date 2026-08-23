@@ -482,6 +482,138 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_reasoning_nodes_prm ON reasoning_nodes(prm_score);
     CREATE INDEX IF NOT EXISTS idx_reasoning_nodes_active ON reasoning_nodes(is_pruned, is_terminal);
   `);
+
+  // Phase 22: Failure condition classification + retry gating
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS failure_lessons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      command_key TEXT NOT NULL,
+      error_signature TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 1,
+      condition_kind TEXT DEFAULT 'other',
+      condition_target TEXT,
+      suggestion TEXT,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      last_failed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(project_path, command_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_failure_lessons_project ON failure_lessons(project_path);
+    CREATE INDEX IF NOT EXISTS idx_failure_lessons_kind ON failure_lessons(condition_kind);
+  `);
+
+  // Phase 23: Experience replay — learn successful operations as scripts
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS experience_scripts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      command_key TEXT NOT NULL,
+      label TEXT,
+      steps TEXT NOT NULL,
+      runs INTEGER DEFAULT 0,
+      successes INTEGER DEFAULT 0,
+      failures INTEGER DEFAULT 0,
+      llm_calls_saved INTEGER DEFAULT 0,
+      est_cost_saved REAL DEFAULT 0.0,
+      last_run TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(project_path, command_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_experience_scripts_project ON experience_scripts(project_path);
+    CREATE TABLE IF NOT EXISTS experience_executions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      script_id INTEGER REFERENCES experience_scripts(id),
+      project_path TEXT NOT NULL,
+      kind TEXT DEFAULT 'record',
+      outcome TEXT NOT NULL,
+      llm_calls_saved INTEGER DEFAULT 0,
+      duration_ms INTEGER DEFAULT 0,
+      est_cost_saved REAL DEFAULT 0.0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_experience_execs_project ON experience_executions(project_path);
+  `);
+
+  // Phase 24: Translation store — LLM-fallback absorption (learn once, replay free)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS translations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      cache_key TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      uses INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(project_path, cache_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_translations_project ON translations(project_path);
+  `);
+
+  // Phase 25: Burst budget — rolling-window rate limiting + circuit breaker
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS burst_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      outcome TEXT DEFAULT 'success',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_burst_audit_project ON burst_audit(project_path);
+    CREATE TABLE IF NOT EXISTS burst_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      project_path TEXT UNIQUE NOT NULL,
+      circuit_open INTEGER NOT NULL DEFAULT 0,
+      open_reason TEXT,
+      opened_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Phase 26: War room — self-improvement arena
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS war_room_scoreboard (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      round_number INTEGER NOT NULL,
+      scenario_id TEXT NOT NULL,
+      scenario_name TEXT,
+      difficulty TEXT DEFAULT 'medium',
+      kind TEXT DEFAULT 'code',
+      score INTEGER DEFAULT 0,
+      issues_found INTEGER DEFAULT 0,
+      planted_issues INTEGER DEFAULT 0,
+      fixes_applied INTEGER DEFAULT 0,
+      new_observations INTEGER DEFAULT 0,
+      new_patterns INTEGER DEFAULT 0,
+      duration_ms INTEGER DEFAULT 0,
+      failed INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_war_room_project ON war_room_scoreboard(project_path);
+    CREATE INDEX IF NOT EXISTS idx_war_room_difficulty ON war_room_scoreboard(difficulty);
+  `);
+
+  // Phase 27: Swarm — persona-based multi-agent orchestration
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS swarm_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      goal TEXT NOT NULL,
+      parent_task_id INTEGER,
+      agent_role TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      priority INTEGER DEFAULT 5,
+      dependency_ids TEXT DEFAULT '[]',
+      result_summary TEXT,
+      result_observation_id INTEGER,
+      started_at TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_swarm_tasks_project ON swarm_tasks(project_path);
+    CREATE INDEX IF NOT EXISTS idx_swarm_tasks_status ON swarm_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_swarm_tasks_role ON swarm_tasks(agent_role, status);
+  `);
 }
 
 /**
