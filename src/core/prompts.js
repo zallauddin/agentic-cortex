@@ -245,6 +245,114 @@ Return JSON with:
     defaults: { temperature: 0.4, maxTokens: 1000, timeout: 30000 },
     outcomeTracking: true,
   },
+
+  // ── Test-Time Compute Reasoning (Phase 20) ─────────────────────
+  'generate-reasoning-branches': {
+    name: 'generate-reasoning-branches',
+    version: '1.0',
+    description: 'Generate multiple candidate reasoning steps for tree search',
+    systemPrompt: `You are a reasoning engine that explores multiple solution paths.
+Given a problem and the reasoning chain so far, generate DIFFERENT candidate next steps.
+Each candidate should represent a DISTINCT approach.
+
+Respond ONLY with valid JSON: {"branches": [{"content": "step text", "type": "reasoning|code|plan"}]}`,
+    userPromptTemplate: `Problem: {{problem}}
+
+{{chainContext}}
+
+Generate {{branchCount}} candidate next steps, each with a distinct approach:
+1. The most obvious/straightforward step
+2. A creative/unconventional approach
+3. The most conservative/safe step
+
+Respond with JSON: {"branches": [{"content": "...", "type": "..."}]}`,
+    defaults: { temperature: 0.7, maxTokens: 2000, timeout: 30000 },
+    outcomeTracking: true,
+  },
+
+  'verify-reasoning-step': {
+    name: 'verify-reasoning-step',
+    version: '1.0',
+    description: 'Score a reasoning step using LLM-as-judge (Process Reward Model)',
+    systemPrompt: `You are a Process Reward Model (PRM) that verifies reasoning steps.
+Evaluate whether this step is a VALID logical deduction given the prior context.
+
+Scoring:
+- 0.0-0.2: Clearly invalid (false claim, logical fallacy)
+- 0.3-0.4: Likely invalid (unjustified assumption)
+- 0.5-0.6: Neutral (plausible but unverified)
+- 0.7-0.8: Likely valid (sound reasoning, supported by evidence)
+- 0.9-1.0: Clearly valid (proven by evidence)
+
+Respond ONLY with valid JSON: {"score": 0.0-1.0, "valid": true/false, "reason": "brief explanation"}`,
+    userPromptTemplate: `Problem: {{problem}}
+
+{{priorContext}}
+
+Step to verify:
+{{stepContent}}`,
+    defaults: { temperature: 0, maxTokens: 200, timeout: 15000 },
+    outcomeTracking: true,
+  },
+
+  'synthesize-solution': {
+    name: 'synthesize-solution',
+    version: '1.0',
+    description: 'Merge insights from multiple explored reasoning paths into a final solution',
+    systemPrompt: `You synthesize a final solution from multiple explored reasoning paths.
+Combine the best parts of each path while discarding flawed reasoning.
+
+Respond ONLY with valid JSON: {"solution": "final answer", "confidence": 0.0-1.0, "paths_used": ["description of which paths contributed"]}`,
+    userPromptTemplate: `Problem: {{problem}}
+
+Explored paths:
+{{paths}}
+
+Synthesize the best solution from these explorations:`,
+    defaults: { temperature: 0.2, maxTokens: 2000, timeout: 30000 },
+    outcomeTracking: true,
+  },
+
+  'reflexion-critique': {
+    name: 'reflexion-critique',
+    version: '1.0',
+    description: 'Critique a failed reasoning path to extract learnings for self-correction',
+    systemPrompt: `You analyze failed reasoning paths and extract actionable critiques.
+Identify the root cause, a pattern to avoid, and a suggested alternative.
+
+Respond ONLY with valid JSON:
+{"critique": "why it failed", "avoidPattern": "pattern to avoid", "suggestAlternative": "alternative approach"}`,
+    userPromptTemplate: `Problem: {{problem}}
+
+Failed approach: {{strategy}}
+
+Reasoning path:
+{{failedPath}}
+
+Reason for rejection: {{verificationError}}
+
+Extract a critique to help the agent avoid this mistake:`,
+    defaults: { temperature: 0.2, maxTokens: 500, timeout: 15000 },
+    outcomeTracking: true,
+  },
+
+  'check-goal-reached': {
+    name: 'check-goal-reached',
+    version: '1.0',
+    description: 'Determine if a reasoning chain has reached a solution',
+    systemPrompt: `You determine if a reasoning chain has reached a solution.
+The chain has reached a goal if it contains a concrete answer that resolves the problem.
+
+Respond ONLY with valid JSON: {"reached": true/false, "confidence": 0.0-1.0, "reason": "brief"}`,
+    userPromptTemplate: `Problem: {{problem}}
+
+Reasoning chain:
+{{chain}}
+
+Has this chain reached a solution?`,
+    defaults: { temperature: 0, maxTokens: 150, timeout: 10000 },
+    outcomeTracking: false,
+  },
 };
 
 // ─── Template Registry API ──────────────────────────────────────────

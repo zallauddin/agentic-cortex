@@ -29,4 +29,12 @@ module.exports = {
   rules: require('./rules'),
   workflow: require('./workflow'),
   prompts: require('./prompts'),
+  recovery: require('./recovery'),
+  prm: require('./prm'),
+  treeSearch: require('./tree-search'),
+  adaptiveBudget: require('./adaptive-budget'),
+  replExecutor: require('./repl-executor'),
+  reflexionLoop: require('./reflexion-loop'),
+  selfConsistency: require('./self-consistency'),
+  budgetForcing: require('./budget-forcing'),
 };

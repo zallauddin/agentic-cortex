@@ -359,6 +359,129 @@ function ensureSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_workflow_instances_status ON workflow_instances(status, agent_id);
   `);
+
+  // Phase 18: Recovery layer — probe-gated retry, LLM negative cache, counter-evidence decay
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS condition_states (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      condition TEXT NOT NULL,
+      occurrences INTEGER NOT NULL DEFAULT 0,
+      last_failure_at TEXT,
+      last_error_id INTEGER,
+      last_error_text TEXT,
+      last_probe_ok INTEGER,
+      last_probe_at TEXT,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(project_path, condition)
+    );
+    CREATE INDEX IF NOT EXISTS idx_condition_states_project ON condition_states(project_path);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS llm_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cache_key TEXT UNIQUE NOT NULL,
+      operation TEXT NOT NULL,
+      input_text TEXT,
+      result TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ok',
+      hit_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_hit_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_llm_cache_operation ON llm_cache(operation);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS failure_decay (
+      error_id INTEGER PRIMARY KEY REFERENCES observations(id) ON DELETE CASCADE,
+      project_path TEXT NOT NULL,
+      lesson_count INTEGER NOT NULL DEFAULT 1,
+      last_success_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_failure_decay_project ON failure_decay(project_path);
+  `);
+
+  // Phase 19: Fine-grained multi-agent sharing + inter-agent mailbox
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_shares (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      observation_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+      shared_with TEXT NOT NULL,
+      shared_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(observation_id, shared_with)
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_shares_with ON memory_shares(shared_with);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mailbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_agent TEXT NOT NULL,
+      to_agent TEXT NOT NULL,
+      subject TEXT,
+      body TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'message',
+      ref_observation_id INTEGER,
+      read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      read_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_mailbox_to ON mailbox(to_agent, read);
+    CREATE INDEX IF NOT EXISTS idx_mailbox_ref ON mailbox(ref_observation_id);
+  `);
+
+  // Phase 20: Test-time compute reasoning — Tree of Thoughts / MCTS traces
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reasoning_traces (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      problem TEXT NOT NULL,
+      strategy TEXT DEFAULT 'beam',
+      difficulty_score INTEGER DEFAULT 0,
+      root_node_id INTEGER,
+      best_node_id INTEGER,
+      nodes_explored INTEGER DEFAULT 0,
+      tokens_spent INTEGER DEFAULT 0,
+      branches_pruned INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'running',
+      project_path TEXT NOT NULL,
+      reflexion_context TEXT DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_reasoning_traces_project ON reasoning_traces(project_path);
+    CREATE INDEX IF NOT EXISTS idx_reasoning_traces_status ON reasoning_traces(status);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reasoning_nodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      trace_id INTEGER NOT NULL REFERENCES reasoning_traces(id) ON DELETE CASCADE,
+      parent_id INTEGER,
+      step_index INTEGER NOT NULL DEFAULT 0,
+      step_content TEXT NOT NULL,
+      step_type TEXT DEFAULT 'reasoning',
+      branch_label TEXT,
+      prm_score REAL DEFAULT 0.0,
+      is_pruned INTEGER DEFAULT 0,
+      prune_reason TEXT,
+      is_terminal INTEGER DEFAULT 0,
+      visit_count INTEGER DEFAULT 0,
+      q_value REAL DEFAULT 0.0,
+      children_ids TEXT DEFAULT '[]',
+      verification_result TEXT,
+      error_observation_id INTEGER,
+      execution_output TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_reasoning_nodes_trace ON reasoning_nodes(trace_id);
+    CREATE INDEX IF NOT EXISTS idx_reasoning_nodes_parent ON reasoning_nodes(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_reasoning_nodes_prm ON reasoning_nodes(prm_score);
+    CREATE INDEX IF NOT EXISTS idx_reasoning_nodes_active ON reasoning_nodes(is_pruned, is_terminal);
+  `);
 }
 
 /**

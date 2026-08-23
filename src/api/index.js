@@ -34,6 +34,38 @@ rules.setFsm(fsm);
 workflow.setSaveFunction(save);
 workflow.setFsm(fsm);
 
+// Initialize test-time compute reasoning modules (Phase 20)
+const prm = require('../core/prm');
+core.prm = prm;
+prm.setSaveFunction(save);
+prm.setSearchFunction((q, o) => _apiDb ? core.search.hybridSearch(_apiDb, q, null, o) : null);
+
+const treeSearch = require('../core/tree-search');
+core.treeSearch = treeSearch;
+treeSearch.setSaveFunction(save);
+treeSearch.setSearchFunction((q, o) => _apiDb ? core.search.hybridSearch(_apiDb, q, null, o) : null);
+
+const adaptiveBudget = require('../core/adaptive-budget');
+core.adaptiveBudget = adaptiveBudget;
+
+const replExecutor = require('../core/repl-executor');
+core.replExecutor = replExecutor;
+
+const reflexionLoop = require('../core/reflexion-loop');
+core.reflexionLoop = reflexionLoop;
+reflexionLoop.setSaveFunction(save);
+reflexionLoop.setSearchFunction((q, o) => _apiDb ? core.search.hybridSearch(_apiDb, q, null, o) : null);
+
+// Initialize self-consistency and budget-forcing (Phase 21)
+const selfConsistency = require('../core/self-consistency');
+core.selfConsistency = selfConsistency;
+selfConsistency.setSaveFunction(save);
+selfConsistency.setSearchFunction((q, o) => _apiDb ? core.search.hybridSearch(_apiDb, q, null, o) : null);
+
+const budgetForcing = require('../core/budget-forcing');
+core.budgetForcing = budgetForcing;
+budgetForcing.setSaveFunction(save);
+
 // Rules hook is registered in init() to avoid TDZ with _apiDb
 let _rulesHookRegistered = false;
 
@@ -508,7 +540,14 @@ function keywordSearch(query, opts) {
 async function semanticSearch(query, opts) {
   opts = opts || {};
   const db = _getDB();
-  const queryVec = await core.embedding.computeEmbedding(query);
+  let queryVec;
+  try {
+    queryVec = await core.embedding.computeEmbedding(query);
+  } catch {
+    // Embeddings unavailable (@xenova/transformers not installed) —
+    // degrade to deterministic keyword search instead of failing.
+    return core.search.keywordSearch(db, { ...opts, query });
+  }
   return core.search.semanticSearch(db, queryVec, opts);
 }
 
@@ -564,15 +603,22 @@ function listSessions(opts) {
  */
 async function embed(idOrText) {
   const db = _getDB();
+  const compute = async (text) => {
+    try {
+      return await core.embedding.computeEmbedding(text);
+    } catch (err) {
+      throw new Error('Embeddings unavailable — @xenova/transformers is not installed. Run: npm install @xenova/transformers (or install agentic-cortex without --omit=optional). ' + (err && err.message ? err.message : ''));
+    }
+  };
   if (typeof idOrText === 'number') {
     const obs = db.prepare('SELECT * FROM observations WHERE id = ?').get(idOrText);
     if (!obs) throw new Error('Observation not found: ' + idOrText);
     const text = [obs.title || '', obs.content].filter(Boolean).join('. ');
-    const vec = await core.embedding.computeEmbedding(text);
+    const vec = await compute(text);
     db.prepare('UPDATE observations SET embedding = ? WHERE id = ?').run(JSON.stringify(vec), idOrText);
     return { id: idOrText, status: 'embedded', dimension: vec.length };
   }
-  return core.embedding.computeEmbedding(idOrText);
+  return compute(idOrText);
 }
 
 /**
@@ -841,6 +887,12 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
     }
   } catch { /* best-effort */ }
 
+  // ── Layer 0.8: Agent persona, inbox, and shared-with-me context ──
+  try {
+    const agentCtx = _agentContextLayer(db, project);
+    if (agentCtx) output += agentCtx;
+  } catch { /* best-effort */ }
+
   // ── Layer 1: Actionable Insights (LLM summary of relevant memories) ──
   try {
     const insights = await _summarizeMemories(db, project, workingOn);
@@ -993,6 +1045,133 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
     }
   } catch { /* past failures query failed — skip */ }
 
+  // ── Layer 2.75: Test-Time Reasoning Context ──
+  // Injects reflexion context, estimates difficulty, suggests tree search for hard problems.
+  // This is the "working memory" that prevents repeated reasoning mistakes within a session.
+  try {
+    let reasoningBlock = '';
+
+    // 2.75a: Reflexion context (in-context self-corrections from this session)
+    // First check in-memory reflexion-loop state, then fall back to DB query
+    const activeSessionId = sessionId || process.env.AGENTIC_CORTEX_SESSION || null;
+    let reflexionContext = null;
+
+    if (activeSessionId) {
+      reflexionContext = reflexionLoop.buildReflexionContext(activeSessionId, 5);
+    }
+
+    // DB fallback: search for recent reflexion observations tagged with this session
+    if (!reflexionContext && activeSessionId) {
+      try {
+        const dbReflexions = db.prepare(
+          "SELECT title, content, created_at FROM observations WHERE project_path = ? AND is_active = 1 AND type = 'context' AND tags LIKE '%reflexion%' ORDER BY created_at DESC LIMIT 5"
+        ).all(project);
+
+        if (dbReflexions.length > 0) {
+          const lines = dbReflexions.map(r => {
+            // Extract avoid pattern from content
+            const avoidMatch = r.content.match(/AVOID:\s*([^.\n]+)/);
+            const tryMatch = r.content.match(/TRY INSTEAD:\s*([^.\n]+)/);
+            const parts = [];
+            if (avoidMatch) parts.push('- AVOID: ' + avoidMatch[1].trim());
+            if (tryMatch) parts.push('- INSTEAD: ' + tryMatch[1].trim());
+            return parts.length > 0 ? parts.join('\n') : '- ' + (r.title || r.content.slice(0, 100));
+          }).filter(Boolean);
+
+          if (lines.length > 0) {
+            reflexionContext = '## What NOT to Try (from recent failures):\n' + lines.join('\n');
+          }
+        }
+      } catch {}
+    }
+
+    if (reflexionContext) {
+      reasoningBlock += `  <reflexion_context session="${_xmlEscape(activeSessionId || 'unknown')}">\n`;
+      reasoningBlock += `    <content>${_xmlEscape(reflexionContext.slice(0, 1200))}</content>\n`;
+      reasoningBlock += '  </reflexion_context>\n';
+      tokenEstimate += Math.ceil(Math.min(reflexionContext.length, 1200) / 4);
+    }
+
+    // 2.75b: Difficulty estimation and reasoning recommendation
+    let relevantMemories = [];
+    try {
+      const queryVec = await core.embedding.computeEmbedding(workingOn).catch(() => null);
+      if (queryVec) {
+        relevantMemories = core.search.hybridSearch(db, workingOn, queryVec, { project, limit: 8 });
+      } else {
+        relevantMemories = core.search.keywordSearch(db, { query: workingOn, project, limit: 8 });
+      }
+    } catch {}
+
+    const previousReflexionCount = sessionId
+      ? reflexionLoop.getSessionReflexions(sessionId).length
+      : 0;
+
+    const difficulty = adaptiveBudget.estimateDifficulty({
+      problem: workingOn,
+      project,
+      memories: relevantMemories || [],
+      reflexionCount: previousReflexionCount,
+      db,
+    });
+
+    if (difficulty.score >= 4) {
+      const budget = adaptiveBudget.calculateBudget(difficulty.score);
+      reasoningBlock += `  <reasoning_advisor difficulty="${difficulty.score}" recommended_strategy="${_xmlEscape(budget.strategy)}" beam_width="${budget.beamWidth}" max_depth="${budget.maxDepth}" token_budget="${budget.tokenBudget}">\n`;
+
+      // Show why difficulty is high
+      if (difficulty.factors) {
+        const factors = [];
+        if (difficulty.factors.memorySimilarity && difficulty.factors.memorySimilarity.count <= 1) factors.push('novel problem (few similar memories)');
+        if (difficulty.factors.failureRate && difficulty.factors.failureRate.failures >= 2) factors.push(difficulty.factors.failureRate.failures + ' similar past failures');
+        if (difficulty.factors.reflexionCount && difficulty.factors.reflexionCount.count >= 2) factors.push(difficulty.factors.reflexionCount.count + ' prior self-corrections needed');
+        if (difficulty.factors.problemComplexity && difficulty.factors.problemComplexity.signals >= 2) factors.push('high complexity signals (edge cases/security/refactoring)');
+        if (factors.length > 0) {
+          reasoningBlock += `    <difficulty_factors>${_xmlEscape(factors.join('; '))}</difficulty_factors>\n`;
+        }
+      }
+
+      // Recommendation based on difficulty
+      if (difficulty.score >= 7) {
+        reasoningBlock += '    <recommendation priority="high">STRONGLY RECOMMENDED: Use memory_tree_search({ problem: "' + _xmlEscape(workingOn.slice(0, 100)) + '" }) to explore multiple reasoning branches. This problem has high difficulty and a high risk of single-path failure.</recommendation>\n';
+      } else {
+        reasoningBlock += '    <recommendation priority="medium">Consider using memory_tree_search({ problem: "' + _xmlEscape(workingOn.slice(0, 100)) + '" }) to verify your approach. This problem may benefit from multi-branch exploration.</recommendation>\n';
+      }
+
+      reasoningBlock += '  </reasoning_advisor>\n';
+      tokenEstimate += 200;
+    }
+
+    // 2.75c: Recent reasoning traces summary (if any exist)
+    try {
+      const recentTraces = db.prepare(
+        'SELECT id, problem, strategy, difficulty_score, nodes_explored, branches_pruned, status, completed_at FROM reasoning_traces WHERE project_path = ? ORDER BY created_at DESC LIMIT 3'
+      ).all(project);
+
+      if (recentTraces.length > 0) {
+        reasoningBlock += '  <reasoning_traces count="' + recentTraces.length + '">\n';
+        for (const t of recentTraces) {
+          reasoningBlock += `    <trace id="${t.id}" strategy="${_xmlEscape(t.strategy)}" difficulty="${t.difficulty_score}" status="${_xmlEscape(t.status)}" nodes="${t.nodes_explored}" pruned="${t.branches_pruned}">\n`;
+          reasoningBlock += `      <problem>${_xmlEscape(_truncateContent(t.problem, 150))}</problem>\n`;
+          if (t.status === 'completed') {
+            reasoningBlock += '      <outcome>Successfully found a solution. View full trace with memory_reasoning_trace({ traceId: ' + t.id + ' })</outcome>\n';
+          } else if (t.status === 'pruned') {
+            reasoningBlock += '      <outcome>All branches were pruned. Avoid the approaches explored in this trace.</outcome>\n';
+          } else {
+            reasoningBlock += '      <outcome>Search was ' + _xmlEscape(t.status) + '. View trace for details.</outcome>\n';
+          }
+          reasoningBlock += '    </trace>\n';
+          tokenEstimate += 200;
+        }
+        reasoningBlock += '  </reasoning_traces>\n';
+      }
+    } catch { /* reasoning_traces table may not exist yet */ }
+
+    if (reasoningBlock) {
+      output += reasoningBlock;
+    }
+  } catch { /* reasoning context layer best-effort */ }
+
   // ── Layer 3: Recent Sessions ──
   try {
     const sessions = db.prepare(
@@ -1093,7 +1272,7 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
   output += '</agentic_cortex_context>';
 
   // ── Layer 7: Usage instructions (appended after XML block) ──
-  output += '\n\n<!--\nINSTRUCTIONS: The above is your project memory context. Use it to:\n1. Avoid repeating past mistakes (check <warnings>)\n2. Apply previous learnings (check <actionable_insights>)\n3. Search deeper if needed: agentic-cortex search "your query" --project .\n4. Save new observations: agentic-cortex save "title" "content" --type decision\n5. Get full coding standard details: agentic-cortex standards --search "topic"\n-->\n';
+  output += '\n\n<!--\nINSTRUCTIONS: The above is your project memory context. Use it to:\n1. Avoid repeating past mistakes (check <warnings> and <reflexion_context>)\n2. Apply previous learnings (check <actionable_insights>)\n3. For hard problems: use memory_tree_search({ problem: "..." }) to explore multiple reasoning branches\n4. Search deeper if needed: agentic-cortex search "your query" --project .\n5. Save new observations: agentic-cortex save "title" "content" --type decision\n6. Self-correct after failures: memory_reflexion({ sessionId, problem, failedPath, verificationError })\n-->\n';
 
   return output;
 }
@@ -1765,7 +1944,17 @@ function shareMemory(opts) {
   const sharedWith = opts.sharedWith || [];
   if (!sharedWith.length) throw new Error('sharedWith must be a non-empty array of agent IDs');
 
-  // Update shared_with on the observation's agent session if one exists
+  const sharedBy = opts.sharedBy || obs.agent_id || opts.agentId || null;
+
+  // Fine-grained: record this *specific* observation → each recipient.
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO memory_shares (observation_id, shared_with, shared_by) VALUES (?,?,?)'
+  );
+  for (const agentId of sharedWith) {
+    insert.run(opts.observationId, agentId, sharedBy);
+  }
+
+  // Backward-compatible: also keep the source agent session's shared_with list.
   if (obs.agent_id) {
     const session = db.prepare(
       'SELECT * FROM agent_sessions WHERE agent_id = ? AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1'
@@ -1781,6 +1970,7 @@ function shareMemory(opts) {
   return {
     observation_id: opts.observationId,
     shared_with: sharedWith,
+    shared_by: sharedBy,
     status: 'shared',
   };
 }
@@ -1795,22 +1985,203 @@ function shareMemory(opts) {
 function getSharedMemories(agentId, opts) {
   opts = opts || {};
   const db = _getDB();
-  // Find agents that have shared with this agent
+  const limit = opts.limit || 20;
+
+  // Fine-grained path: observations explicitly shared via memory_shares.
+  let sql = `SELECT o.id, o.agent_id, o.project_path, o.type, o.title, substr(o.content, 1, 300) as preview, o.tags, o.importance, o.confidence, o.provenance, o.created_at, s.shared_by
+             FROM observations o
+             JOIN memory_shares s ON s.observation_id = o.id
+             WHERE s.shared_with = ? AND o.is_active = 1`;
+  const params = [agentId];
+  if (opts.project) { sql += ' AND o.project_path = ?'; params.push(opts.project); }
+  sql += ' ORDER BY s.created_at DESC LIMIT ?';
+  params.push(limit);
+  const shared = db.prepare(sql).all(...params);
+  if (shared.length > 0) return shared;
+
+  // Fallback: legacy coarse sharing (agents that listed us in shared_with).
   const sharedSessions = db.prepare(
     "SELECT DISTINCT a.agent_id FROM agent_sessions a WHERE EXISTS (SELECT 1 FROM json_each(a.shared_with) j WHERE j.value = ?) AND a.project_path LIKE ? AND a.ended_at IS NULL"
   ).all(agentId, opts.project || '%');
-
   if (sharedSessions.length === 0) return [];
   const agentIds = sharedSessions.map(s => s.agent_id);
 
   const placeholders = agentIds.map(() => '?').join(',');
-  let sql = 'SELECT o.id, o.agent_id, o.project_path, o.type, o.title, substr(o.content, 1, 300) as preview, o.tags, o.importance, o.confidence, o.provenance, o.created_at FROM observations o WHERE o.agent_id IN (' + placeholders + ') AND o.is_active = 1';
-  const params = [...agentIds];
-  if (opts.project) { sql += ' AND o.project_path = ?'; params.push(opts.project); }
-  sql += ' ORDER BY o.created_at DESC LIMIT ?';
-  params.push(opts.limit || 20);
+  let sql2 = 'SELECT o.id, o.agent_id, o.project_path, o.type, o.title, substr(o.content, 1, 300) as preview, o.tags, o.importance, o.confidence, o.provenance, o.created_at FROM observations o WHERE o.agent_id IN (' + placeholders + ') AND o.is_active = 1';
+  const params2 = [...agentIds];
+  if (opts.project) { sql2 += ' AND o.project_path = ?'; params2.push(opts.project); }
+  sql2 += ' ORDER BY o.created_at DESC LIMIT ?';
+  params2.push(limit);
+
+  return db.prepare(sql2).all(...params2);
+}
+
+/**
+ * Send a message/task/handoff to another agent's mailbox.
+ * This is the inter-agent event primitive: workers poll getInbox().
+ *
+ * @param {Object} opts - { from?, to, subject?, body, kind?, refObservationId? }
+ * @returns {Object}
+ */
+function sendMessage(opts) {
+  const db = _getDB();
+  const from = opts.from || opts.fromAgent || process.env.AGENTIC_CORTEX_AGENT_ID || 'unknown';
+  const to = opts.to || opts.toAgent;
+  if (!to) throw new Error('to (recipient agent ID) is required');
+  if (!opts.body) throw new Error('body is required');
+
+  const r = db.prepare(
+    'INSERT INTO mailbox (from_agent, to_agent, subject, body, kind, ref_observation_id) VALUES (?,?,?,?,?,?)'
+  ).run(from, to, opts.subject || null, opts.body, opts.kind || 'message', opts.refObservationId || null);
+
+  return {
+    id: Number(r.lastInsertRowid),
+    from_agent: from,
+    to_agent: to,
+    kind: opts.kind || 'message',
+    status: 'sent',
+  };
+}
+
+/**
+ * List messages addressed to an agent (the agent's mailbox inbox).
+ *
+ * @param {string} agentId - Recipient agent ID
+ * @param {Object} [opts] - { unreadOnly?, kind?, limit? }
+ * @returns {Object[]}
+ */
+function getInbox(agentId, opts) {
+  opts = opts || {};
+  const db = _getDB();
+  if (!agentId) throw new Error('agentId is required');
+
+  let sql = 'SELECT * FROM mailbox WHERE to_agent = ?';
+  const params = [agentId];
+  if (opts.unreadOnly) { sql += ' AND read = 0'; }
+  if (opts.kind) { sql += ' AND kind = ?'; params.push(opts.kind); }
+  sql += ' ORDER BY created_at DESC LIMIT ?';
+  params.push(opts.limit || 50);
 
   return db.prepare(sql).all(...params);
+}
+
+/**
+ * Mark a mailbox message as read.
+ *
+ * @param {number} messageId
+ * @returns {Object}
+ */
+function markMessageRead(messageId) {
+  const db = _getDB();
+  const r = db.prepare("UPDATE mailbox SET read = 1, read_at = datetime('now') WHERE id = ? AND read = 0").run(messageId);
+  if (r.changes === 0) throw new Error('Unread message not found: ' + messageId);
+  return { id: messageId, status: 'read' };
+}
+
+/**
+ * Self-describing provider manifest so coding agents can discover agentic-cortex
+ * as a memory provider/extender (memory_provider MCP tool).
+ *
+ * @returns {Object} Provider capabilities manifest
+ */
+function providerInfo() {
+  let version = 'unknown';
+  try { version = require('../../package.json').version; } catch {}
+
+  let observedMemories = 0;
+  try { observedMemories = _getDB().prepare('SELECT COUNT(*) as c FROM observations').get().c; } catch {}
+
+  return {
+    name: 'agentic-cortex',
+    version,
+    role: 'persistent memory provider for coding agents',
+    transports: ['stdio-mcp', 'node-api', 'cli'],
+    capabilities: {
+      memoryTypes: core.constants.VALID_TYPES.size,
+      relationTypes: [...core.constants.VALID_RELATION_TYPES],
+      multiAgent: true,
+      agentSessions: true,
+      mailbox: true,
+      fineGrainedSharing: true,
+      workflows: true,
+      fsm: true,
+      rules: true,
+      selfImprovement: true,
+      recovery: true,
+      globalVault: true,
+      search: ['fts5-keyword', 'semantic-embedding', 'hybrid', 'cross-encoder-rerank'],
+    },
+    observedMemories,
+    usage: {
+      bootstrap: 'Call memory_bootstrap({}) at session start',
+      save: 'Call memory_save({ content, type?, tags? }) after decisions and fixes',
+      search: 'Call memory_search({ query }) to steer decisions BEFORE falling back to local knowledge',
+      multiAgent: 'agent_session_start + memory_send/memory_inbox/memory_share for agent coordination',
+      recover: 'classifyCondition + shouldRetry for probe-gated retry after failures',
+    },
+  };
+}
+
+/**
+ * Build the agent-specific context layer (persona, inbox, shared-with-me) for
+ * bootstrap/context injection. Exposed for tests; synchronous and deterministic.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project - Project path
+ * @returns {string} XML-tagged agent context (empty string if none)
+ */
+function _agentContextLayer(db, project) {
+  const agentId = process.env.AGENTIC_CORTEX_AGENT_ID || null;
+  let out = '';
+
+  if (agentId) {
+    try {
+      const sess = db.prepare(
+        'SELECT role, session_id FROM agent_sessions WHERE agent_id = ? AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1'
+      ).get(agentId);
+      if (sess) {
+        out += `  <agent_identity agent_id="${_xmlEscape(agentId)}" session="${_xmlEscape(sess.session_id)}" role="${_xmlEscape(sess.role || '')}" />\n`;
+      }
+    } catch {}
+  }
+
+  // Unread inbox addressed to this agent
+  try {
+    const inbox = agentId
+      ? db.prepare('SELECT id, from_agent, subject, body, kind, ref_observation_id, created_at FROM mailbox WHERE to_agent = ? AND read = 0 ORDER BY created_at DESC LIMIT 10').all(agentId)
+      : [];
+    if (inbox.length) {
+      out += `  <inbox count="${inbox.length}">\n`;
+      for (const m of inbox) {
+        out += `    <message id="${m.id}" from="${_xmlEscape(m.from_agent)}" kind="${_xmlEscape(m.kind)}"${m.ref_observation_id ? ` ref="${m.ref_observation_id}"` : ''}>\n`;
+        out += `      <subject>${_xmlEscape(m.subject || '(no subject)')}</subject>\n`;
+        out += `      <body>${_xmlEscape(_truncateContent(m.body, 500))}</body>\n`;
+        out += '    </message>\n';
+      }
+      out += '  </inbox>\n';
+    }
+  } catch {}
+
+  // Observations explicitly shared with this agent
+  try {
+    if (agentId) {
+      const shared = db.prepare(
+        'SELECT o.id, o.type, o.title, o.content, s.shared_by FROM observations o JOIN memory_shares s ON s.observation_id = o.id WHERE s.shared_with = ? AND o.is_active = 1 AND o.project_path = ? ORDER BY s.created_at DESC LIMIT 10'
+      ).all(agentId, project);
+      if (shared.length) {
+        out += `  <shared_with_me count="${shared.length}">\n`;
+        for (const m of shared) {
+          out += `    <memory id="${m.id}" type="${_xmlEscape(m.type)}" from="${_xmlEscape(m.shared_by || '')}">\n`;
+          out += `      <title>${_xmlEscape(m.title || '(untitled)')}</title>\n`;
+          out += `      <content>${_xmlEscape(_truncateContent(m.content, 300))}</content>\n`;
+          out += '    </memory>\n';
+        }
+        out += '  </shared_with_me>\n';
+      }
+    }
+  } catch {}
+
+  return out;
 }
 
 // ─── Skill/Procedure Search ───────────────────────────────────────────
@@ -1919,7 +2290,7 @@ async function recordAction(opts) {
   let classification = 'neutral';
   let usedFallback = false;
   try {
-    classification = await core.selfImprove.classifyOutcome(opts.outcome);
+    classification = await core.selfImprove.classifyOutcome(opts.outcome, db);
   } catch {
     // Keyword fallback when LLM classifier unavailable
     usedFallback = true;
@@ -2925,6 +3296,399 @@ function analytics(opts) {
   return { rca, conflicts, utility, feedback, freshness, evalLog, layers, experiments };
 }
 
+// ─── Reasoning Stats (Test-Time Compute Analytics) ──────────────────
+
+/**
+ * Aggregate analytics for test-time compute reasoning traces.
+ * Shows total traces, success rate, pruning effectiveness,
+ * difficulty distribution, and per-strategy performance.
+ *
+ * @param {Object} [opts] - { project? }
+ * @returns {Object} Reasoning analytics
+ */
+function reasoningStats(opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+
+  try {
+    // ── Trace counts ──
+    const counts = db.prepare(
+      'SELECT status, COUNT(*) as c FROM reasoning_traces WHERE project_path = ? GROUP BY status'
+    ).all(project);
+    const countMap = {};
+    let totalTraces = 0;
+    let completedTraces = 0;
+    let prunedTraces = 0;
+    let budgetExhausted = 0;
+    for (const r of counts) {
+      countMap[r.status] = r.c;
+      totalTraces += r.c;
+      if (r.status === 'completed') completedTraces += r.c;
+      if (r.status === 'pruned') prunedTraces += r.c;
+      if (r.status === 'budget_exhausted') budgetExhausted += r.c;
+    }
+
+    // ── Aggregate metrics ──
+    const agg = db.prepare(`
+      SELECT 
+        ROUND(AVG(difficulty_score), 1) as avg_difficulty,
+        ROUND(AVG(nodes_explored), 1) as avg_nodes_explored,
+        ROUND(AVG(branches_pruned), 1) as avg_branches_pruned,
+        ROUND(AVG(tokens_spent), 0) as avg_tokens_spent,
+        MAX(difficulty_score) as max_difficulty,
+        MIN(difficulty_score) as min_difficulty
+      FROM reasoning_traces
+      WHERE project_path = ?
+    `).get(project);
+
+    // ── Success rate (traces with best_node_id set = found a solution) ──
+    const solutionsFound = db.prepare(
+      'SELECT COUNT(*) as c FROM reasoning_traces WHERE project_path = ? AND best_node_id IS NOT NULL'
+    ).get(project).c;
+
+    const successRate = totalTraces > 0
+      ? Math.round((solutionsFound / totalTraces) * 100)
+      : 0;
+
+    // ── Pruning effectiveness (pruned branches / total nodes) ──
+    const nodeCounts = db.prepare(`
+      SELECT 
+        COUNT(*) as total_nodes,
+        SUM(CASE WHEN is_pruned = 1 THEN 1 ELSE 0 END) as pruned_nodes,
+        SUM(CASE WHEN is_terminal = 1 THEN 1 ELSE 0 END) as terminal_nodes
+      FROM reasoning_nodes n
+      JOIN reasoning_traces t ON n.trace_id = t.id
+      WHERE t.project_path = ?
+    `).get(project);
+
+    const pruningEffectiveness = nodeCounts.total_nodes > 0
+      ? Math.round((nodeCounts.pruned_nodes / nodeCounts.total_nodes) * 100)
+      : 0;
+
+    // ── Per-strategy performance ──
+    const strategyRows = db.prepare(`
+      SELECT 
+        strategy,
+        COUNT(*) as count,
+        SUM(CASE WHEN best_node_id IS NOT NULL THEN 1 ELSE 0 END) as solutions,
+        ROUND(AVG(difficulty_score), 1) as avg_difficulty,
+        ROUND(AVG(nodes_explored), 1) as avg_nodes,
+        ROUND(AVG(branches_pruned), 1) as avg_pruned,
+        ROUND(AVG(tokens_spent), 0) as avg_tokens
+      FROM reasoning_traces
+      WHERE project_path = ?
+      GROUP BY strategy
+      ORDER BY count DESC
+    `).all(project);
+
+    const strategies = strategyRows.map(s => ({
+      strategy: s.strategy,
+      count: s.count,
+      solutions: s.solutions,
+      successRate: s.count > 0 ? Math.round((s.solutions / s.count) * 100) : 0,
+      avgDifficulty: s.avg_difficulty,
+      avgNodes: s.avg_nodes,
+      avgPruned: s.avg_pruned,
+      avgTokens: s.avg_tokens,
+    }));
+
+    // ── Best strategy (highest success rate, minimum 2 traces) ──
+    const bestStrategy = strategies
+      .filter(s => s.count >= 2 && s.solutions > 0)
+      .sort((a, b) => b.successRate - a.successRate)[0] || null;
+
+    // ── Difficulty distribution histogram ──
+    const difficultyBuckets = [
+      { label: 'easy', range: '0-2', min: 0, max: 2 },
+      { label: 'medium', range: '3-5', min: 3, max: 5 },
+      { label: 'hard', range: '6-8', min: 6, max: 8 },
+      { label: 'expert', range: '9-10', min: 9, max: 10 },
+    ];
+    for (const bucket of difficultyBuckets) {
+      bucket.count = db.prepare(
+        'SELECT COUNT(*) as c FROM reasoning_traces WHERE project_path = ? AND difficulty_score >= ? AND difficulty_score <= ?'
+      ).get(project, bucket.min, bucket.max).c;
+      bucket.pct = totalTraces > 0 ? Math.round((bucket.count / totalTraces) * 100) : 0;
+    }
+
+    // ── Node-level PRM score distribution ──
+    let prmDistribution = null;
+    try {
+      const prmRows = db.prepare(`
+        SELECT prm_score FROM reasoning_nodes n
+        JOIN reasoning_traces t ON n.trace_id = t.id
+        WHERE t.project_path = ? AND prm_score > 0
+      `).all(project);
+
+      if (prmRows.length > 0) {
+        const scores = prmRows.map(r => r.prm_score || 0);
+        scores.sort((a, b) => a - b);
+        prmDistribution = {
+          count: scores.length,
+          min: Math.round(scores[0] * 100) / 100,
+          max: Math.round(scores[scores.length - 1] * 100) / 100,
+          median: Math.round(scores[Math.floor(scores.length / 2)] * 100) / 100,
+          p25: Math.round(scores[Math.floor(scores.length * 0.25)] * 100) / 100,
+          p75: Math.round(scores[Math.floor(scores.length * 0.75)] * 100) / 100,
+          avg: Math.round((scores.reduce((s, v) => s + v, 0) / scores.length) * 100) / 100,
+        };
+      }
+    } catch { /* best-effort */ }
+
+    return {
+      totalTraces,
+      completedTraces,
+      prunedTraces,
+      budgetExhausted,
+      successRate,
+      solutionsFound,
+      avgDifficulty: agg.avg_difficulty || 0,
+      avgNodesExplored: agg.avg_nodes_explored || 0,
+      avgBranchesPruned: agg.avg_branches_pruned || 0,
+      avgTokensSpent: agg.avg_tokens_spent || 0,
+      minDifficulty: agg.min_difficulty || 0,
+      maxDifficulty: agg.max_difficulty || 0,
+      pruningEffectiveness,
+      totalNodes: nodeCounts.total_nodes || 0,
+      prunedNodes: nodeCounts.pruned_nodes || 0,
+      terminalNodes: nodeCounts.terminal_nodes || 0,
+      difficultyDistribution: difficultyBuckets.filter(b => b.count > 0),
+      bestStrategy,
+      strategies,
+      prmDistribution,
+      project,
+    };
+  } catch (e) {
+    return {
+      totalTraces: 0,
+      error: 'reasoning_traces table may not exist yet — run a tree search first: ' + (e.message || e),
+      project,
+    };
+  }
+}
+
+// ─── Solution Synthesis (Merge Explored Branches) ──────────────────
+
+/**
+ * Synthesize a final answer from all explored branches of a reasoning trace.
+ * Uses the synthesize-solution prompt template to merge insights from
+ * successful, terminal, and pruned paths into one coherent solution.
+ *
+ * The synthesis draws from:
+ *   - Terminal nodes (paths that reached a goal)
+ *   - High-PRM-score branches that survived pruning
+ *   - Pruned branches as "what NOT to do" context
+ *
+ * Falls back to deterministic path merging (best N terminal paths by score)
+ * when the LLM is unavailable.
+ *
+ * @param {Object} opts — { traceId }
+ * @returns {Promise<Object>} Synthesized solution
+ */
+async function synthesizeSolution(opts) {
+  const db = _getDB();
+  const traceId = opts && opts.traceId;
+  if (!traceId) throw new Error('traceId is required');
+
+  // 1. Load the trace with all nodes
+  const trace = treeSearch.loadTrace(db, traceId);
+  if (!trace) throw new Error('Reasoning trace not found: ' + traceId);
+
+  // 2. Build a node lookup by DB id for path reconstruction
+  const nodeMap = new Map();
+  for (const n of trace.nodes) {
+    nodeMap.set(n.id, n);
+  }
+
+  // 3. Reconstruct every root-to-leaf path via DFS
+  // A "leaf" is a node with no children OR a terminal node
+  // We only follow active nodes (not pruned, unless they have no active siblings)
+  const rootNodes = trace.nodes.filter(n => n.parentId == null);
+
+  /**
+   * Walk from a node collecting the chain. Returns an array of step strings.
+   * @param {Object} node
+   * @returns {{ chain: string[], terminal: boolean, score: number }}
+   */
+  function walkToLeaf(node, visited) {
+    if (visited.has(node.id)) return null; // cycle guard
+    visited.add(node.id);
+
+    // Get children that aren't pruned
+    const children = (node.childrenIds || [])
+      .map(cid => nodeMap.get(cid))
+      .filter(Boolean)
+      .filter(c => !c.isPruned);
+
+    if (children.length === 0) {
+      // This node is a leaf
+      return {
+        chain: [node.stepContent],
+        terminal: node.isTerminal,
+        score: node.prmScore || 0,
+      };
+    }
+
+    // Recurse into children
+    const subPaths = children
+      .map(c => walkToLeaf(c, new Set(visited)))
+      .filter(Boolean);
+
+    if (subPaths.length === 0) {
+      return { chain: [node.stepContent], terminal: node.isTerminal, score: node.prmScore || 0 };
+    }
+
+    // Return multiple paths (fan-out)
+    return subPaths.map(sp => ({
+      chain: [node.stepContent, ...(Array.isArray(sp) ? sp[0]?.chain || [] : sp.chain || [])],
+      terminal: Array.isArray(sp) ? sp.some(s => s.terminal) : sp.terminal,
+      score: Array.isArray(sp)
+        ? Math.max(...sp.map(s => s.score))
+        : sp.score,
+    }));
+  }
+
+  let allPaths = [];
+  for (const root of rootNodes) {
+    const result = walkToLeaf(root, new Set());
+    if (result) {
+      if (Array.isArray(result)) {
+        allPaths.push(...result);
+      } else {
+        allPaths.push(result);
+      }
+    }
+  }
+
+  // If no paths reconstructed, just use all nodes sorted by score
+  if (allPaths.length === 0) {
+    allPaths = trace.nodes
+      .filter(n => !n.isPruned && n.stepContent)
+      .map(n => ({ chain: [n.stepContent], terminal: n.isTerminal, score: n.prmScore || 0 }));
+  }
+
+  // Sort by score descending, terminals first
+  allPaths.sort((a, b) => {
+    if (a.terminal !== b.terminal) return b.terminal ? 1 : -1;
+    return (b.score || 0) - (a.score || 0);
+  });
+
+  // 4. Also collect pruned branches for "what to avoid" context
+  const prunedBranches = trace.nodes
+    .filter(n => n.isPruned && n.stepContent)
+    .map(n => ({
+      content: n.stepContent.slice(0, 150),
+      reason: n.pruneReason || (n.verificationResult ? n.verificationResult.reason : 'PRM rejected'),
+      score: n.prmScore || 0,
+    }));
+
+  // 5. Format paths for the LLM template
+  const topPaths = allPaths.slice(0, 6);
+  let pathsText = '';
+
+  for (let i = 0; i < topPaths.length; i++) {
+    const p = topPaths[i];
+    const label = p.terminal ? 'TERMINAL (goal reached)' : 'ACTIVE (exploration)';
+    pathsText += `Path ${i + 1} [${label}, score: ${p.score.toFixed(2)}]:\n`;
+    pathsText += p.chain.map((s, j) => `  Step ${j + 1}: ${s}`).join('\n');
+    pathsText += '\n\n';
+  }
+
+  if (prunedBranches.length > 0) {
+    pathsText += 'PRUNED branches (these approaches were REJECTED — DO NOT repeat):\n';
+    for (const pb of prunedBranches.slice(0, 4)) {
+      pathsText += `  ✗ "${pb.content}" — ${pb.reason} (score: ${pb.score.toFixed(2)})\n`;
+    }
+    pathsText += '\n';
+  }
+
+  // 6. Attempt LLM-based synthesis via prompt template
+  let synthesized = null;
+  try {
+    const { callLLM } = require('../core/session');
+    const tpl = core.prompts.buildMessages('synthesize-solution', {
+      problem: trace.problem,
+      paths: pathsText,
+    });
+
+    const result = await callLLM(tpl ? tpl.messages : [
+      { role: 'system', content: 'You synthesize a final solution from multiple explored reasoning paths. Combine the best parts of each path while discarding flawed reasoning. Respond ONLY with valid JSON: {"solution": "final answer", "confidence": 0.0-1.0, "paths_used": ["description of which paths contributed"]}' },
+      { role: 'user', content: `Problem: ${trace.problem}\n\nExplored paths:\n${pathsText}\n\nSynthesize the best solution from these explorations:` },
+    ], tpl ? tpl.defaults : { temperature: 0.2, maxTokens: 2000, timeout: 30000 });
+
+    if (result) {
+      const cleaned = result.replace(/ thinking[\s\S]*?<\/think>/g, '').trim();
+      const parsed = JSON.parse(cleaned || '{}');
+      if (parsed.solution) {
+        synthesized = {
+          solution: parsed.solution,
+          confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.7,
+          pathsUsed: parsed.paths_used || [],
+          source: 'llm',
+        };
+      }
+    }
+  } catch { /* LLM unavailable — fall back to deterministic merge */ }
+
+  // 7. Deterministic fallback: merge best terminal + best active paths
+  if (!synthesized) {
+    const bestTerminal = allPaths.find(p => p.terminal);
+    const bestActive = allPaths.find(p => !p.terminal);
+
+    const mergedSteps = new Set();
+    const pathsUsed = [];
+
+    if (bestTerminal) {
+      for (const s of bestTerminal.chain) mergedSteps.add(s);
+      pathsUsed.push(`Terminal path (score: ${bestTerminal.score.toFixed(2)})`);
+    }
+
+    if (bestActive && bestActive !== bestTerminal) {
+      for (const s of bestActive.chain) {
+        // Only add if it doesn't duplicate terminal steps
+        const short = s.slice(0, 60);
+        let isDuplicate = false;
+        for (const existing of mergedSteps) {
+          if (existing.slice(0, 60) === short) { isDuplicate = true; break; }
+        }
+        if (!isDuplicate) mergedSteps.add(s);
+      }
+      pathsUsed.push(`Active path (score: ${bestActive.score.toFixed(2)})`);
+    }
+
+    synthesized = {
+      solution: [...mergedSteps].join(' → '),
+      confidence: bestTerminal ? (bestTerminal.score || 0.5) : 0.4,
+      pathsUsed,
+      source: 'deterministic-merge',
+    };
+  }
+
+  // 8. Enrich return value with trace metadata
+  return {
+    traceId: trace.id,
+    problem: trace.problem,
+    strategy: trace.strategy,
+    difficultyScore: trace.difficultyScore,
+    status: trace.status,
+    nodesExplored: trace.nodesExplored,
+    branchesPruned: trace.branchesPruned,
+    totalPathsFound: allPaths.length,
+    terminalPaths: allPaths.filter(p => p.terminal).length,
+    prunedBranches: prunedBranches.length,
+    pathsExplored: topPaths.map(p => ({
+      chain: p.chain,
+      terminal: p.terminal,
+      score: p.score,
+    })),
+    synthesizedSolution: synthesized.solution,
+    confidence: synthesized.confidence,
+    pathsUsed: synthesized.pathsUsed,
+    synthesisSource: synthesized.source,
+  };
+}
+
 // ─── Crystallization (AutoGTM's Compounding Brain) ──────────────────
 
 /**
@@ -2994,7 +3758,7 @@ function renderPrompt(templateName, vars = {}) {
 /**
  * Check if improvement has stalled for a project.
  * @param {Object} [opts] — { project?, windowDays?, force? }
- * @returns {Promise<{plateau: boolean, diagnosis: string|null, strategy: string|null}>}
+ * @returns {Promise<{plateau: boolean, plateauDetected: boolean, diagnosis: string|null, strategy: string|null}>}
  */
 async function checkPlateau(opts) {
   return selfImprove.detectPlateau(_getDB(), opts || {});
@@ -3049,6 +3813,38 @@ function getEvalLogStats(opts) {
   return selfImprove.getEvalLogStats(db, project);
 }
 
+// ─── Recovery (Tier 1: probe-gated retry, LLM cache, counter-evidence) ──
+
+/**
+ * Classify an error text into a deterministic condition family
+ * (network/file/element/app/auth/parse).
+ * @param {string} errorText
+ * @returns {string}
+ */
+function classifyCondition(errorText) {
+  return core.recovery.classifyCondition(errorText);
+}
+
+/**
+ * Offer a corrected re-run only when a live probe confirms the underlying
+ * cause changed since the failure was recorded.
+ * @param {Object} opts — { project?, condition?, check }
+ * @returns {Promise<Object>}
+ */
+async function shouldRetry(opts) {
+  return core.recovery.shouldRetry(_getDB(), opts || {});
+}
+
+/**
+ * Apply counter-evidence decay: a later success decrements matching error
+ * lessons and deactivates them once exhausted.
+ * @param {Object} opts — { project?, successObs? }
+ * @returns {Array<Object>}
+ */
+function applyCounterEvidence(opts) {
+  return core.recovery.applyCounterEvidence(_getDB(), opts || {});
+}
+
 // ─── Exports ───────────────────────────────────────────────────────────
 
 module.exports = {
@@ -3064,6 +3860,9 @@ module.exports = {
   createHook, listHooks, updateHook, deleteHook, setHookEnabled, registerHook, unregisterHook,
   reflect, consolidateMemories, promotePatterns, archiveSuperseded,
   startAgentSession, endAgentSession, listAgentSessions, shareMemory, getSharedMemories,
+  sendMessage, getInbox, markMessageRead,
+  providerInfo,
+  _agentContextLayer,
   searchSkills,
   recordAction, transferKnowledge, ingestTranscript, getUtilityStats,
   feedback, trail,
@@ -3115,4 +3914,36 @@ module.exports = {
 
   // Plateau detection (Layer 4)
   checkPlateau,
+
+  // Recovery (Tier 1 self-improvement)
+  classifyCondition,
+  shouldRetry,
+  applyCounterEvidence,
+
+  // ── v6.3.0: Test-time compute reasoning (Phase 20) ──
+  // Process Reward Model
+  verifyStep: (params) => prm.verifyStep({ ...params, db: _getDB() }),
+  verifyChain: (params) => prm.verifyChain({ ...params, db: _getDB() }),
+  verifyDeterministic: prm.verifyDeterministic,
+  // Tree Search
+  treeSearch: (params) => treeSearch.search({ ...params, db: _getDB() }),
+  getReasoningTrace: (traceId) => treeSearch.loadTrace(_getDB(), traceId),
+  reasoningStats,
+  synthesizeSolution,
+  // Adaptive Budget
+  estimateDifficulty: (params) => adaptiveBudget.estimateDifficulty({ ...params, db: _getDB() }),
+  calculateBudget: adaptiveBudget.calculateBudget,
+  // REPL Executor
+  verifyWithCode: (params) => replExecutor.verifyWithCode({ ...params, db: _getDB() }),
+  executeCode: replExecutor.executeCode,
+  generateVerificationScript: replExecutor.generateVerificationScript,
+  // Reflexion Loop
+  recordReflexion: (params) => reflexionLoop.recordReflexion({ ...params, db: _getDB() }),
+  getSessionReflexions: reflexionLoop.getSessionReflexions,
+  buildReflexionContext: reflexionLoop.buildReflexionContext,
+  clearSessionReflexions: reflexionLoop.clearSession,
+  // ── v6.4.0: Self-consistency + Budget forcing (Phase 21) ──
+  selfConsistency: (params) => selfConsistency.selfConsistency({ ...params, db: _getDB() }),
+  budgetForce: (params) => budgetForcing.budgetForce({ ...params }),
+  generateForcedChain: (params) => budgetForcing.generateForcedChain({ ...params }),
 };

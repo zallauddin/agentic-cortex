@@ -1,4 +1,4 @@
-# agentic-cortex v5.0.1 — The 5-Layer Agent Brain
+# agentic-cortex v6.5.0 — The 5-Layer Agent Brain + Test-Time Reasoning
 
 Persistent, self-improving memory **and orchestration** for AI coding agents (Codebuff, Claude Code, Cursor, Codex, OpenCode). Implements the full **5-Layer Graph Engineering** framework: Prompt Engineering → Context Engineering → Harness Engineering → Loop Engineering → Graph Engineering. Install & forget — auto-injects context via git hooks, infers what you're working on, detects when improvement stalls, coordinates multi-agent teams, and prevents the same mistakes from repeating across projects.
 
@@ -10,7 +10,7 @@ Persistent, self-improving memory **and orchestration** for AI coding agents (Co
 - **Auto-promotion with relative thresholds** — top 20% confidence + 2× median utility auto-promote to global vault during reflection. Self-tunes as your project grows.
 - **XML codebase graph** — deterministic static analysis, SHA-256 cached, zero LLM cost. Injected as structured XML, not markdown.
 - **Agent-optimized knowledge.md** — XML-structured, 4× token reduction vs markdown. Built for LLM consumption, not human skimming.
-- **47 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus new v5.0 tools for prompts, plateau detection, multi-agent workflows, FSM orchestration, rule engine, and more. Stdio JSON-RPC.
+- **57 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, and rules. Stdio JSON-RPC.
 - **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error.
 - **Hybrid search** — FTS5 keyword + BGE semantic embeddings (768-dim) + cross-encoder reranking. Falls back gracefully when embeddings unavailable.
 - **Confidence & provenance tracking** — every memory scores 0-100 confidence and source (explicit, inferred, observed).
@@ -40,6 +40,13 @@ Persistent, self-improving memory **and orchestration** for AI coding agents (Co
 - **File upload** — chunk and embed .md, .txt, .json, .csv, .py, .ts, .prisma, and more into memory.
 - **HTTP API server** — optional REST interface on port 37777 for external tool integration.
 - **Multi-agent discovery** — auto-creates discovery files for Claude Code, Cursor, and OpenCode on setup.
+- **🌳 Tree of Thoughts / MCTS reasoning** — inference-time graph search over reasoning branches. Beam search, MCTS, and greedy strategies with adaptive compute budget.
+- **🔍 Process Reward Model (PRM)** — 3-tier step-level verification: deterministic checks, LLM-as-judge, and memory cross-check. Scores each reasoning step 0.0-1.0.
+- **📊 Adaptive compute budget** — Snell et al. compute-optimal allocation: estimates problem difficulty from memory and adjusts beam width, depth, and token budget.
+- **💻 Program-aided reasoning (PAL/PoT)** — generate and execute verification code in a sandbox. Deterministic arithmetic, graph traversal, and constraint checking.
+- **🔄 Reflexion loop** — in-context self-correction: failed reasoning paths become memory, preventing repeated mistakes within the same session.
+- **🗳️ Self-consistency decoding** — sample N independent chains with temperature, majority-vote the answer. Optional PRM-weighted voting gives higher-quality paths more influence.
+- **💪 Budget forcing (s1)** — enforce minimum reasoning depth by suppressing early stops and appending doubt heuristics. Force conclusion synthesis at upper token bound. Controls compute per problem independently of architectural changes.
 - **BGE embeddings** — Xenova/bge-base-en-v1.5 with in-memory LRU cache.
 - **Embedding dimension mismatch detection** — warns when stored embeddings don't match current model dimensions.
 
@@ -47,6 +54,21 @@ Persistent, self-improving memory **and orchestration** for AI coding agents (Co
 
 ```bash
 npm install -g agentic-cortex
+```
+
+### Lightweight install (no semantic embeddings)
+
+Semantic search and reranking are powered by `@xenova/transformers`, which is an
+**optional dependency** — the core package (SQLite storage, FTS5 keyword search,
+consolidation, self-improvement, MCP tools) works fully without it and degrades
+semantic features to deterministic keyword search.
+
+```bash
+# Skip the ~500 MB embedding stack entirely (~12 MB install)
+npm install -g agentic-cortex --omit=optional
+
+# Add semantic embeddings back later
+npm install -g @xenova/transformers
 ```
 
 ## Quick Start
@@ -134,7 +156,7 @@ agentic-cortex promote-global 42
 ### Intelligence
 `conflicts` `answer` `analytics` `daily-summary` `reflect` `maintenance` `freshness` `crystallize` `eval-log`
 
-### Brain Orchestration (v5.0)
+### Brain Orchestration
 `fsm` `rules` `workflow` `experiment`
 
 ### Cross-Project
@@ -144,7 +166,7 @@ agentic-cortex promote-global 42
 `setup` `init` `graph` `inject` `hook` `embed`
 
 ### Advanced
-`upload` `watch` `action` `trail` `utility` `ingest` `export` `serve` `standards` `context` `session` `timeline` `tov-editor`
+`upload` `watch` `action` `trail` `utility` `ingest` `export` `serve` `standards` `context` `session` `timeline` `cortex-ui`
 
 ## MCP Server
 
@@ -152,9 +174,9 @@ agentic-cortex promote-global 42
 agentic-cortex-mcp
 ```
 
-**47 tools** over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
+**57 tools** over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
 
-### New v5.0 Graph Engineering Tools
+### Graph Engineering Tools
 
 | Tool | Layer | Description |
 |------|-------|-------------|
@@ -168,6 +190,41 @@ agentic-cortex-mcp
 | `memory_crystallize` | Layer 4: Loop Engineering | Compress raw observations upward through tiered layers |
 | `memory_experiment` | Layer 4: Loop Engineering | Spawn/list controlled experiments (hypothesis testing) |
 | `memory_eval_log` | Layer 4: Loop Engineering | Query the immutable evaluation log for benchmarking |
+
+## For Coding Agents (Use AC as Your Memory Provider)
+
+agentic-cortex is **not a hosted/cloud service** — there is no central server to
+"deploy" AC to. It runs locally on the same machine as your coding agent, in one
+of two forms:
+
+1. **MCP server (stdio subprocess).** `agentic-cortex-mcp` is a zero-arg binary.
+   The coding agent launches it as a child process and speaks JSON-RPC over
+   stdin/stdout. Register it once in the agent's own config, then call
+   `memory_bootstrap({})` at session start and `memory_save({...})` after
+   decisions and fixes.
+
+   | Coding agent | Where to register the server |
+   |---|---|
+   | Claude Code | `.mcp.json` (project) or `claude_desktop_config.json` (global) |
+   | Cursor | `.cursor/mcp.json` |
+   | OpenCode | `opencode.json` → `mcpServers` |
+   | Any MCP client | `{ "mcpServers": { "agentic-cortex": { "type": "stdio", "command": "agentic-cortex-mcp", "args": [] } } }` |
+
+2. **Node library (in-process).** For agents that embed AC directly (e.g. a
+   custom orchestrator or the `cortex-swarm` persona swarm):
+   `require('agentic-cortex')`, or set `AGENTIC_CORTEX_PATH` to its
+   `src/api/index.js`.
+
+**Where the memory lives:** a single machine-global SQLite file —
+`%APPDATA%/agentic-cortex/agentic-cortex.db` on Windows and
+`~/.local/share/agentic-cortex/agentic-cortex.db` on Linux/macOS (override with
+`AGENTIC_CORTEX_DB`). There is no database server to point at; each machine runs
+its own brain. Cross-machine sharing uses the optional git memory repo
+(`agentic-cortex setup` + `AGENTIC_CORTEX_MEMORY_REPO`), not a live server.
+
+**Discover yourself:** call the `memory_provider` MCP tool for the provider
+manifest (name, version, memory/relation types, multi-agent mailbox, workflows,
+recovery, and usage instructions).
 
 ## 18 Memory Types
 
@@ -197,7 +254,7 @@ Layer 1: Prompt Engineering  ──  src/core/prompts.js     (10 versioned templ
 Layer 2: Context Engineering  ──  src/core/search.js       (hybrid FTS5 + semantic)
                                   src/core/embedding.js    (BGE-base, cross-encoder)
                                   src/core/relations.js    (memory graph)
-Layer 3: Harness Engineering  ──  src/mcp/server.js       (47 MCP tools, webhooks)
+Layer 3: Harness Engineering  ──  src/mcp/server.js       (57 MCP tools, webhooks)
                                   src/core/hooks.js        (event-driven automation)
 Layer 4: Loop Engineering     ──  src/core/self-improve.js (6 improvement hooks)
                                   src/core/reflection.js   (consolidate, crystallize)
