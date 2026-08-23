@@ -30,6 +30,8 @@
 const prm = require('./prm');
 const adaptiveBudget = require('./adaptive-budget');
 const { callLLM } = require('./session');
+const replExecutor = require('./repl-executor');
+const budgetForcing = require('./budget-forcing');
 
 // Lazy-loaded dependencies
 let _prompts = null;
@@ -215,6 +217,181 @@ Respond ONLY with valid JSON: {"reached": true/false, "confidence": 0.0-1.0, "re
   }
 }
 
+// ─── Shared Node Expander (LATS + Budget-Forcing integration) ───
+
+/**
+ * Expand branches from a node, running REPL verification for code-type
+ * steps and budget-forcing when only one branch is available.
+ *
+ * LATS unification: if expandViaCode is set and a branch is code-typed,
+ * the step gets executed in the REPL sandbox. The execution output is
+ * stored in `executionOutput` and fed into the PRM verification context.
+ *
+ * Budget-forcing: when beamWidth is 1 (or only one valid branch exists
+ * after filtering), instead of shallow verification, the path gets
+ * deepened through multiple rounds of doubt prompting and reconsideration.
+ */
+async function _expandAndVerifyNode({ trace, node, chain, branches, problem, project, depth, db, searchFn, budget, expandViaCode = false }) {
+  const childNodes = [];
+  let tokensAdded = 0;
+
+  for (const branch of branches) {
+    const childNode = createNode({
+      parentId: node.id,
+      stepIndex: depth + 1,
+      stepContent: branch.content,
+      stepType: branch.type || 'reasoning',
+      branchLabel: `d${depth + 1}_${node.childrenIds.length + childNodes.length}`,
+    });
+
+    // ── REPL execution (LATS unification) ──
+    if (expandViaCode && (branch.type === 'code' || childNode.stepType === 'code')) {
+      try {
+        const execResult = await replExecutor.verifyWithCode({
+          hypothesis: branch.content,
+          context: chain.join('\n'),
+          project,
+          db,
+          budget: Math.min(1000, budget.tokenBudget - trace.tokensSpent - tokensAdded),
+        });
+
+        childNode.executionOutput = execResult.executionResult
+          ? execResult.executionResult.output?.slice(0, 2000) : null;
+
+        // Use execution result for verification: success = high PRM, failure = low
+        const execScore = execResult.verified ? 0.85 : (execResult.success ? 0.4 : 0.15);
+
+        const verification = {
+          valid: execScore >= 0.3,
+          score: execScore,
+          tier: 'repl',
+          reason: execResult.reason || `REPL execution ${execResult.verified ? 'confirmed' : (execResult.success ? 'ambiguous' : 'rejected')}`,
+          details: { deterministic: { valid: execResult.verified, score: execScore, reason: 'REPL execution' } },
+        };
+
+        childNode.prmScore = verification.score;
+        childNode.verificationResult = verification;
+        tokensAdded += (branch.content || '').length / 2; // Rough estimate
+
+        if (verification.score < 0.3) {
+          childNode.isPruned = true;
+          trace.branchesPruned++;
+          trace.allNodes.push(childNode);
+          continue;
+        }
+      } catch (e) {
+        childNode.executionOutput = `REPL execution failed: ${e.message}`;
+        childNode.prmScore = 0.5;
+        childNode.verificationResult = { valid: true, score: 0.5, tier: 'repl-fallback', reason: `REPL unavailable: ${e.message}` };
+      }
+    } else {
+      // ── Normal PRM verification ──
+      const verification = await prm.verifyStep({
+        stepContent: branch.content,
+        priorSteps: chain,
+        problem,
+        stepType: branch.type || 'reasoning',
+        project,
+        db,
+        searchFn,
+      });
+
+      childNode.prmScore = verification.score;
+      childNode.verificationResult = verification;
+      tokensAdded += 200;
+
+      if (verification.score < 0.3) {
+        childNode.isPruned = true;
+        trace.branchesPruned++;
+
+        if (_saveFn && verification.score < 0.2) {
+          _saveFn({
+            project,
+            type: 'error',
+            title: `Reasoning path pruned: ${branch.content.slice(0, 60)}`,
+            content: `Step "${branch.content}" was pruned by PRM (score: ${verification.score}). Reason: ${verification.reason}`,
+            tags: ['tree-search', 'prm-pruned', 'auto-capture'],
+            importance: 4,
+            provenance: 'inferred',
+          }).catch(() => {});
+        }
+
+        trace.allNodes.push(childNode);
+        continue;
+      }
+    }
+
+    // Check if this is a terminal node (goal reached)
+    const goalCheck = await checkGoal({
+      problem,
+      chain: [...chain, branch.content],
+      depth: depth + 1,
+      maxDepth: budget.maxDepth,
+    });
+
+    if (goalCheck.reached) {
+      childNode.isTerminal = true;
+      childNode.qValue = (childNode.prmScore || 0) * goalCheck.confidence;
+      if (!trace.bestNode || childNode.qValue > trace.bestNode.qValue) {
+        trace.bestNode = childNode;
+      }
+    }
+
+    trace.allNodes.push(childNode);
+    childNodes.push(childNode);
+    node.childrenIds.push(childNode.id || trace.allNodes.length - 1);
+  }
+
+  // ── Budget-forcing: when only one valid branch remains, deepen it ──
+  const validChildren = childNodes.filter(c => !c.isPruned);
+
+  if (validChildren.length === 1 && budget.beamWidth === 1 && !validChildren[0].isTerminal) {
+    const deepenNode = validChildren[0];
+    const deepenChain = _getChain(trace, deepenNode);
+
+    try {
+      const bfResult = await budgetForcing.generateForcedChain({
+        problem,
+        config: {
+          minTokens: budget.bfMinTokens || 100,
+          maxTokens: Math.min(budget.tokenBudget - trace.tokensSpent - tokensAdded, 3000),
+          maxRounds: Math.min(budget.bfMaxRounds || 3, 3),
+          temperatureBase: 0.5,
+        },
+      });
+
+      if (bfResult && bfResult.chain) {
+        deepenNode.executionOutput = bfResult.chain;
+        deepenNode.qValue = (deepenNode.prmScore || 0) * 0.9;
+        deepenNode.isTerminal = true;
+
+        if (!trace.bestNode || deepenNode.qValue > trace.bestNode.qValue) {
+          trace.bestNode = deepenNode;
+        }
+
+        tokensAdded += bfResult.tokensUsed || 500;
+
+        if (_saveFn) {
+          _saveFn({
+            project,
+            type: 'context',
+            title: `Budget-forced deepening: ${problem.slice(0, 60)}`,
+            content: `Deepened single reasoning path through ${bfResult.rounds || '?'} rounds. Tokens: ${bfResult.tokensUsed || 0}`,
+            tags: ['tree-search', 'budget-forcing', 'auto-capture'],
+            importance: 5,
+            provenance: 'inferred',
+          }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      // Budget-forcing failed — continue with the single node as-is
+      console.warn('[tree-search] Budget-forcing failed:', e.message);
+    }
+  }
+
+  return { childNodes, tokensAdded };
+}
+
 // ─── Tree Search Execution ─────────────────────────────────────────
 
 /**
@@ -269,74 +446,14 @@ async function beamSearch({ problem, project = '', db = null, searchFn = null, b
         budget: Math.max(200, budget.tokenBudget - totalTokensSpent),
       });
 
-      totalTokensSpent += branches.length * 200; // Estimate
+      const result = await _expandAndVerifyNode({
+        trace, node, chain, branches, problem, project, depth, db, searchFn, budget,
+        expandViaCode: budgetOverrides.expandViaCode || false,
+      });
 
-      for (const branch of branches) {
-        const childNode = createNode({
-          parentId: node.id,
-          stepIndex: depth + 1,
-          stepContent: branch.content,
-          stepType: branch.type || 'reasoning',
-          branchLabel: `d${depth + 1}_${node.childrenIds.length}`,
-        });
-
-        // Verify with PRM
-        const verification = await prm.verifyStep({
-          stepContent: branch.content,
-          priorSteps: chain,
-          problem,
-          stepType: branch.type || 'reasoning',
-          project,
-          db,
-          searchFn,
-        });
-
-        childNode.prmScore = verification.score;
-        childNode.verificationResult = verification;
-
-        // Prune low-scoring branches
-        if (verification.score < 0.3) {
-          childNode.isPruned = true;
-          trace.branchesPruned++;
-
-          // Save pruned path as error observation (triggers RCA)
-          if (_saveFn && verification.score < 0.2) {
-            _saveFn({
-              project,
-              type: 'error',
-              title: `Reasoning path pruned: ${branch.content.slice(0, 60)}`,
-              content: `Step "${branch.content}" was pruned by PRM (score: ${verification.score}). Reason: ${verification.reason}`,
-              tags: ['tree-search', 'prm-pruned', 'auto-capture'],
-              importance: 4,
-              provenance: 'inferred',
-            }).catch(() => {});
-          }
-
-          trace.allNodes.push(childNode);
-          continue;
-        }
-
-        // Check if this is a terminal node (goal reached)
-        const goalCheck = await checkGoal({
-          problem,
-          chain: [...chain, branch.content],
-          depth: depth + 1,
-          maxDepth: budget.maxDepth,
-        });
-
-        if (goalCheck.reached) {
-          childNode.isTerminal = true;
-          childNode.qValue = verification.score * goalCheck.confidence;
-
-          // Update best node
-          if (!trace.bestNode || childNode.qValue > trace.bestNode.qValue) {
-            trace.bestNode = childNode;
-          }
-        }
-
-        trace.allNodes.push(childNode);
-        nextFrontier.push(childNode);
-        node.childrenIds.push(childNode.id || trace.allNodes.length - 1);
+      totalTokensSpent += result.tokensAdded;
+      for (const child of result.childNodes) {
+        if (!child.isPruned) nextFrontier.push(child);
       }
 
       trace.nodesExplored++;
@@ -415,62 +532,19 @@ async function mctsSearch({ problem, project = '', db = null, searchFn = null, b
       const branches = await generateBranches({
         problem,
         currentChain: chain,
-        branchCount: Math.min(2, budget.beamWidth), // MCTS generates fewer per iteration
+        branchCount: Math.min(2, budget.beamWidth),
         budget: Math.max(200, budget.tokenBudget - totalTokensSpent),
       });
 
-      totalTokensSpent += branches.length * 200;
+      const result = await _expandAndVerifyNode({
+        trace, node: selected, chain, branches, problem, project, depth: chain.length, db, searchFn, budget,
+        expandViaCode: budgetOverrides.expandViaCode || false,
+      });
 
-      for (const branch of branches) {
-        const childNode = createNode({
-          parentId: selected.id,
-          stepIndex: chain.length,
-          stepContent: branch.content,
-          stepType: branch.type || 'reasoning',
-          branchLabel: `iter${iter}_${selected.childrenIds.length}`,
-        });
-
-        // 4. Verify with PRM
-        const verification = await prm.verifyStep({
-          stepContent: branch.content,
-          priorSteps: chain,
-          problem,
-          stepType: branch.type || 'reasoning',
-          project,
-          db,
-          searchFn,
-        });
-
-        childNode.prmScore = verification.score;
-        childNode.verificationResult = verification;
-        childNode.visitCount = 1;
-
-        if (verification.score < 0.3) {
-          childNode.isPruned = true;
-          trace.branchesPruned++;
-        } else {
-          // Check terminal
-          const goalCheck = await checkGoal({
-            problem,
-            chain: [...chain, branch.content],
-            depth: chain.length,
-            maxDepth: budget.maxDepth,
-          });
-
-          if (goalCheck.reached) {
-            childNode.isTerminal = true;
-            childNode.qValue = verification.score * goalCheck.confidence;
-
-            if (!trace.bestNode || childNode.qValue > trace.bestNode.qValue) {
-              trace.bestNode = childNode;
-            }
-          } else {
-            childNode.qValue = verification.score;
-          }
-        }
-
-        trace.allNodes.push(childNode);
-        selected.childrenIds.push(childNode.id || trace.allNodes.length - 1);
+      totalTokensSpent += result.tokensAdded;
+      for (const child of result.childNodes) {
+        child.visitCount = 1;
+        if (!child.isPruned) selected.childrenIds.push(child.id || trace.allNodes.length - 1);
       }
 
       trace.nodesExplored++;
@@ -839,6 +913,7 @@ module.exports = {
   traceToJSON,
   _getChain,
   _buildReflexion,
+  _expandAndVerifyNode,
 
   // Persistence
   saveTrace,

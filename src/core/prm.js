@@ -242,28 +242,67 @@ async function verifyAgainstMemory(stepContent, project, opts = {}) {
   }
 }
 
-// ─── Combined 3-Tier Verification ──────────────────────────────────
+// ─── Outcome-Only Verification (ORM — Outcome Reward Model) ───────
 
 /**
- * Verify a reasoning step using all three tiers.
- * Tier 1 (deterministic) runs first — if it fails hard, skip LLM.
- * Tier 2 (LLM) and Tier 3 (memory) run in parallel when available.
+ * Verify only the final outcome, not intermediate steps.
+ * This is the cheaper ORM fallback for easy problems.
  *
- * @param {Object} params
- * @param {string} params.stepContent — The reasoning step to verify
- * @param {string[]} params.priorSteps — Previous steps for context
- * @param {string} params.problem — Original problem
- * @param {string} params.stepType — 'code' | 'reasoning' | 'plan'
- * @param {string} params.project — Project path
- * @param {Object} [params.db] — Database for caching
- * @param {Object} [params.searchFn] — Search function override
- * @returns {Promise<{ valid: boolean, score: number, tier: string, reason: string, details: Object }>}
+ * ORM scores only the terminal state s_T:
+ *   L_ORM = -(y log σ(W·h_T) + (1-y) log(1-σ(W·h_T)))
  */
-async function verifyStep({ stepContent, priorSteps = [], problem = '', stepType = 'reasoning', project = '', db = null, searchFn = null }) {
-  // Tier 1: Deterministic — always runs, zero LLM cost
+async function verifyOutcome({ stepContent, problem = '', db = null }) {
+  if (!stepContent || !stepContent.trim()) {
+    return { valid: false, score: 0, tier: 'outcome', reason: 'Empty outcome' };
+  }
+
+  if (db) {
+    try {
+      const recovery = require('./recovery');
+      const cached = recovery.getCachedLLM(db, 'orm-verify', stepContent.slice(0, 200));
+      if (cached) return { ...cached.result, tier: 'outcome' };
+    } catch {}
+  }
+
+  const messages = [
+    { role: 'system', content: `You are an Outcome Reward Model. Judge only the FINAL answer.
+Scoring: 0.0-0.3=wrong, 0.4-0.6=plausible, 0.7-0.8=likely correct, 0.9-1.0=clearly correct.
+Respond ONLY with valid JSON: {"score": 0.0-1.0, "valid": true/false, "reason": "brief"}` },
+    { role: 'user', content: `Problem: ${problem}\n\nFinal answer: ${stepContent}\n\nIs this answer correct?` },
+  ];
+
+  try {
+    const result = await callLLM(messages, { temperature: 0, maxTokens: 150, timeout: 10000 });
+    const parsed = JSON.parse(result || '{}');
+    const score = typeof parsed.score === 'number' ? Math.max(0, Math.min(1, parsed.score)) : 0.5;
+    const response = { valid: score >= 0.5, score, tier: 'outcome', reason: parsed.reason || 'ORM evaluated' };
+    if (db) { try { require('./recovery').cacheLLM(db, 'orm-verify', stepContent.slice(0, 200), response, 'ok'); } catch {} }
+    return response;
+  } catch {
+    const text = stepContent.toLowerCase();
+    if (/\b(wrong|incorrect|fails|error|doesn't work)\b/i.test(text)) return { valid: false, score: 0.2, tier: 'outcome', reason: 'Self-indicated failure' };
+    if (/\b(correct|right|works|verified|confirmed)\b/i.test(text)) return { valid: true, score: 0.6, tier: 'outcome', reason: 'Self-indicated success' };
+    return { valid: true, score: 0.5, tier: 'outcome', reason: 'Neutral — LLM unavailable' };
+  }
+}
+
+// ─── Combined 3-Tier + ORM Verification ──────────────────────────
+
+/**
+ * Verify a reasoning step using full PRM (3-tier) or cheap ORM.
+ * When outcomeOnly=true: skips Tiers 1/2/3 for non-terminal steps,
+ *   only scores final answers via verifyOutcome(). Saves ~80% cost.
+ */
+async function verifyStep({ stepContent, priorSteps = [], problem = '', stepType = 'reasoning', project = '', db = null, searchFn = null, outcomeOnly = false }) {
+  if (outcomeOnly) {
+    const looksTerminal = /\b(?:ANSWER|final answer|conclusion|therefore|to summarize)\b/i.test(stepContent) || priorSteps.length === 0;
+    if (looksTerminal) return verifyOutcome({ stepContent, problem, db });
+    return { valid: true, score: 0.5, tier: 'outcome-skip', reason: 'ORM mode: skipped intermediate step', details: { deterministic: { valid: true, score: 0.5, reason: 'Skipped (ORM)' } } };
+  }
+
+  // Full PRM
   const deterministic = verifyDeterministic(stepContent, stepType);
 
-  // If deterministic fails hard (score < 0.3), skip expensive tiers
   if (deterministic.score < 0.3) {
     return {
       valid: false,
@@ -380,6 +419,7 @@ module.exports = {
   verifyAgainstMemory,
   verifyStep,
   verifyChain,
+  verifyOutcome,
   setSaveFunction,
   setSearchFunction,
 };
