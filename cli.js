@@ -344,6 +344,41 @@ commands.serve = {
         });
         res.end(JSON.stringify(d));
       };
+      const html = (content, s) => {
+        res.writeHead(s || 200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(content);
+      };
+
+      // ── 5-Layer Dashboard (served over HTTP, no Electron needed) ──
+      if (p === '/' || p === '/dashboard.html') {
+        try {
+          return html(fs.readFileSync(path.join(__dirname, 'src', 'cortex-ui', 'index.html'), 'utf8'));
+        } catch (e) {
+          return json({ error: 'dashboard not found: ' + e.message }, 404);
+        }
+      }
+      if (p === '/dashboard') {
+        // Same payload electron-cortex.js's cortex:refresh-all returned
+        const results = {};
+        try { results.prompts = api.listPromptTemplates(); } catch { results.prompts = []; }
+        try { results.health = api.health(); } catch { results.health = {}; }
+        try { results.standards = api.listStandards ? api.listStandards() : []; } catch { results.standards = []; }
+        try { results.plateau = await api.checkPlateau({}); } catch { results.plateau = {}; }
+        try { results.evalStats = api.getEvalLogStats({}); } catch { results.evalStats = {}; }
+        try { results.analytics = api.analytics({}); } catch { results.analytics = {}; }
+        try { results.workflows = api.listWorkflows(); } catch { results.workflows = []; }
+        try { results.machines = api.listMachines ? api.listMachines() : []; } catch { results.machines = []; }
+        return json({ success: true, data: results });
+      }
+      if (p === '/prompts/render') {
+        const name = url.searchParams.get('name');
+        if (!name) return json({ success: false, error: 'name required' }, 400);
+        try {
+          return json({ success: true, data: api.renderPrompt(name, {}) });
+        } catch (err) {
+          return json({ success: false, error: err.message }, 400);
+        }
+      }
       let body = '';
       const getBody = () => new Promise(r => {
         req.on('data', c => body += c);
@@ -1715,55 +1750,27 @@ commands['eval-log'] = {
   }
 };
 
-// ─── TOV Editor: Tales of Vesperia save file web editor ──────
-
-commands['tov-editor'] = {
-  desc: '⚔️ Launch Tales of Vesperia save file web editor (HTTP server)',
-  args: ['[port]'],
-  parse(args) {
-    return { port: parseInt(args[0] || '37778', 10) };
-  },
-  run(db, opts) {
-    if (opts.port) process.env.TOV_EDITOR_PORT = String(opts.port);
-    require('./src/tov/server');
-  }
-};
-
-// ─── Cortex UI: 5-Layer Desktop Dashboard ──────────────────
+// ─── Cortex UI: 5-Layer Dashboard (served over HTTP) ──────────
 
 commands['cortex-ui'] = {
-  desc: '🧠 Launch the 5-Layer Cortex Dashboard (Electron desktop app)',
-  args: ['[--devtools]'],
+  desc: '🧠 Launch the 5-Layer Cortex Dashboard (starts HTTP server, opens browser)',
+  args: ['[port]'],
   parse(args) {
-    return { devtools: args.includes('--devtools') };
+    return { port: parseInt(args[0] || String(PORT), 10) || PORT };
   },
   run(db, opts) {
     const { spawn } = require('child_process');
-    const electronPath = require('electron');
-    const args = [path.join(__dirname, 'electron-cortex.js')];
-    if (opts.devtools) args.push('--devtools');
-
-    console.error('[agentic-cortex] Launching 5-Layer Dashboard...');
-
-    const child = spawn(electronPath, args, {
-      stdio: 'inherit',
-      detached: true,
-      env: { ...process.env },
-    });
-
-    child.on('error', (err) => {
-      console.error('[agentic-cortex] Failed to launch Electron:', err.message);
-      console.error('Make sure Electron is installed: npm install --save-dev electron');
-      process.exit(1);
-    });
-
-    child.unref();
-
-    // Wait briefly for the window to open, then exit CLI
-    setTimeout(() => {
-      console.error('[agentic-cortex] Dashboard launched. Close the Electron window to exit.');
-      process.exit(0);
-    }, 2000);
+    commands.serve.run(db, { port: opts.port });
+    const url = 'http://127.0.0.1:' + opts.port + '/';
+    console.error('[agentic-cortex] 5-Layer Dashboard: ' + url);
+    const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+    try {
+      if (process.platform === 'win32') {
+        spawn('cmd', ['/c', opener, url], { stdio: 'ignore', detached: true }).unref();
+      } else {
+        spawn(opener, [url], { stdio: 'ignore', detached: true }).unref();
+      }
+    } catch { /* browser open is best-effort */ }
   }
 };
 
@@ -2037,7 +2044,7 @@ async function main() {
     console.error('Error:', err.message);
     process.exit(1);
   } finally {
-    if (cmd !== 'serve' && cmd !== 'tov-editor' && cmd !== 'cortex-ui' && cmd !== 'benchmark' && db) db.close();
+    if (cmd !== 'serve' && cmd !== 'cortex-ui' && cmd !== 'benchmark' && db) db.close();
   }
 }
 

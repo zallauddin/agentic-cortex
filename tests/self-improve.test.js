@@ -267,15 +267,15 @@ describe('detectPlateau', () => {
     // Current window: mostly SUCCESS (high rate)
     for (let i = 0; i < 20; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'success', 'SUCCESS', recent);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'SUCCESS', recent);
     }
 
     // Previous window: mostly FAILURE (low rate)
     for (let i = 0; i < 15; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'failure', 'FAILURE', older);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'FAILURE', older);
     }
 
     const r = await selfImprove.detectPlateau(db, { project: '/test', force: true, windowDays: 7 });
@@ -290,25 +290,25 @@ describe('detectPlateau', () => {
     // Current window: 20 evaluations, 10 success = 50%
     for (let i = 0; i < 10; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'success', 'SUCCESS', recent);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'SUCCESS', recent);
     }
     for (let i = 0; i < 10; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'failure', 'FAILURE', recent);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'FAILURE', recent);
     }
 
     // Previous window: 20 evaluations, 10 success = 50%
     for (let i = 0; i < 10; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'success', 'SUCCESS', older);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'SUCCESS', older);
     }
     for (let i = 0; i < 10; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'failure', 'FAILURE', older);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'FAILURE', older);
     }
 
     const r = await selfImprove.detectPlateau(db, { project: '/test', force: true, windowDays: 7 });
@@ -320,13 +320,13 @@ describe('detectPlateau', () => {
 
     for (let i = 0; i < 10; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'success', 'REINFORCE', recent);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'REINFORCE', recent);
     }
     for (let i = 0; i < 10; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'failure', 'FAILURE', recent);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'FAILURE', recent);
     }
 
     const r = await selfImprove.detectPlateau(db, { project: '/test', force: true, windowDays: 7 });
@@ -338,8 +338,8 @@ describe('detectPlateau', () => {
     const recent = new Date(Date.now() - 1 * 86400000).toISOString();
     for (let i = 0; i < 15; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'success', 'SUCCESS', recent);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'SUCCESS', recent);
     }
 
     // First call (no force) — should actually run the check
@@ -355,8 +355,8 @@ describe('detectPlateau', () => {
     const recent = new Date(Date.now() - 1 * 86400000).toISOString();
     for (let i = 0; i < 15; i++) {
       db.prepare(
-        'INSERT INTO evaluation_log (project_path, type, verdict, llm_verdict, evaluated_at) VALUES (?,?,?,?,?)'
-      ).run('/test', 'outcome', 'failure', 'FAILURE', recent);
+        'INSERT INTO evaluation_log (project_path, llm_verdict, evaluated_at) VALUES (?,?,?)'
+      ).run('/test', 'FAILURE', recent);
     }
 
     await selfImprove.detectPlateau(db, { project: '/test' });
@@ -373,6 +373,45 @@ describe('detectPlateau', () => {
 });
 
 // ─── Exports ─────────────────────────────────────────────────────────
+
+// ─── Outcome Classification (keyword fallback) ────────────────────
+
+describe('classifyOutcome keyword fallback', () => {
+  beforeEach(() => {
+    llmCallCount = 0;
+    mockLLMResponse = null; // LLM unavailable → keyword fallback
+  });
+
+  it('does not misclassify "past-failure" as a failure', async () => {
+    const r = await selfImprove.classifyOutcome('No past-failure patterns triggered');
+    assert.equal(r, 'neutral', 'word "failure" should not trip the "fail" keyword');
+  });
+
+  it('does not misclassify "failures" (plural) as a failure', async () => {
+    const r = await selfImprove.classifyOutcome('Reviewing prior learnings and past failures');
+    assert.equal(r, 'neutral');
+  });
+
+  it('classifies "tests passed" as success', async () => {
+    const r = await selfImprove.classifyOutcome('All tests passed');
+    assert.equal(r, 'success');
+  });
+
+  it('classifies "the build failed" as failure', async () => {
+    const r = await selfImprove.classifyOutcome('The build failed');
+    assert.equal(r, 'failure');
+  });
+
+  it('still classifies standalone "errors" as failure', async () => {
+    const r = await selfImprove.classifyOutcome('There were errors during the run');
+    assert.equal(r, 'failure');
+  });
+
+  it('classifies "implemented" as success', async () => {
+    const r = await selfImprove.classifyOutcome('Implemented the login endpoint');
+    assert.equal(r, 'success');
+  });
+});
 
 describe('module exports', () => {
   it('should accept a save function without throwing', () => {

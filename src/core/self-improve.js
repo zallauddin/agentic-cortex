@@ -37,6 +37,7 @@ const { callLLM } = require('./session');
 const { checkConflicts } = require('./conflict');
 const { addRelation } = require('./relations');
 const hooks = require('./hooks');
+const recovery = require('./recovery');
 
 // Lazy-loaded prompt registry (Layer 1: Prompt Engineering)
 let _prompts = null;
@@ -79,11 +80,14 @@ const VERIFY_DEBOUNCE_MS = 60000; // skip re-verifying same learning within 60s
  */
 function _keywordClassify(outcomeText) {
   const text = (outcomeText || '').toLowerCase();
-  const successIndicators = ['pass', 'success', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated'];
-  const failureIndicators = ['fail', 'error', 'crash', 'broke', 'failed', 'rejected', 'timeout', 'rollback', 'revert'];
+  const successIndicators = ['pass', 'passed', 'success', 'succeeded', 'successful', 'ok', 'completed', 'works', 'fixed', 'resolved', 'done', 'created', 'updated', 'implemented', 'verified'];
+  const failureIndicators = ['fail', 'failed', 'error', 'errors', 'crash', 'broke', 'broken', 'rejected', 'timeout', 'rollback', 'revert'];
 
-  const succeeded = successIndicators.some(w => text.includes(w));
-  const failed = failureIndicators.some(w => text.includes(w));
+  // Word-boundary match so "failures"/"past-failure" don't trip on "fail",
+  // and "errors" in a success sentence isn't silently missed.
+  const matches = (word) => new RegExp('\\b' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(text);
+  const succeeded = successIndicators.some(matches);
+  const failed = failureIndicators.some(matches);
 
   if (succeeded && !failed) return 'success';
   if (failed) return 'failure';
@@ -95,11 +99,26 @@ function _keywordClassify(outcomeText) {
  * Falls back to keyword-based classification if the LLM is unavailable or
  * returns invalid output.
  *
+ * When a database handle is supplied, results (including the keyword fallback)
+ * are absorbed into the LLM negative cache, so identical outcome text
+ * resolves deterministically without re-invoking the LLM.
+ *
  * @param {string} outcomeText - The outcome content to classify
+ * @param {import('better-sqlite3').Database} [db] - Optional DB for deterministic LLM caching
  * @returns {Promise<'success'|'failure'|'neutral'>} Classification result
  */
-async function classifyOutcome(outcomeText) {
+async function classifyOutcome(outcomeText, db) {
   _lastClassificationFallback = false;
+
+  // Deterministic negative cache: identical input resolves without an LLM call.
+  if (db) {
+    const cached = recovery.getCachedLLM(db, 'classify-outcome', outcomeText);
+    if (cached) {
+      if (cached.status === 'fallback') _lastClassificationFallback = true;
+      return cached.result;
+    }
+  }
+
   try {
     const tpl = _getPrompts().buildMessages('classify-outcome', {
       outcomeText: (outcomeText || '').slice(0, 500),
@@ -111,6 +130,7 @@ async function classifyOutcome(outcomeText) {
 
     const parsed = JSON.parse(result || '{}');
     if (['success', 'failure', 'neutral'].includes(parsed.outcome)) {
+      if (db) recovery.cacheLLM(db, 'classify-outcome', outcomeText, parsed.outcome, 'ok');
       return parsed.outcome;
     }
   } catch {
@@ -118,7 +138,9 @@ async function classifyOutcome(outcomeText) {
   }
 
   _lastClassificationFallback = true;
-  return _keywordClassify(outcomeText);
+  const fallback = _keywordClassify(outcomeText);
+  if (db) recovery.cacheLLM(db, 'classify-outcome', outcomeText, fallback, 'fallback');
+  return fallback;
 }
 
 // ─── 1. Root Cause Analysis from Errors ──────────────────────────────
@@ -151,19 +173,34 @@ async function learnFromError(db, errorObs) {
   }
 
   try {
-    const tpl = _getPrompts().buildMessages('rca-from-error', {
-      errorContent: errorObs.content,
-    });
-    const result = await callLLM(
-      tpl ? tpl.messages : [
-        { role: 'system', content: 'You are a root cause analysis agent for coding workflows. Respond ONLY with valid JSON.' },
-        { role: 'user', content: `Analyze this error: "${errorObs.content}". Return JSON: {title, content, confidence, tags}` },
-      ],
-      tpl ? tpl.defaults : { temperature: 0.2, maxTokens: 800, timeout: 60000 },
-    );
+    // LLM-learned fallback loop: absorb the RCA pass into the deterministic
+    // cache so identical error content reuses the same analysis forever after
+    // (including the negative/fallback outcome when the LLM fails).
+    let parsed = null;
+    const cached = recovery.getCachedLLM(db, 'rca-from-error', errorObs.content);
+    if (cached) {
+      parsed = cached.result;
+    } else {
+      try {
+        const tpl = _getPrompts().buildMessages('rca-from-error', {
+          errorContent: errorObs.content,
+        });
+        const result = await callLLM(
+          tpl ? tpl.messages : [
+            { role: 'system', content: 'You are a root cause analysis agent for coding workflows. Respond ONLY with valid JSON.' },
+            { role: 'user', content: `Analyze this error: "${errorObs.content}". Return JSON: {title, content, confidence, tags}` },
+          ],
+          tpl ? tpl.defaults : { temperature: 0.2, maxTokens: 800, timeout: 60000 },
+        );
+        parsed = JSON.parse(result || '{}');
+      } catch {
+        parsed = null;
+      }
+      // Negative cache: remember the outcome (including null on LLM failure).
+      recovery.cacheLLM(db, 'rca-from-error', errorObs.content, parsed, parsed ? 'ok' : 'fallback');
+    }
 
-    const parsed = JSON.parse(result || '{}');
-    if (parsed.title && parsed.content) {
+    if (parsed && parsed.title && parsed.content) {
       const learning = await _saveFn({
         project: errorObs.project_path,
         type: 'learning',
@@ -307,22 +344,36 @@ async function verifyLearning(db, newObs) {
       continue; // skip — verified recently, deterministic on other learnings
     }
     try {
-      const tpl = _getPrompts().buildMessages('verify-learning', {
-        learningTitle: learning.title,
-        learningContent: learning.content.slice(0, 200),
+      // Deterministic verification cache: same learning + same evidence → same verdict.
+      const cacheInput = JSON.stringify({
+        learning: learning.content.slice(0, 200),
         obsType: newObs.type,
         obsTitle: newObs.title || '',
         obsContent: (newObs.content || '').slice(0, 200),
       });
-      const result = await callLLM(
-        tpl ? tpl.messages : [
-          { role: 'system', content: 'You verify knowledge against new evidence. Respond ONLY with valid JSON.' },
-          { role: 'user', content: `Learning: "${learning.title}". New obs: "${newObs.title}". CONTRADICT/REINFORCE/NEUTRAL?` },
-        ],
-        tpl ? tpl.defaults : { temperature: 0.1, maxTokens: 200, timeout: 15000 },
-      );
-
-      const parsed = JSON.parse(result || '{}');
+      let parsed;
+      const cached = recovery.getCachedLLM(db, 'verify-learning', cacheInput);
+      if (cached) {
+        parsed = cached.result;
+      } else {
+        const tpl = _getPrompts().buildMessages('verify-learning', {
+          learningTitle: learning.title,
+          learningContent: learning.content.slice(0, 200),
+          obsType: newObs.type,
+          obsTitle: newObs.title || '',
+          obsContent: (newObs.content || '').slice(0, 200),
+        });
+        const result = await callLLM(
+          tpl ? tpl.messages : [
+            { role: 'system', content: 'You verify knowledge against new evidence. Respond ONLY with valid JSON.' },
+            { role: 'user', content: `Learning: "${learning.title}". New obs: "${newObs.title}". CONTRADICT/REINFORCE/NEUTRAL?` },
+          ],
+          tpl ? tpl.defaults : { temperature: 0.1, maxTokens: 200, timeout: 15000 },
+        );
+        parsed = JSON.parse(result || '{}');
+        // Only cache meaningful verdicts; failures stay best-effort.
+        if (parsed && parsed.verdict) recovery.cacheLLM(db, 'verify-learning', cacheInput, parsed, 'ok');
+      }
 
       if (parsed.verdict === 'REINFORCE') {
         // Boost confidence, cap at 98
@@ -384,12 +435,28 @@ async function verifyLearning(db, newObs) {
 function initHooks(saveFn) {
   _saveFn = saveFn;
 
-  // Hook 1: When an error is saved, trigger RCA
+  // Hook 1: When an error is saved, trigger RCA + seed the recovery layer
   hooks.registerHook('post_save', async (obs, ctx, db) => {
     if (obs.type === 'error') {
       console.warn('[self-improve] Error detected (#%d), running RCA...', obs.id);
       await learnFromError(db, obs);
+      // Tier 1: probe-gated retry classification + counter-evidence seeding
+      try {
+        recovery.recordFailure(db, { project: obs.project_path, errorId: obs.id, errorText: obs.content });
+        recovery.registerFailure(db, { project: obs.project_path, errorObs: obs });
+      } catch { /* best-effort */ }
     }
+  });
+
+  // Hook 1b: When a success is saved, apply counter-evidence decay to prior failures
+  hooks.registerHook('post_save', async (obs, ctx, db) => {
+    if (obs.type !== 'success' || !obs.project_path) return;
+    try {
+      const cleared = recovery.applyCounterEvidence(db, { project: obs.project_path, successObs: obs });
+      if (cleared.length) {
+        console.warn('[recovery] Counter-evidence decay: %d error lesson(s) cleared', cleared.filter(r => r.deleted).length);
+      }
+    } catch { /* best-effort */ }
   });
 
   // Hook 2: When any observation is saved, verify existing learnings
@@ -430,7 +497,7 @@ function initHooks(saveFn) {
       const outcomeText = obs.content || '';
       let result;
       try {
-        result = await classifyOutcome(outcomeText);
+        result = await classifyOutcome(outcomeText, db);
       } catch {
         result = _keywordClassify(outcomeText);
         _lastClassificationFallback = true;
@@ -527,7 +594,7 @@ function initHooks(saveFn) {
     }
   });
 
-  console.error('[self-improve] Continuous improvement loop initialized (6 hooks: Error RCA, Learning verify, Outcome tracking, Conflict check, Experiment spawn, Plateau detect)');
+  console.error('[self-improve] Continuous improvement loop initialized (8 hooks: Error RCA, Counter-evidence decay, Learning verify, Outcome tracking, Conflict check, Experiment spawn, Plateau detect)');
 }
 
 /**
@@ -546,6 +613,7 @@ function resetState() {
   _analyzedErrorIds.clear();
   _projectSaveCounts.clear();
   _verifiedRecently.clear();
+  _lastPlateauCheck.clear();
 }
 
 // ─── 5. Experiment Spawning (AutoGTM's Hypothesis Testing) ──────────
@@ -782,7 +850,7 @@ const PLATEAU_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // Check at most every 6 h
  * @param {string} [opts.project] - Project path
  * @param {number} [opts.windowDays=7] - Days to analyze
  * @param {boolean} [opts.force=false] - Bypass debounce check
- * @returns {Promise<{plateau: boolean, diagnosis: string|null, strategy: string|null}>}
+ * @returns {Promise<{plateau: boolean, plateauDetected: boolean, diagnosis: string|null, strategy: string|null}>}
  */
 async function detectPlateau(db, opts = {}) {
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
@@ -793,7 +861,7 @@ async function detectPlateau(db, opts = {}) {
   if (!force) {
     const lastCheck = _lastPlateauCheck.get(project) || 0;
     if (Date.now() - lastCheck < PLATEAU_CHECK_INTERVAL_MS) {
-      return { plateau: false, diagnosis: null, strategy: null };
+      return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null };
     }
   }
   _lastPlateauCheck.set(project, Date.now());
@@ -809,7 +877,7 @@ async function detectPlateau(db, opts = {}) {
   ).get(project, windowStart).c;
 
   if (currentTotal < PLATEAU_MIN_EVALS) {
-    return { plateau: false, diagnosis: null, strategy: null };
+    return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null };
   }
 
   const currentSuccess = db.prepare(
@@ -835,7 +903,7 @@ async function detectPlateau(db, opts = {}) {
   const isPlateau = improvement <= PLATEAU_MAX_IMPROVEMENT_PCT;
 
   if (!isPlateau) {
-    return { plateau: false, diagnosis: null, strategy: null };
+    return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null };
   }
 
   // Plateau detected — get recent verdicts for analysis
@@ -890,7 +958,7 @@ async function detectPlateau(db, opts = {}) {
     } catch { /* best-effort */ }
   }
 
-  return { plateau: true, diagnosis, strategy };
+  return { plateau: true, plateauDetected: true, diagnosis, strategy };
 }
 
 // Prune plateau check cache periodically (called from Hook 4)
@@ -916,4 +984,5 @@ module.exports = {
   initHooks,
   setSaveFunction,
   resetState,
+  _prunePlateauCache,
 };
