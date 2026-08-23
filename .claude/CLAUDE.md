@@ -1,4 +1,4 @@
-<!-- agentic-cortex:start:v6.5.0 -->
+<!-- agentic-cortex:start:v6.5.1 -->
 <agentic_cortex>
 agentic-cortex is installed. Persistent, self-improving memory across sessions.
 MCP server is configured in .mcp.json — 67 tools available directly.
