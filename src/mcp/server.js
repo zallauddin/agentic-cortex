@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -785,6 +785,194 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'memory_provider',
+    description: '🔍 DISCOVER — Self-describing provider manifest. Call this to discover agentic-cortex as a memory provider/extender: name, version, memory/relation types, multi-agent mailbox, workflows, and usage instructions.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'memory_send',
+    description: 'Send a message/task/handoff to another agent\'s mailbox (inter-agent event primitive). The recipient reads it via memory_inbox.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', description: 'Recipient agent ID' },
+        from: { type: 'string', description: 'Sender agent ID (defaults to AGENTIC_CORTEX_AGENT_ID)' },
+        subject: { type: 'string', description: 'Message subject' },
+        body: { type: 'string', description: 'Message body (required)' },
+        kind: { type: 'string', description: 'Message kind: message, task, handoff, result', default: 'message' },
+        refObservationId: { type: 'integer', description: 'Related observation ID (e.g., the goal/task this message concerns)' },
+      },
+      required: ['to', 'body'],
+    },
+  },
+  {
+    name: 'memory_inbox',
+    description: 'Read the caller agent\'s mailbox (messages addressed to it).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'Agent ID whose inbox to read (defaults to AGENTIC_CORTEX_AGENT_ID)' },
+        unreadOnly: { type: 'boolean', description: 'Only unread messages', default: true },
+        kind: { type: 'string', description: 'Filter by kind: task, result, handoff, message' },
+        limit: { type: 'integer', description: 'Max results', default: 50 },
+      },
+    },
+  },
+  {
+    name: 'memory_mark_read',
+    description: 'Mark a mailbox message as read.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'integer', description: 'Message ID to mark read' },
+      },
+      required: ['id'],
+    },
+  },
+
+  // ── v6.3.0: Test-time compute reasoning (Phase 20) ────────────
+  {
+    name: 'memory_tree_search',
+    description: '🌳 TREE SEARCH — Run Tree of Thoughts / MCTS reasoning on a problem. Explores multiple reasoning branches, verifies each step with PRM, prunes invalid paths, and backtracks. Uses adaptive compute budget: harder problems get more exploration. Strategies: auto (default), beam, mcts, greedy.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        problem: { type: 'string', description: 'Problem to solve via tree search' },
+        project: { type: 'string', description: 'Project path' },
+        strategy: { type: 'string', description: 'Search strategy: auto, beam, mcts, greedy', default: 'auto' },
+        beamWidth: { type: 'number', description: 'Override beam width (number of branches per node)' },
+        maxDepth: { type: 'number', description: 'Override max search depth' },
+        tokenBudget: { type: 'number', description: 'Override token budget' },
+      },
+      required: ['problem'],
+    },
+  },
+  {
+    name: 'memory_verify_step',
+    description: '🔍 STEP VERIFIER — Verify a single reasoning step using 3-tier Process Reward Model: deterministic checks, LLM-as-judge, and memory cross-check. Returns a score 0.0-1.0 and whether the step is valid.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        stepContent: { type: 'string', description: 'The reasoning step to verify' },
+        priorSteps: { type: 'array', items: { type: 'string' }, description: 'Previous steps in the chain for context' },
+        problem: { type: 'string', description: 'The original problem being solved' },
+        stepType: { type: 'string', description: 'Step type: reasoning, code, or plan', default: 'reasoning' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['stepContent'],
+    },
+  },
+  {
+    name: 'memory_budget',
+    description: '📊 ADAPTIVE BUDGET — Estimate problem difficulty and calculate optimal compute allocation. Returns beam width, max depth, token budget, and recommended strategy based on memory history and complexity signals.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        problem: { type: 'string', description: 'Problem description to estimate' },
+        project: { type: 'string', description: 'Project path' },
+        beamWidth: { type: 'number', description: 'Override beam width' },
+        maxDepth: { type: 'number', description: 'Override max depth' },
+      },
+      required: ['problem'],
+    },
+  },
+  {
+    name: 'memory_verify_code',
+    description: '💻 PROGRAM-AIDED VERIFICATION — Generate and execute a verification script for a coding hypothesis. Uses PAL/PoT pattern: LLM generates code, runs it in a sandbox, and feeds results back. Deterministic verification without retraining.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        hypothesis: { type: 'string', description: 'What to verify (e.g., "auth.ts handles null profiles")' },
+        context: { type: 'string', description: 'Code context (file paths, function signatures)' },
+        project: { type: 'string', description: 'Project root for file access' },
+      },
+      required: ['hypothesis'],
+    },
+  },
+  {
+    name: 'memory_reflexion',
+    description: '🔄 REFLEXION — Record a failed reasoning path as a self-correction. Extracts a critique, saves as context memory, and prevents the agent from repeating the same mistake. Call this when a reasoning approach fails.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Current session ID' },
+        problem: { type: 'string', description: 'Original problem' },
+        failedPath: { type: 'string', description: 'The reasoning steps that failed' },
+        verificationError: { type: 'string', description: 'Why it was rejected' },
+        strategy: { type: 'string', description: 'What approach was tried' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['sessionId', 'problem', 'failedPath', 'verificationError'],
+    },
+  },
+  {
+    name: 'memory_reasoning_trace',
+    description: '📜 REASONING TRACE — View a saved reasoning trace (Tree of Thoughts / MCTS execution log). Shows all explored branches, PRM scores, pruned paths, and the best solution found.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        traceId: { type: 'integer', description: 'Reasoning trace ID to view' },
+      },
+      required: ['traceId'],
+    },
+  },
+  {
+    name: 'memory_reasoning_stats',
+    description: '📊 REASONING ANALYTICS — Aggregate stats for test-time compute reasoning: total traces, success rate, difficulty distribution, pruning effectiveness, per-strategy performance, PRM score distribution, and the best-performing strategy.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path (defaults to current project)' },
+      },
+    },
+  },
+  {
+    name: 'memory_synthesize_solution',
+    description: '🧬 SYNTHESIZE SOLUTION — Merge insights from all explored branches of a reasoning trace into a final synthesized answer. Uses LLM to combine the best parts of terminal (goal-reached) paths, active exploration paths, and pruned-path warnings. Falls back to deterministic best-path merging when LLM is unavailable.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        traceId: { type: 'integer', description: 'Reasoning trace ID to synthesize a solution from' },
+      },
+      required: ['traceId'],
+    },
+  },
+
+  // ── v6.4.0: Self-consistency + Budget forcing (Phase 21) ─────
+  {
+    name: 'memory_self_consistency',
+    description: '🗳️ SELF-CONSISTENCY — Sample N independent reasoning chains with high temperature and majority-vote the answer. If the model has 80% per-step accuracy on a 5-step problem, a single greedy chain has only ~33% success — but 40 sampled chains recover the truth with high probability. Optionally weights votes by PRM scores so higher-quality paths have more influence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        problem: { type: 'string', description: 'Problem to solve via self-consistency' },
+        project: { type: 'string', description: 'Project path' },
+        samples: { type: 'number', description: 'Number of independent chains to sample (default 5, max 40)', default: 5 },
+        temperature: { type: 'number', description: 'Sampling temperature for diversity (default 0.8)', default: 0.8 },
+        usePrmWeighting: { type: 'boolean', description: 'Weight votes by PRM chain scores (default true)', default: true },
+      },
+      required: ['problem'],
+    },
+  },
+  {
+    name: 'memory_budget_force',
+    description: '💪 BUDGET FORCING — s1-style reasoning depth control. Forces the model to think deeper by suppressing early stops (lower-bound forcing) and capping infinite loops (upper-bound truncation). Uses doubt heuristics like "Wait, let me rethink..." to push the model through multiple reasoning rounds, then forces conclusion synthesis. Single chain, forced deeper.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        problem: { type: 'string', description: 'Problem to solve with forced deep reasoning' },
+        minTokens: { type: 'number', description: 'Minimum reasoning tokens before allowing a stop (default 200)', default: 200 },
+        maxTokens: { type: 'number', description: 'Maximum total tokens before forcing conclusion (default 6000)', default: 6000 },
+        maxRounds: { type: 'number', description: 'Maximum continuation rounds before force-concluding (default 5)', default: 5 },
+        temperatureBase: { type: 'number', description: 'Starting temperature (decays each round)', default: 0.6 },
+      },
+      required: ['problem'],
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -1168,6 +1356,109 @@ async function callTool(name, args) {
 
     case 'memory_bootstrap':
       return api.bootstrap(args);
+
+    case 'memory_provider':
+      return api.providerInfo();
+
+    case 'memory_send':
+      return api.sendMessage(args);
+
+    case 'memory_inbox':
+      return api.getInbox(args.agentId || process.env.AGENTIC_CORTEX_AGENT_ID || null, {
+        unreadOnly: args.unreadOnly,
+        kind: args.kind,
+        limit: args.limit,
+      });
+
+    case 'memory_mark_read':
+      return api.markMessageRead(args.id);
+
+    // ── v6.3.0: Test-time compute reasoning ──
+    case 'memory_tree_search':
+      return api.treeSearch({
+        problem: args.problem,
+        project: args.project,
+        strategy: args.strategy || 'auto',
+        budgetOverrides: {
+          beamWidth: args.beamWidth,
+          maxDepth: args.maxDepth,
+          tokenBudget: args.tokenBudget,
+        },
+      });
+
+    case 'memory_verify_step':
+      return api.verifyStep({
+        stepContent: args.stepContent,
+        priorSteps: args.priorSteps || [],
+        problem: args.problem || '',
+        stepType: args.stepType || 'reasoning',
+        project: args.project,
+      });
+
+    case 'memory_budget':
+      return (async () => {
+        const { estimateDifficulty, calculateBudget } = require('../core/adaptive-budget');
+        let memories = [];
+        try {
+          memories = await api.search(args.problem, { project: args.project, limit: 10 });
+        } catch {}
+        const difficulty = estimateDifficulty({
+          problem: args.problem,
+          project: args.project,
+          memories,
+        });
+        const budget = calculateBudget(difficulty.score, {
+          beamWidth: args.beamWidth,
+          maxDepth: args.maxDepth,
+        });
+        return { difficulty, budget };
+      })();
+
+    case 'memory_verify_code':
+      return api.verifyWithCode({
+        hypothesis: args.hypothesis,
+        context: args.context || '',
+        project: args.project,
+      });
+
+    case 'memory_reflexion':
+      return api.recordReflexion({
+        sessionId: args.sessionId,
+        problem: args.problem,
+        failedPath: args.failedPath,
+        verificationError: args.verificationError,
+        strategy: args.strategy || 'unknown',
+        project: args.project,
+      });
+
+    case 'memory_reasoning_trace':
+      return api.getReasoningTrace(args.traceId);
+
+    case 'memory_reasoning_stats':
+      return api.reasoningStats({ project: args.project });
+
+    case 'memory_synthesize_solution':
+      return api.synthesizeSolution({ traceId: args.traceId });
+
+    case 'memory_self_consistency':
+      return api.selfConsistency({
+        problem: args.problem,
+        project: args.project,
+        samples: args.samples || 5,
+        temperature: args.temperature || 0.8,
+        usePrmWeighting: args.usePrmWeighting !== false,
+      });
+
+    case 'memory_budget_force':
+      return api.budgetForce({
+        problem: args.problem,
+        config: {
+          minTokens: args.minTokens,
+          maxTokens: args.maxTokens,
+          maxRounds: args.maxRounds,
+          temperatureBase: args.temperatureBase,
+        },
+      });
 
     default:
       throw new Error('Unknown tool: ' + name);

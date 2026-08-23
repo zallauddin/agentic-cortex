@@ -1,7 +1,7 @@
-<!-- agentic-cortex:start:v6.1.0 -->
+<!-- agentic-cortex:start:v6.5.0 -->
 <agentic_cortex>
 Persistent, self-improving agent memory. MCP server configured in opencode.json.
-43 MCP tools available.
+67 MCP tools available.
 
 <bootstrap>
 CRITICAL: Call MCP tool memory_bootstrap({}) first — no args needed.
@@ -15,17 +15,19 @@ Type auto-detected from content patterns.
 Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90
 </auto_save>
 
-<all_43_mcp_tools>
+<all_67_mcp_tools>
 
 Memory core: memory_save, memory_search, memory_get, memory_list, memory_edit, memory_forget, memory_context, memory_reflect, memory_conflicts, memory_export, memory_import, memory_health, memory_embed, memory_relate, memory_graph, memory_hook, memory_share, memory_feedback, memory_trail (19)
 
-Memory advanced: memory_learn_from_error, memory_record_action, memory_transfer_knowledge, memory_machine_vault, memory_promote_global, memory_search_all, memory_ingest_transcript, memory_utility_stats, memory_freshness, memory_maintenance, memory_analytics, memory_standards, memory_auto_capture, memory_skill_list, memory_skill_search, memory_daily_summary (16)
+Memory advanced: memory_learn_from_error, memory_record_action, memory_transfer_knowledge, memory_machine_vault, memory_promote_global, memory_search_all, memory_ingest_transcript, memory_utility_stats, memory_freshness, memory_maintenance, memory_analytics, memory_standards, memory_auto_capture, memory_skill_list, memory_skill_search, memory_daily_summary, memory_crystallize, memory_experiment, memory_eval_log, memory_fsm, memory_rules, memory_workflow, memory_workflow_agents, memory_prompts_list, memory_prompts_render, memory_plateau_check (26)
 
-Session: session_start, session_end, session_summarize, agent_session_start, agent_session_end, agent_list_sessions, memory_shared_get (7)
+Session: session_start, session_end, session_summarize, agent_session_start, agent_session_end, agent_list_sessions, memory_shared_get, memory_provider, memory_send, memory_inbox, memory_mark_read (11)
+
+Reasoning: memory_tree_search, memory_verify_step, memory_budget, memory_verify_code, memory_reflexion, memory_reasoning_trace, memory_reasoning_stats, memory_synthesize_solution, memory_self_consistency, memory_budget_force (10)
 
 Bootstrap: memory_bootstrap (1)
 
-</all_43_mcp_tools>
+</all_67_mcp_tools>
 
 <key_tools>
 memory_bootstrap({}) — session start context (CRITICAL: call first)
@@ -46,7 +48,8 @@ memory_daily_summary({}) — yesterday's observations summary
 
 <memory_types>instruction fact decision goal commitment preference relationship context event learning observation artifact error</memory_types>
 
-<mcp>43 tools via opencode.json mcp config. Run agentic-cortex-mcp locally.</mcp>
+<mcp>67 tools via opencode.json mcp config. Run agentic-cortex-mcp locally.</mcp>
 </agentic_cortex>
 <!-- agentic-cortex:end -->
+
 

@@ -31,7 +31,7 @@ const path = require('path');
 // ── Package version (never hardcode) ──
 const PACKAGE_VERSION = require('../package.json').version;
 
-// ── All 43 MCP tool names, grouped by category ──
+// ── All 57 MCP tool names, grouped by category ──
 const MCP_TOOLS = {
   core: [
     'memory_save', 'memory_search', 'memory_get', 'memory_list', 'memory_edit',
@@ -46,19 +46,23 @@ const MCP_TOOLS = {
     'memory_ingest_transcript', 'memory_utility_stats', 'memory_freshness',
     'memory_maintenance', 'memory_analytics', 'memory_standards',
     'memory_auto_capture', 'memory_skill_list', 'memory_skill_search',
-    'memory_daily_summary'
+    'memory_daily_summary',
+    'memory_crystallize', 'memory_experiment', 'memory_eval_log',
+    'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_workflow_agents',
+    'memory_prompts_list', 'memory_prompts_render', 'memory_plateau_check'
   ],
   session: [
     'session_start', 'session_end', 'session_summarize',
     'agent_session_start', 'agent_session_end', 'agent_list_sessions',
-    'memory_shared_get'
+    'memory_shared_get',
+    'memory_provider', 'memory_send', 'memory_inbox', 'memory_mark_read'
   ],
   bootstrap: [
     'memory_bootstrap'
   ]
 };
 
-const MCP_TOOL_COUNT = 43; // 19 core + 16 advanced + 7 session + 1 bootstrap
+const MCP_TOOL_COUNT = 57; // 19 core + 26 advanced + 11 session + 1 bootstrap
 
 /**
  * Create multi-agent discovery files in the project directory.

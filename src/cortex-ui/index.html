@@ -446,7 +446,7 @@ body {
 <aside class="sidebar">
   <div class="sidebar-header">
     <h1>🧠 Agentic Cortex</h1>
-    <div class="ver">5-Layer Dashboard v5.0.1</div>
+    <div class="ver">5-Layer Dashboard v6.2.0</div>
   </div>
   <nav class="nav">
     <div class="nav-item active" data-panel="overview">
@@ -537,17 +537,16 @@ function showPanel(name) {
 }
 
 // ─── Refresh All ─────────────────────────────────────────────────
+// Served over HTTP (agentic-cortex serve) — fetches the same payload
+// the old Electron IPC (cortex:refresh-all) returned.
 async function refreshAll() {
-  if (!window.cortex) {
-    showError('Preload script not loaded. Is preload-cortex.js accessible?');
-    return;
-  }
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
   btn.textContent = '⏳ Refreshing...';
 
   try {
-    const result = await window.cortex.refreshAll();
+    const res = await fetch('/dashboard');
+    const result = await res.json();
     if (result.success) {
       allData = result.data;
       document.getElementById('lastRefresh').textContent = new Date().toLocaleTimeString();
@@ -733,7 +732,7 @@ function renderLayer3() {
   html += '</div>';
 
   html += '<div class="layer-panel"><div class="layer-panel-header" onclick="this.parentElement.classList.toggle(\'collapsed\')">' +
-    '<div class="l-dot" style="background:var(--l3)"></div><h3>Key v5.0 MCP Tools</h3><span class="arrow">▼</span></div>' +
+    '<div class="l-dot" style="background:var(--l3)"></div><h3>Key MCP Tools</h3><span class="arrow">▼</span></div>' +
     '<div class="layer-body"><table class="data-table"><thead><tr><th>Tool</th><th>Layer</th><th>Description</th></tr></thead><tbody>';
 
   const tools = [
@@ -890,7 +889,7 @@ function showTemplateDetail(name) {
   card.appendChild(detail);
   card.classList.add('expanded');
 
-  window.cortex.prompts.render(name, {}).then(result => {
+  fetch('/prompts/render?name=' + encodeURIComponent(name)).then(r => r.json()).then(result => {
     if (result.success && result.data) {
       const t = result.data;
       detail.innerHTML =
