@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -1181,6 +1181,181 @@ const TOOLS = [
       required: ['goal'],
     },
   },
+  {
+    name: 'memory_swarm_start_task',
+    description: '🐝 SWARM START — Mark a task as started (running). Returns the task details including role and description.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'Task ID to start' },
+      },
+      required: ['taskId'],
+    },
+  },
+  {
+    name: 'memory_swarm_complete_task',
+    description: '✅ SWARM COMPLETE — Mark a task as completed with a result summary. Unblocks dependent tasks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'Task ID to complete' },
+        summary: { type: 'string', description: 'Summary of what was accomplished' },
+        obsId: { type: 'string', description: 'Optional observation ID linking to stored result' },
+      },
+      required: ['taskId', 'summary'],
+    },
+  },
+  {
+    name: 'memory_swarm_fail_task',
+    description: '❌ SWARM FAIL — Mark a task as failed with a reason. Triggers replanning for the goal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'Task ID to fail' },
+        reason: { type: 'string', description: 'Why the task failed' },
+      },
+      required: ['taskId', 'reason'],
+    },
+  },
+  {
+    name: 'memory_swarm_next_task',
+    description: '🐝 SWARM NEXT — Get the next ready task for a role (only tasks whose dependencies are complete).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        role: { type: 'string', description: 'Role to fetch the next task for (analyzer, planner, coder, tester, reviewer, verifier, orchestrator)' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['role'],
+    },
+  },
+  {
+    name: 'memory_swarm_status',
+    description: '🐝 SWARM STATUS — List all active goals and their overall execution state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_swarm_synthesize',
+    description: '🐝 SWARM SYNTHESIZE — Merge all task results into a unified final report for a completed goal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'Goal to synthesize' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['goal'],
+    },
+  },
+  {
+    name: 'memory_experience_record',
+    description: '📝 EXPERIENCE RECORD — Save a successful operation as a deterministic replay script. Next call to replay skips LLM entirely.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commandKey: { type: 'string', description: 'Unique key for this operation (e.g. resolve-imports)' },
+        steps: { type: 'string', description: 'JSON-serialized steps or description of the operation' },
+        expectedOutput: { type: 'string', description: 'Expected output pattern for validation' },
+        llmCallsSaved: { type: 'number', description: 'How many LLM calls this replay avoids', default: 1 },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['commandKey', 'steps'],
+    },
+  },
+  {
+    name: 'memory_experience_replay',
+    description: '▶️ EXPERIENCE REPLAY — Execute a previously recorded script deterministically. Zero LLM calls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commandKey: { type: 'string', description: 'Key of the recorded script to replay' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['commandKey'],
+    },
+  },
+  {
+    name: 'memory_experience_stats',
+    description: '📊 EXPERIENCE STATS — Show how many scripts are recorded, total replays, and total LLM calls saved.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_translation_store',
+    description: '📖 TRANSLATION STORE — Resolve an input once via LLM (or manual mapping), store the result, and replay it deterministically from then on.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        namespace: { type: 'string', description: 'Translation namespace (e.g. problem, command, query)', default: 'problem' },
+        key: { type: 'string', description: 'Input text to map' },
+        payload: { type: 'string', description: 'JSON-serialized resolved output' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['namespace', 'key', 'payload'],
+    },
+  },
+  {
+    name: 'memory_translation_stats',
+    description: '📖 TRANSLATION STATS — Show how many translations are stored and how many LLM calls have been saved.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_translation_list',
+    description: '📖 TRANSLATION LIST — List all stored translations, optionally filtered by namespace.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        namespace: { type: 'string', description: 'Filter by namespace' },
+        limit: { type: 'number', description: 'Max results (default 50)', default: 50 },
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_burst_state',
+    description: '📊 BURST STATE — Show current burst budget state: remaining calls, window status, circuit breaker health.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_burst_audit',
+    description: '📋 BURST AUDIT — Show the burst budget audit trail: recent allow/deny decisions with timestamps and reasons.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max entries (default 50)', default: 50 },
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_war_room_run',
+    description: '⚔️ WAR ROOM RUN — Execute the self-improvement arena: run all 17 reasoning scenarios, score them, adapt difficulty, and persist the scoreboard.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxRounds: { type: 'number', description: 'Max scenario rounds (default 1, runs all 17)', default: 1 },
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -1730,8 +1905,63 @@ async function callTool(name, args) {
     case 'memory_swarm_decompose':
       return { tasks: api.swarmDecompose(args.goal, { project: args.project }) };
 
+    case 'memory_swarm_start_task':
+      return api.swarmStartTask(args.taskId);
+
+    case 'memory_swarm_complete_task':
+      return api.swarmCompleteTask(args.taskId, args.summary, args.obsId);
+
+    case 'memory_swarm_fail_task':
+      return api.swarmFailTask(args.taskId, args.reason);
+
+    case 'memory_swarm_next_task':
+      return api.swarmNextTask(args.role, { project: args.project });
+
+    case 'memory_swarm_status':
+      return api.swarmActiveGoals({ project: args.project });
+
+    case 'memory_swarm_synthesize':
+      return api.swarmSynthesize(args.goal, { project: args.project });
+
     case 'memory_swarm_progress':
       return api.swarmGoalProgress(args.goal, { project: args.project });
+
+    // ── v6.5.0: Experience replay (extended) ──
+    case 'memory_experience_record':
+      return api.recordScript({
+        commandKey: args.commandKey,
+        steps: args.steps,
+        expectedOutput: args.expectedOutput,
+        llmCallsSaved: args.llmCallsSaved,
+        project: args.project,
+      });
+
+    case 'memory_experience_replay':
+      return api.replayExperience(args.commandKey, args.project, args.params);
+
+    case 'memory_experience_stats':
+      return api.scriptStats(args.project);
+
+    // ── v6.5.0: Translation store (extended) ──
+    case 'memory_translation_store':
+      return api.translationStore(args.namespace || 'problem', args.key, JSON.parse(args.payload), args.project);
+
+    case 'memory_translation_stats':
+      return api.translationStats(args.project);
+
+    case 'memory_translation_list':
+      return api.translationList({ namespace: args.namespace, limit: args.limit || 50, project: args.project });
+
+    // ── v6.5.0: Burst budget (extended) ──
+    case 'memory_burst_state':
+      return api.burstGetState(args.project, { allowlist: args.allowlist || [] });
+
+    case 'memory_burst_audit':
+      return api.burstAuditLog({ limit: args.limit || 50, project: args.project });
+
+    // ── v6.5.0: War room (extended) ──
+    case 'memory_war_room_run':
+      return api.runWarRoom({ maxRounds: args.maxRounds || 1, project: args.project });
 
     default:
       throw new Error('Unknown tool: ' + name);

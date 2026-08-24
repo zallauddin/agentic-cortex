@@ -1,7 +1,7 @@
-<!-- agentic-cortex:start:v6.5.1 -->
+<!-- agentic-cortex:start:v6.6.1 -->
 <agentic_cortex>
 agentic-cortex is installed. Persistent, self-improving memory across sessions.
-MCP server is configured in .mcp.json — 67 tools available directly.
+MCP server is configured in .mcp.json — 93 tools available directly.
 
 <reasoning>
 For hard problems, use tree search reasoning:
@@ -17,7 +17,7 @@ PREFERRED: Use MCP tool memory_bootstrap({}) — no args needed. Returns structu
 FALLBACK CLI: agentic-cortex bootstrap
 </bootstrap>
 
-MCP tools (78 total):
+MCP tools (93 total):
 Memory core: memory_save, memory_search, memory_get, memory_list, memory_edit, memory_forget, memory_context, memory_reflect, memory_conflicts, memory_export, memory_import, memory_health, memory_embed, memory_relate, memory_graph, memory_hook, memory_share, memory_feedback, memory_trail,
 Memory advanced: memory_learn_from_error, memory_record_action, memory_transfer_knowledge, memory_machine_vault, memory_promote_global, memory_search_all, memory_ingest_transcript, memory_utility_stats, memory_freshness, memory_maintenance, memory_analytics, memory_standards, memory_auto_capture, memory_skill_list, memory_skill_search, memory_daily_summary, memory_crystallize, memory_experiment, memory_eval_log, memory_fsm, memory_rules, memory_workflow, memory_workflow_agents, memory_prompts_list, memory_prompts_render, memory_plateau_check,
 Reasoning: memory_tree_search, memory_verify_step, memory_budget, memory_verify_code, memory_reflexion, memory_reasoning_trace, memory_reasoning_stats, memory_synthesize_solution, memory_self_consistency, memory_budget_force,
@@ -43,7 +43,7 @@ CLI fallback: agentic-cortex bootstrap | save "t" "c" | search "q" --project .
 
 <memory_types>instruction fact decision goal commitment preference relationship context event learning observation artifact error</memory_types>
 
-<mcp>agentic-cortex-mcp configured in .mcp.json. 67 tools on stdio JSON-RPC.</mcp>
+<mcp>agentic-cortex-mcp configured in .mcp.json. 93 tools on stdio JSON-RPC.</mcp>
 
 Read knowledge.md for injected context (coding standards, session memories, codebase graph).
 </agentic_cortex>

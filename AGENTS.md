@@ -1,7 +1,7 @@
-<!-- agentic-cortex:start:v6.5.1 -->
+<!-- agentic-cortex:start:v6.6.1 -->
 # agentic-cortex
 
-Persistent, self-improving memory system for AI coding agents. 78 MCP tools.
+Persistent, self-improving memory system for AI coding agents. 93 MCP tools.
 
 ## Test-Time Reasoning (NEW)
 
@@ -31,7 +31,7 @@ decisions, bug fixes, discoveries, learnings, preferences, feature completions, 
 
 Type auto-detected. Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90
 
-## All 57 MCP Tools
+## All 93 MCP Tools
 
 ### Memory core: memory_save, memory_search, memory_get, memory_list, memory_edit, memory_forget, memory_context, memory_reflect, memory_conflicts, memory_export, memory_import, memory_health, memory_embed, memory_relate, memory_graph, memory_hook, memory_share, memory_feedback, memory_trail (19)
 

@@ -1,7 +1,7 @@
-<!-- agentic-cortex:start:v6.5.1 -->
+<!-- agentic-cortex:start:v6.6.1 -->
 <agentic_cortex>
 Persistent, self-improving agent memory. MCP server configured in opencode.json.
-67 MCP tools available.
+93 MCP tools available.
 
 <bootstrap>
 CRITICAL: Call MCP tool memory_bootstrap({}) first — no args needed.
@@ -15,7 +15,7 @@ Type auto-detected from content patterns.
 Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90
 </auto_save>
 
-<all_67_mcp_tools>
+<all_93_mcp_tools>
 
 Memory core: memory_save, memory_search, memory_get, memory_list, memory_edit, memory_forget, memory_context, memory_reflect, memory_conflicts, memory_export, memory_import, memory_health, memory_embed, memory_relate, memory_graph, memory_hook, memory_share, memory_feedback, memory_trail (19)
 
@@ -48,7 +48,7 @@ memory_daily_summary({}) — yesterday's observations summary
 
 <memory_types>instruction fact decision goal commitment preference relationship context event learning observation artifact error</memory_types>
 
-<mcp>67 tools via opencode.json mcp config. Run agentic-cortex-mcp locally.</mcp>
+<mcp>93 tools via opencode.json mcp config. Run agentic-cortex-mcp locally.</mcp>
 </agentic_cortex>
 <!-- agentic-cortex:end -->
 
