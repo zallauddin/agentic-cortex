@@ -84,6 +84,80 @@ const DEFAULT_PIPELINE = [
   { role: 'orchestrator', action: 'merge', dependsOn: ['verifier'], description: 'Merge and synthesize results' },
 ];
 
+// ─── Reasoning engine injection ──────────────────────────────────────
+
+/** @type {Object|null} API reference injected by src/api/index.js */
+let _api = null;
+
+/** @type {Function|null} Save function for persisting insights */
+let _saveFn = null;
+
+/**
+ * Inject the API reference and save function so executeTask can dispatch
+ * to tree-search, self-consistency, budget-force, and deterministic-reasoner.
+ */
+function setApi(api, saveFn) {
+  _api = api;
+  _saveFn = saveFn || null;
+}
+
+// ─── Role → strategy dispatch map ─────────────────────────────────────
+
+/**
+ * Each persona role maps to a reasoning strategy and a problem template.
+ * The template uses {{goal}} and {{context}} placeholders.
+ */
+const ROLE_STRATEGY = {
+  analyzer: {
+    engine: 'tree-search',
+    strategy: 'beam',
+    promptTemplate: 'swarm-analyze',
+    description: 'Analyze the problem and existing knowledge',
+  },
+  planner: {
+    engine: 'budget-force',
+    strategy: null,
+    promptTemplate: 'swarm-plan',
+    description: 'Create an ordered implementation plan',
+  },
+  coder: {
+    engine: 'tree-search',
+    strategy: 'mcts',
+    promptTemplate: 'swarm-implement',
+    description: 'Implement the plan step',
+  },
+  tester: {
+    engine: 'self-consistency',
+    strategy: null,
+    promptTemplate: null,
+    description: 'Write tests and validate the implementation',
+  },
+  reviewer: {
+    engine: 'tree-search',
+    strategy: 'beam',
+    promptTemplate: 'swarm-review',
+    description: 'Review against standards and past failures',
+  },
+  verifier: {
+    engine: 'budget-force',
+    strategy: null,
+    promptTemplate: 'swarm-verify',
+    description: 'Verify the final result end-to-end',
+  },
+  reasoner: {
+    engine: 'deterministic',
+    strategy: null,
+    promptTemplate: null,
+    description: 'Run deterministic inference to produce new insights',
+  },
+  orchestrator: {
+    engine: 'synthesize',
+    strategy: null,
+    promptTemplate: null,
+    description: 'Collect and merge all results',
+  },
+};
+
 // ─── DB-backed orchestration ──────────────────────────────────────────
 
 /**
@@ -297,11 +371,267 @@ function synthesizeGoal(db, goal, opts = {}) {
   return rows.map(r => ({ role: r.agent_role, result: r.result_summary }));
 }
 
+// ─── Task execution (personas dispatch to reasoning engines) ─────────
+
+/**
+ * Build a role-specific problem prompt for the reasoning engine.
+ *
+ * @param {Object} task — swarm task row
+ * @param {string} goal — the parent goal text
+ * @param {Object} [context] — additional context (prior results, brain search)
+ * @returns {string} problem statement
+ */
+function _buildProblem(task, goal, context = {}) {
+  const persona = PERSONAS[task.agent_role];
+  const roleName = (persona && persona.role) || task.agent_role;
+  const priorResults = context.priorResults || '';
+  const brainContext = context.brainContext || '';
+
+  switch (task.agent_role) {
+    case 'analyzer':
+      return `Goal: ${goal}\n\nYou are the ANALYZER. Read the shared brain and produce findings about what already exists and what is missing.\n\nBrain context:\n${brainContext}`;
+    case 'planner':
+      return `Goal: ${goal}\n\nYou are the PLANNER. Turn the analysis into an ordered implementation plan.\n\nAnalysis:\n${priorResults}`;
+    case 'coder':
+      return `Goal: ${goal}\n\nYou are the CODER. Implement the planned changes.\n\nPlan:\n${priorResults}\n\nRelevant context:\n${brainContext}`;
+    case 'tester':
+      return `Goal: ${goal}\n\nYou are the TESTER. Write tests that validate the implementation. Consider edge cases, regression risks, and standards.\n\nImplementation to test:\n${priorResults}`;
+    case 'reviewer':
+      return `Goal: ${goal}\n\nYou are the REVIEWER. Review the implementation and tests against known standards, past failures, and best practices.\n\nImplementation:\n${priorResults}\n\nStandards:\n${brainContext}`;
+    case 'verifier':
+      return `Goal: ${goal}\n\nYou are the VERIFIER. Verify that the completed work actually solves the original goal end-to-end.\n\nCompleted results:\n${priorResults}`;
+    case 'reasoner':
+      return goal;
+    case 'orchestrator':
+      return `Goal: ${goal}\n\nYou are the ORCHESTRATOR. Merge all completed results into a final synthesized answer.\n\nResults:\n${priorResults}`;
+    default:
+      return `Goal: ${goal}\n\nComplete your task as ${roleName}.`;
+  }
+}
+
+/**
+ * Execute a swarm task by dispatching to the appropriate reasoning engine.
+ *
+ * Each persona role maps to a reasoning strategy:
+ *   analyzer    → beam search (wide exploration of brain)
+ *   planner     → budget-force (deep sequential reasoning)
+ *   coder       → MCTS (implementation with branching)
+ *   tester      → self-consistency (multiple test approaches, majority vote)
+ *   reviewer    → beam search (standards check)
+ *   verifier    → budget-force (deep end-to-end verification)
+ *   reasoner    → deterministic-reasoner (6 inference modes, zero LLM)
+ *   orchestrator → synthesize (merge all completed results)
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} taskId
+ * @param {Object} [opts]
+ * @param {string} [opts.project]
+ * @param {boolean} [opts.dryRun=false] — if true, return plan without executing
+ * @returns {Promise<Object>} execution result
+ */
+async function executeTask(db, taskId, opts = {}) {
+  const proj = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+
+  // Read the task
+  const task = db.prepare(`SELECT * FROM swarm_tasks WHERE id = ?`).get(taskId);
+  if (!task) throw new Error(`Swarm task not found: ${taskId}`);
+
+  const mapping = ROLE_STRATEGY[task.agent_role];
+  if (!mapping) throw new Error(`No strategy mapping for role: ${task.agent_role}`);
+
+  // Gather context: prior completed results for dependency chain
+  let priorResults = '';
+  if (task.dependency_ids) {
+    let deps = [];
+    try { deps = JSON.parse(task.dependency_ids); } catch { /* empty */ }
+    if (deps.length > 0) {
+      const depRows = db.prepare(
+        `SELECT agent_role, result_summary FROM swarm_tasks WHERE id IN (${deps.map(() => '?').join(',')}) AND status = 'completed'`
+      ).all(...deps);
+      priorResults = depRows.map(r => `[${r.agent_role}]: ${r.result_summary || '(no summary)'}`).join('\n');
+    }
+  }
+
+  // Gather brain context: search for relevant knowledge
+  let brainContext = '';
+  if (_api && _api.search) {
+    try {
+      const searchResults = await _api.search(task.goal || '', { project: proj, limit: 5 });
+      if (searchResults && searchResults.results) {
+        brainContext = searchResults.results.slice(0, 5).map(r => r.content || r.title || '').join('\n---\n');
+      }
+    } catch { /* best-effort */ }
+  }
+
+  const context = { priorResults, brainContext };
+  const problem = _buildProblem(task, task.goal || '', context);
+
+  if (opts.dryRun) {
+    return {
+      taskId,
+      role: task.agent_role,
+      goal: task.goal,
+      engine: mapping.engine,
+      strategy: mapping.strategy,
+      problem,
+      dryRun: true,
+    };
+  }
+
+  // Mark task as started
+  startTask(db, taskId);
+
+  const t0 = Date.now();
+  let result = null;
+  let error = null;
+
+  try {
+    switch (mapping.engine) {
+      case 'tree-search': {
+        if (!_api || !_api.treeSearch) throw new Error('treeSearch API not available');
+        const tsResult = await _api.treeSearch({
+          problem,
+          project: proj,
+          strategy: mapping.strategy || 'auto',
+        });
+        result = tsResult.solution
+          ? (typeof tsResult.solution === 'string' ? tsResult.solution : JSON.stringify(tsResult.solution))
+          : JSON.stringify({ nodesExplored: tsResult.nodesExplored, status: tsResult.status });
+        break;
+      }
+
+      case 'self-consistency': {
+        if (!_api || !_api.selfConsistency) throw new Error('selfConsistency API not available');
+        const scResult = await _api.selfConsistency({
+          problem,
+          project: proj,
+          samples: 5,
+        });
+        result = scResult.answer || JSON.stringify(scResult);
+        break;
+      }
+
+      case 'budget-force': {
+        if (!_api || !_api.budgetForce) throw new Error('budgetForce API not available');
+        const bfResult = await _api.budgetForce({
+          problem,
+          project: proj,
+          minTokens: 200,
+          maxRounds: 3,
+        });
+        result = bfResult.answer || bfResult.finalResponse || JSON.stringify(bfResult);
+        break;
+      }
+
+      case 'deterministic': {
+        if (!_api || !_api.reasonAll) throw new Error('reasonAll API not available');
+        const drResult = await _api.reasonAll(task.goal || problem, { project: proj });
+        result = JSON.stringify(drResult.insights || drResult);
+        break;
+      }
+
+      case 'synthesize': {
+        // Orchestrator: collect all completed task results
+        const allResults = synthesizeGoal(db, task.goal, { project: proj });
+        result = JSON.stringify(allResults);
+        break;
+      }
+
+      default:
+        throw new Error(`Unknown engine: ${mapping.engine}`);
+    }
+
+    // Save result to brain if save function is available
+    if (_saveFn && result) {
+      try {
+        await _saveFn({
+          project: proj,
+          type: 'observation',
+          title: `swarm:${task.agent_role}:${task.goal ? task.goal.slice(0, 50) : 'task'}`,
+          content: result,
+          tags: ['swarm', task.agent_role, 'auto-capture'],
+          importance: 6,
+          provenance: 'inferred',
+        });
+      } catch { /* best-effort */ }
+    }
+
+    completeTask(db, taskId, result ? result.slice(0, 1000) : '(empty result)');
+  } catch (err) {
+    error = err.message;
+    failTask(db, taskId, error);
+  }
+
+  const durationMs = Date.now() - t0;
+
+  return {
+    taskId,
+    role: task.agent_role,
+    goal: task.goal,
+    engine: mapping.engine,
+    result: result ? result.slice(0, 500) : null,
+    error,
+    durationMs,
+  };
+}
+
+/**
+ * Execute the entire pipeline for a goal — run all tasks in dependency order.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} goal
+ * @param {Object} [opts]
+ * @param {string} [opts.project]
+ * @param {boolean} [opts.dryRun=false]
+ * @returns {Promise<Array<Object>>} execution results for all tasks
+ */
+async function executePipeline(db, goal, opts = {}) {
+  const proj = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+
+  // Get all tasks for this goal, ordered by creation
+  const tasks = db.prepare(`
+    SELECT * FROM swarm_tasks WHERE project_path = ? AND goal = ? ORDER BY created_at
+  `).all(proj, goal);
+
+  if (tasks.length === 0) return [];
+
+  const results = [];
+  for (const task of tasks) {
+    // Only execute pending tasks
+    if (task.status !== 'pending') {
+      results.push({ taskId: task.id, role: task.agent_role, skipped: true, status: task.status });
+      continue;
+    }
+
+    // Check dependencies before executing
+    if (task.dependency_ids) {
+      let deps = [];
+      try { deps = JSON.parse(task.dependency_ids); } catch { /* empty */ }
+      let allDone = true;
+      for (const depId of deps) {
+        const dep = db.prepare(`SELECT status FROM swarm_tasks WHERE id = ?`).get(depId);
+        if (!dep || dep.status !== 'completed') { allDone = false; break; }
+      }
+      if (!allDone) {
+        results.push({ taskId: task.id, role: task.agent_role, skipped: true, reason: 'dependencies not met' });
+        continue;
+      }
+    }
+
+    const execResult = await executeTask(db, task.id, { ...opts, project: proj });
+    results.push(execResult);
+  }
+
+  return results;
+}
+
 // ─── Exports ──────────────────────────────────────────────────────────
 
 module.exports = {
   PERSONAS,
   DEFAULT_PIPELINE,
+  ROLE_STRATEGY,
+  setApi,
   decomposeGoal,
   getNextTask,
   startTask,
@@ -311,4 +641,6 @@ module.exports = {
   getGoalProgress,
   listActiveGoals,
   synthesizeGoal,
+  executeTask,
+  executePipeline,
 };

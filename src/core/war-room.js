@@ -592,6 +592,102 @@ function computeTrend(scores) {
   return Math.round((recentAvg - olderAvg) * 10) / 10;
 }
 
+// ─── Bootstrap Self-Check (zero-LLM, fast) ─────────────────────────────
+
+/**
+ * Run a lightweight self-check against 3-5 deterministic scenarios.
+ * Designed to be called from bootstrap() — fast, zero LLM, no side effects.
+ *
+ * Each scenario is scored purely via keyword matching (scoreAnswer).
+ * No treeSearch, no API calls — just deterministic problem→answer scoring.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Object} [opts]
+ * @param {string} [opts.project]
+ * @param {number} [opts.maxScenarios=5] — how many scenarios to run
+ * @returns {{ diagnostics: Object, scoreboard: Object }}
+ */
+function selfCheck(db, opts = {}) {
+  const proj = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const maxScenarios = opts.maxScenarios || 5;
+
+  // Pick representative scenarios: one from each difficulty tier
+  const easy = SCENARIO_POOL.filter(s => s.difficulty === 'easy');
+  const medium = SCENARIO_POOL.filter(s => s.difficulty === 'medium');
+  const hard = SCENARIO_POOL.filter(s => s.difficulty === 'hard');
+  const picked = [
+    easy[Math.floor(Math.random() * easy.length)],
+    easy.length > 1 ? easy[(Math.floor(Math.random() * easy.length) + 1) % easy.length] : null,
+    medium[Math.floor(Math.random() * medium.length)],
+    hard[Math.floor(Math.random() * hard.length)],
+    medium.length > 1 ? medium[(Math.floor(Math.random() * medium.length) + 1) % medium.length] : null,
+  ].filter(Boolean).slice(0, maxScenarios);
+
+  const results = [];
+  const byCategory = {};
+  let totalScore = 0;
+
+  for (const scenario of picked) {
+    const { problem, expectedAnswer, keywords, hints } = scenario.generate();
+    // Build a canonical solution from expected answer + hints so keyword
+    // scoring works properly. In real war-room rounds the LLM produces a
+    // full reasoning chain; here we simulate a perfect answer.
+    const canonicalSolution = (expectedAnswer || '') + '\n' + (hints || []).join('\n');
+    const score = scoreAnswer(canonicalSolution, keywords);
+    totalScore += score;
+
+    results.push({
+      scenarioId: scenario.id,
+      name: scenario.name,
+      difficulty: scenario.difficulty,
+      categories: scenario.categories,
+      score,
+    });
+
+    for (const cat of scenario.categories) {
+      if (!byCategory[cat]) byCategory[cat] = { total: 0, count: 0 };
+      byCategory[cat].total += score;
+      byCategory[cat].count++;
+    }
+  }
+
+  const avgScore = results.length > 0 ? Math.round(totalScore / results.length) : 0;
+
+  // Category breakdown
+  const categoryScores = {};
+  for (const [cat, data] of Object.entries(byCategory)) {
+    categoryScores[cat] = Math.round(data.total / data.count);
+  }
+
+  // Strengths & weaknesses
+  const strengths = Object.entries(categoryScores)
+    .filter(([, s]) => s >= 80)
+    .map(([c]) => c);
+  const weaknesses = Object.entries(categoryScores)
+    .filter(([, s]) => s <= 50)
+    .map(([c]) => c);
+
+  // Load full scoreboard for trend
+  const scoreboard = getScoreboard(db, { project: proj });
+
+  return {
+    diagnostics: {
+      scenariosRun: results.length,
+      avgScore,
+      strengths: strengths.length > 0 ? strengths : ['balanced'],
+      weaknesses: weaknesses.length > 0 ? weaknesses : ['none detected'],
+      categoryScores,
+      worstScenario: results.length > 0 ? results.reduce((a, b) => a.score < b.score ? a : b) : null,
+      bestScenario: results.length > 0 ? results.reduce((a, b) => a.score > b.score ? a : b) : null,
+    },
+    scoreboard: {
+      lifetimeRounds: scoreboard.totals.rounds,
+      lifetimeAvgScore: scoreboard.totals.avgScore,
+      trend: computeTrend(scoreboard.recentRounds.map(r => r.score)),
+    },
+  };
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 function sleep(ms) {
@@ -607,4 +703,5 @@ module.exports = {
   WarRoom,
   getScoreboard,
   computeTrend,
+  selfCheck,
 };

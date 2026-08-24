@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -1252,6 +1252,32 @@ const TOOLS = [
     },
   },
   {
+    name: 'memory_swarm_execute',
+    description: '⚡ SWARM EXECUTE — Run a single swarm task through its persona-specific reasoning engine. Analyzer→beam search, Planner→budget-forcing, Coder→MCTS, Tester→self-consistency, Reviewer→beam search, Verifier→budget-forcing, Reasoner→deterministic inference, Orchestrator→synthesize.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'number', description: 'Task ID to execute' },
+        project: { type: 'string', description: 'Project path' },
+        dryRun: { type: 'boolean', description: 'If true, return the execution plan without running' },
+      },
+      required: ['taskId'],
+    },
+  },
+  {
+    name: 'memory_swarm_execute_pipeline',
+    description: '⚡ SWARM EXECUTE ALL — Run all pending tasks for a goal in dependency order. Each persona dispatches to its role-specific reasoning engine.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'Goal whose tasks to execute' },
+        project: { type: 'string', description: 'Project path' },
+        dryRun: { type: 'boolean', description: 'If true, return the execution plan without running' },
+      },
+      required: ['goal'],
+    },
+  },
+  {
     name: 'memory_experience_record',
     description: '📝 EXPERIENCE RECORD — Save a successful operation as a deterministic replay script. Next call to replay skips LLM entirely.',
     inputSchema: {
@@ -1286,6 +1312,19 @@ const TOOLS = [
       properties: {
         project: { type: 'string', description: 'Project path' },
       },
+    },
+  },
+  {
+    name: 'memory_experience_autodetect',
+    description: '🔍 EXPERIENCE AUTO-DETECT — Fuzzy-match a problem against stored experience scripts. Returns the best replay candidates with match scores. Use before expensive tree search to find deterministic replays at zero LLM cost.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        problem: { type: 'string', description: 'Current task description to match against stored scripts' },
+        minScore: { type: 'number', description: 'Minimum overlap score (default 0.3)', default: 0.3 },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['problem'],
     },
   },
   {
@@ -1352,6 +1391,17 @@ const TOOLS = [
       type: 'object',
       properties: {
         maxRounds: { type: 'number', description: 'Max scenario rounds (default 1, runs all 17)', default: 1 },
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_war_room_selfcheck',
+    description: '🩺 WAR ROOM SELF-CHECK — Run a lightweight diagnostic (3-5 deterministic scenarios, zero LLM, ~10ms). Returns reasoning strengths, weaknesses, category scores, and lifetime trend. Automatically called by bootstrap() and injected into context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxScenarios: { type: 'number', description: 'How many scenarios (default 4, max 5)', default: 4 },
         project: { type: 'string', description: 'Project path' },
       },
     },
@@ -1923,6 +1973,12 @@ async function callTool(name, args) {
     case 'memory_swarm_synthesize':
       return api.swarmSynthesize(args.goal, { project: args.project });
 
+    case 'memory_swarm_execute':
+      return api.swarmExecute(args.taskId, { project: args.project, dryRun: args.dryRun });
+
+    case 'memory_swarm_execute_pipeline':
+      return api.swarmExecutePipeline(args.goal, { project: args.project, dryRun: args.dryRun });
+
     case 'memory_swarm_progress':
       return api.swarmGoalProgress(args.goal, { project: args.project });
 
@@ -1941,6 +1997,9 @@ async function callTool(name, args) {
 
     case 'memory_experience_stats':
       return api.scriptStats(args.project);
+
+    case 'memory_experience_autodetect':
+      return api.autodetectReplay(args.problem, { minScore: args.minScore, project: args.project });
 
     // ── v6.5.0: Translation store (extended) ──
     case 'memory_translation_store':
@@ -1962,6 +2021,9 @@ async function callTool(name, args) {
     // ── v6.5.0: War room (extended) ──
     case 'memory_war_room_run':
       return api.runWarRoom({ maxRounds: args.maxRounds || 1, project: args.project });
+
+    case 'memory_war_room_selfcheck':
+      return api.warRoomSelfCheck({ maxScenarios: args.maxScenarios || 4, project: args.project });
 
     default:
       throw new Error('Unknown tool: ' + name);
