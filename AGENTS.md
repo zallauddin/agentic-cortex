@@ -1,4 +1,4 @@
-<!-- agentic-cortex:start:v6.6.1 -->
+<!-- agentic-cortex:start:v6.7.0 -->
 # agentic-cortex
 
 Persistent, self-improving memory system for AI coding agents. 93 MCP tools.

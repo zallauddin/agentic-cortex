@@ -353,6 +353,99 @@ Has this chain reached a solution?`,
     defaults: { temperature: 0, maxTokens: 150, timeout: 10000 },
     outcomeTracking: false,
   },
+
+  // ── Swarm persona execution templates ───────────────────────────
+  'swarm-analyze': {
+    name: 'swarm-analyze',
+    version: '1.0',
+    description: 'Analyzer persona: read shared brain and produce findings about what exists and what is missing',
+    systemPrompt: `You are the ANALYZER persona in a multi-agent swarm. Your job is to read the shared brain (provided as context) and produce structured findings.
+
+Output valid JSON:
+{"findings": ["finding 1", ...], "gaps": ["gap 1", ...], "existingAssets": ["asset 1", ...], "recommendations": ["rec 1", ...]}`,
+    userPromptTemplate: `Goal: {{goal}}
+
+Shared brain context:
+{{context}}
+
+Analyze what already exists and what is missing to achieve this goal.`,
+    defaults: { temperature: 0.3, maxTokens: 1000, timeout: 30000 },
+    outcomeTracking: true,
+  },
+  'swarm-plan': {
+    name: 'swarm-plan',
+    version: '1.0',
+    description: 'Planner persona: turn analysis into an ordered implementation plan',
+    systemPrompt: `You are the PLANNER persona. Given analysis findings, produce an ordered implementation plan.
+
+Output valid JSON:
+{"steps": [{"order": 1, "action": "...", "rationale": "..."}], "estimatedComplexity": "low|medium|high"}`,
+    userPromptTemplate: `Goal: {{goal}}
+
+Analysis findings:
+{{analysis}}
+
+Create an ordered implementation plan.`,
+    defaults: { temperature: 0.3, maxTokens: 1500, timeout: 30000 },
+    outcomeTracking: true,
+  },
+  'swarm-implement': {
+    name: 'swarm-implement',
+    version: '1.0',
+    description: 'Coder persona: implement a specific step from the plan',
+    systemPrompt: `You are the CODER persona. Implement the given task step. Be precise and concrete.
+
+Output valid JSON:
+{"implementation": "code or description of changes", "rationale": "why this approach", "edgeCases": ["case 1", ...]}`,
+    userPromptTemplate: `Goal: {{goal}}
+
+Plan step to implement:
+{{step}}
+
+Relevant context:
+{{context}}
+
+Implement this step.`,
+    defaults: { temperature: 0.3, maxTokens: 2000, timeout: 60000 },
+    outcomeTracking: true,
+  },
+  'swarm-review': {
+    name: 'swarm-review',
+    version: '1.0',
+    description: 'Reviewer persona: review implementation against standards and past failures',
+    systemPrompt: `You are the REVIEWER persona. Review the implementation against known standards, past failures, and best practices.
+
+Output valid JSON:
+{"approved": true/false, "issues": ["issue 1", ...], "suggestions": ["suggestion 1", ...], "score": 0-100}`,
+    userPromptTemplate: `Goal: {{goal}}
+
+Implementation to review:
+{{implementation}}
+
+Standards and past failures to check against:
+{{context}}
+
+Review this implementation.`,
+    defaults: { temperature: 0.2, maxTokens: 1000, timeout: 30000 },
+    outcomeTracking: true,
+  },
+  'swarm-verify': {
+    name: 'swarm-verify',
+    version: '1.0',
+    description: 'Verifier persona: verify the final result end-to-end',
+    systemPrompt: `You are the VERIFIER persona. Verify that the completed work actually solves the original goal.
+
+Output valid JSON:
+{"verified": true/false, "gaps": ["remaining gap", ...], "confidence": 0.0-1.0, "summary": "brief verification summary"}`,
+    userPromptTemplate: `Goal: {{goal}}
+
+Completed results from all roles:
+{{results}}
+
+Verify that the goal has been achieved end-to-end.`,
+    defaults: { temperature: 0.1, maxTokens: 800, timeout: 30000 },
+    outcomeTracking: true,
+  },
 };
 
 // ─── Template Registry API ──────────────────────────────────────────

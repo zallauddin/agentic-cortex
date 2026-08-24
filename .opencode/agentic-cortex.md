@@ -1,4 +1,4 @@
-<!-- agentic-cortex:start:v6.6.1 -->
+<!-- agentic-cortex:start:v6.7.0 -->
 <agentic_cortex>
 Persistent, self-improving agent memory. MCP server configured in opencode.json.
 93 MCP tools available.

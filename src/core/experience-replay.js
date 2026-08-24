@@ -223,6 +223,62 @@ function forgetScript(db, commandKey, project) {
   return result.changes > 0;
 }
 
+// ─── Auto-detection (fuzzy match problem against stored scripts) ──────
+
+/**
+ * Compute keyword overlap between two strings, normalized to 0-1.
+ */
+function _keywordOverlap(a, b) {
+  if (!a || !b) return 0;
+  const wordsA = new Set(a.toLowerCase().split(/[\s,;:.!?()\[\]{}_-]+/).filter(w => w.length > 2));
+  const wordsB = new Set(b.toLowerCase().split(/[\s,;:.!?()\[\]{}_-]+/).filter(w => w.length > 2));
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  let overlap = 0;
+  for (const w of wordsA) { if (wordsB.has(w)) overlap++; }
+  return overlap / Math.min(wordsA.size, wordsB.size);
+}
+
+/**
+ * Autodetect stored experience scripts relevant to a problem.
+ * Uses keyword overlap scoring to find candidate replays.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} problem — current task description
+ * @param {Object} [opts]
+ * @param {string} [opts.project]
+ * @param {number} [opts.minScore=0.3] — minimum overlap score to consider
+ * @param {number} [opts.limit=3] — max candidate scripts to return
+ * @returns {{ candidates: Array<Object>, bestMatch: Object|null, suggestion: string|null }}
+ */
+function autodetectReplay(db, problem, opts = {}) {
+  const proj = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const minScore = opts.minScore || 0.3;
+  const limit = opts.limit || 3;
+
+  const scripts = listScripts(db, { project: proj, limit: 50 });
+  if (!scripts.length) return { candidates: [], bestMatch: null, suggestion: null };
+
+  const candidates = scripts
+    .map(s => {
+      const score = _keywordOverlap(problem, s.label || s.command_key || '');
+      return { ...s, _matchScore: score };
+    })
+    .filter(s => s._matchScore >= minScore)
+    .sort((a, b) => b._matchScore - a._matchScore)
+    .slice(0, limit);
+
+  const bestMatch = candidates.length > 0 ? candidates[0] : null;
+
+  let suggestion = null;
+  if (bestMatch && bestMatch._matchScore >= 0.6) {
+    suggestion = `⚡ EXPERIENCE REPLAY: A stored script '${bestMatch.command_key}' matches this problem (${Math.round(bestMatch._matchScore * 100)}% overlap, ${bestMatch.successes || 0} successes). Use memory_experience_replay({ commandKey: "${bestMatch.command_key}" }) to replay it deterministically — zero LLM cost.`;
+  } else if (candidates.length > 0) {
+    suggestion = `💡 Partial match: ${candidates.length} stored experience(s) may relate to this problem. Low confidence — use memory_experience_scripts() to review.`;
+  }
+
+  return { candidates, bestMatch, suggestion };
+}
+
 // ─── Trajectory optimization ─────────────────────────────────────────
 
 /**
@@ -318,4 +374,5 @@ module.exports = {
   scriptStats,
   forgetScript,
   optimizeScript,
+  autodetectReplay,
 };

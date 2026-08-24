@@ -83,6 +83,8 @@ const warRoom = require('../core/war-room');
 core.warRoom = warRoom;
 const swarm = require('../core/swarm');
 core.swarm = swarm;
+// Inject API reference so swarm tasks can dispatch to reasoning engines
+swarm.setApi(module.exports, save);
 
 // Initialize Phase 28: Deterministic reasoner
 const deterministicReasoner = require('../core/deterministic-reasoner');
@@ -1114,7 +1116,24 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
       tokenEstimate += Math.ceil(Math.min(reflexionContext.length, 1200) / 4);
     }
 
-    // 2.75b: Difficulty estimation and reasoning recommendation
+    // 2.75b: Experience replay auto-detection — zero-LLM check for matching scripts
+    try {
+      const replay = experienceReplay.autodetectReplay(db, workingOn, { project, minScore: 0.35 });
+      if (replay.bestMatch) {
+        reasoningBlock += `  <experience_replay matches="${replay.candidates.length}" best_score="${Math.round(replay.bestMatch._matchScore * 100)}">\n`;
+        if (replay.bestMatch._matchScore >= 0.5) {
+          reasoningBlock += `    <strong_match command_key="${_xmlEscape(replay.bestMatch.command_key)}" score="${Math.round(replay.bestMatch._matchScore * 100)}%" successes="${replay.bestMatch.successes || 0}" llm_calls_saved="${replay.bestMatch.llm_calls_saved || 0}">\n`;
+          reasoningBlock += `      <instruction>⚡ REPLAY AVAILABLE: Use memory_experience_replay({ commandKey: "${_xmlEscape(replay.bestMatch.command_key)}" }) to run this deterministically — ZERO LLM cost, ${replay.bestMatch.successes || 0} prior successes.</instruction>\n`;
+          reasoningBlock += '    </strong_match>\n';
+        } else {
+          reasoningBlock += `    <weak_match>Low-confidence match to ${replay.candidates[0]?.command_key || 'unknown'}. Review with memory_experience_scripts().</weak_match>\n`;
+        }
+        reasoningBlock += '  </experience_replay>\n';
+        tokenEstimate += 150;
+      }
+    } catch { /* experience_scripts table may not exist yet */ }
+
+    // 2.75c: Difficulty estimation and reasoning recommendation
     let relevantMemories = [];
     try {
       const queryVec = await core.embedding.computeEmbedding(workingOn).catch(() => null);
@@ -1556,7 +1575,29 @@ async function bootstrap(opts) {
   // Pass sync result through so bootstrap context can report it
   if (syncResult) opts._syncResult = syncResult;
 
-  const result = await _buildBootstrapContext(db, project, workingOn, opts);
+  let result = await _buildBootstrapContext(db, project, workingOn, opts);
+
+  // ── War Room self-check: lightweight diagnostics on reasoning health ──
+  // Runs 3-5 deterministic scenarios, zero LLM cost, ~10ms.
+  // Injects the scoreboard and strengths/weaknesses into the output
+  // so the agent knows where its reasoning is strong vs weak.
+  try {
+    const wrCheck = warRoom.selfCheck(db, { project, maxScenarios: 4 });
+    const wrCtx = _buildWarRoomContext(wrCheck);
+    if (wrCtx && typeof result === 'string') {
+      const wrBlock = '  <reasoning_health_check scenarios="' + wrCheck.diagnostics.scenariosRun +
+        '" avg_score="' + wrCheck.diagnostics.avgScore +
+        '" strengths="' + wrCheck.diagnostics.strengths.join(',') +
+        '" weaknesses="' + wrCheck.diagnostics.weaknesses.join(',') +
+        '" trend="' + wrCheck.scoreboard.trend + '">\n' +
+        '    <![CDATA[' + wrCtx + ']]>\n' +
+        '  </reasoning_health_check>\n';
+      result = result.replace('</agentic_cortex_context>', wrBlock + '</agentic_cortex_context>');
+    }
+  } catch (e) {
+    // Non-fatal — bootstrap still succeeds without war room
+    console.warn('[agentic-cortex] War room self-check failed (non-fatal):', e.message);
+  }
 
   // Auto-reflect: trigger background reflect after every Nth bootstrap
   _bootstrapCount++;
@@ -1643,6 +1684,63 @@ function _inferTask(db, project) {
   } catch {
     return 'working on this project';
   }
+}
+
+// ─── War Room Bootstrap Context Builder ────────────────────────────────
+
+/**
+ * Build a reflexion-style context string from war-room self-check results.
+ * Injected into the bootstrap context so the agent knows its reasoning health.
+ *
+ * @param {Object} check — result from warRoom.selfCheck()
+ * @returns {string}
+ */
+function _buildWarRoomContext(check) {
+  if (!check || !check.diagnostics) return '';
+
+  const dx = check.diagnostics;
+  const sb = check.scoreboard;
+  const lines = [];
+
+  lines.push('## 🧠 Reasoning Health Check (War Room)');
+  lines.push('');
+
+  // Strengths
+  if (dx.strengths && dx.strengths.length > 0 && dx.strengths[0] !== 'balanced') {
+    lines.push(`- 🟢 Strengths: ${dx.strengths.join(', ')}`);
+  }
+
+  // Weaknesses
+  if (dx.weaknesses && dx.weaknesses.length > 0 && dx.weaknesses[0] !== 'none detected') {
+    lines.push(`- 🔴 Weak areas: ${dx.weaknesses.join(', ')} — focus improvement here`);
+  }
+
+  // Trend
+  if (sb.lifetimeRounds >= 5) {
+    const trend = sb.trend;
+    const arrow = trend > 0 ? '↗️ improving' : trend < 0 ? '↘️ declining' : '→ steady';
+    lines.push(`- 📈 Trend (last 5 vs prior 5): ${trend > 0 ? '+' : ''}${trend}% ${arrow}`);
+    lines.push(`- 📊 Lifetime: ${sb.lifetimeRounds} rounds, avg score ${sb.lifetimeAvgScore}/100`);
+  }
+
+  // Specific findings
+  if (dx.bestScenario && dx.worstScenario) {
+    lines.push(`- ⭐ Best: ${dx.bestScenario.name} (${dx.bestScenario.difficulty}, ${dx.bestScenario.score}/100)`);
+    lines.push(`- ⚠️  Weakest: ${dx.worstScenario.name} (${dx.worstScenario.difficulty}, ${dx.worstScenario.score}/100)`);
+  }
+
+  // Actionable advice
+  if (sb.trend <= -5) {
+    lines.push('- 💡 Reasoning quality is declining — consider increasing test-time compute budget or switching to MCTS for hard problems.');
+  }
+  if (dx.weaknesses.includes('security')) {
+    lines.push('- 💡 Security reasoning is weak — enable PRM verification on all security-related reasoning steps.');
+  }
+  if (dx.weaknesses.includes('logic') || dx.weaknesses.includes('deduction')) {
+    lines.push('- 💡 Deductive reasoning is weak — use self-consistency voting for logical problems instead of single-pass beam search.');
+  }
+
+  return lines.join('\n');
 }
 
 // ─── Proactive Warning Hook ───────────────────────────────────────────
@@ -4004,6 +4102,7 @@ module.exports = {
   scriptStats: (project) => experienceReplay.scriptStats(_getDB(), project),
   forgetScript: (commandKey, project) => experienceReplay.forgetScript(_getDB(), commandKey, project),
   optimizeScript: experienceReplay.optimizeScript,
+  autodetectReplay: (problem, opts) => experienceReplay.autodetectReplay(_getDB(), problem, opts),
   // Translation store
   translationLookup: (namespace, key, project) => translationStore.lookup(_getDB(), namespace, key, project),
   translationStore: (namespace, key, payload, project) => translationStore.store(_getDB(), namespace, key, payload, project),
@@ -4020,6 +4119,7 @@ module.exports = {
   // ── v6.5.0: War room (self-improvement arena) ──
   WarRoom: warRoom.WarRoom,
   getScoreboard: (opts) => warRoom.getScoreboard(_getDB(), opts),
+  warRoomSelfCheck: (opts) => warRoom.selfCheck(_getDB(), opts),
   runWarRoom: async (opts) => {
     const room = new warRoom.WarRoom(_getDB(), module.exports, opts);
     return room.start();
@@ -4042,4 +4142,6 @@ module.exports = {
   swarmGoalProgress: (goal, opts) => swarm.getGoalProgress(_getDB(), goal, opts),
   swarmActiveGoals: (opts) => swarm.listActiveGoals(_getDB(), opts),
   swarmSynthesize: (goal, opts) => swarm.synthesizeGoal(_getDB(), goal, opts),
+  swarmExecute: (taskId, opts) => swarm.executeTask(_getDB(), taskId, opts),
+  swarmExecutePipeline: (goal, opts) => swarm.executePipeline(_getDB(), goal, opts),
 };
