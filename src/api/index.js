@@ -3985,7 +3985,20 @@ module.exports = {
   lessonStats: (project) => failureClassifier.lessonStats(_getDB(), project),
   // Experience replay
   findScript: (commandKey, project) => experienceReplay.findScript(_getDB(), commandKey, project),
-  recordScript: (params) => experienceReplay.recordScript(_getDB(), params),
+  replayExperience: async (commandKey, project, params) => {
+    const script = experienceReplay.findScript(_getDB(), commandKey, project);
+    if (!script) return { ok: false, reason: 'No script found for ' + commandKey };
+    const start = Date.now();
+    try {
+      const result = typeof script.steps === 'function' ? await script.steps(params) : script.steps;
+      experienceReplay.logReplay(_getDB(), commandKey, 'success', project, Date.now() - start, script.llmCallsSaved || 0);
+      return { ok: true, replayTimeMs: Date.now() - start, llmCallsSaved: script.llmCallsSaved || 0, result, count: script.count };
+    } catch (err) {
+      experienceReplay.logReplay(_getDB(), commandKey, 'failed', project, Date.now() - start, 0);
+      return { ok: false, reason: err.message };
+    }
+  },
+  recordScript: (params) => experienceReplay.recordScript(_getDB(), { ...params, label: params.label || params.commandKey }),
   logReplay: (commandKey, outcome, project, durationMs, llmCallsSaved) => experienceReplay.logReplay(_getDB(), commandKey, outcome, project, durationMs, llmCallsSaved),
   listScripts: (opts) => experienceReplay.listScripts(_getDB(), opts),
   scriptStats: (project) => experienceReplay.scriptStats(_getDB(), project),
@@ -4000,13 +4013,17 @@ module.exports = {
   // ── v6.5.0: Burst budget ──
   burstCheck: (toolName, project, config) => burstBudget.check(toolName, project, config),
   burstRecordSuccess: (toolName, project, summary) => { burstBudget.recordSuccess(toolName, project, summary); burstBudget.auditSuccess(_getDB(), toolName, project); },
-  burstRecordFailure: (db, toolName, project, reason) => burstBudget.recordFailure(_getDB(), toolName, project, reason),
+  burstRecordFailure: (toolName, project, reason) => burstBudget.recordFailure(_getDB(), toolName, project, reason),
   burstReset: (project) => burstBudget.resetCircuit(_getDB(), project),
   burstGetState: (project, config) => burstBudget.getBurstState(project, config),
   burstAuditLog: (opts) => burstBudget.getAuditLog(_getDB(), opts),
   // ── v6.5.0: War room (self-improvement arena) ──
   WarRoom: warRoom.WarRoom,
   getScoreboard: (opts) => warRoom.getScoreboard(_getDB(), opts),
+  runWarRoom: async (opts) => {
+    const room = new warRoom.WarRoom(_getDB(), module.exports, opts);
+    return room.start();
+  },
   // ── v6.5.0: Deterministic reasoner (6 inference modes) ──
   reasonAll: (topic, opts) => deterministicReasoner.reasonAll(_getDB(), topic, opts),
   reasonDeduce: (topic, opts) => deterministicReasoner.deduce(_getDB(), topic, opts),

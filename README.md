@@ -1,4 +1,4 @@
-# agentic-cortex v6.5.1 — The 5-Layer Agent Brain + Test-Time Reasoning
+# agentic-cortex v6.6.1 — The 5-Layer Agent Brain + Test-Time Reasoning
 
 Persistent, self-improving memory **and orchestration** for AI coding agents (Codebuff, Claude Code, Cursor, Codex, OpenCode). Implements the full **5-Layer Graph Engineering** framework: Prompt Engineering → Context Engineering → Harness Engineering → Loop Engineering → Graph Engineering. Install & forget — auto-injects context via git hooks, infers what you're working on, detects when improvement stalls, coordinates multi-agent teams, and prevents the same mistakes from repeating across projects.
 
@@ -10,7 +10,7 @@ Persistent, self-improving memory **and orchestration** for AI coding agents (Co
 - **Auto-promotion with relative thresholds** — top 20% confidence + 2× median utility auto-promote to global vault during reflection. Self-tunes as your project grows.
 - **XML codebase graph** — deterministic static analysis, SHA-256 cached, zero LLM cost. Injected as structured XML, not markdown.
 - **Agent-optimized knowledge.md** — XML-structured, 4× token reduction vs markdown. Built for LLM consumption, not human skimming.
-- **78 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
+- **93 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
 - **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error.
 - **Hybrid search** — FTS5 keyword + BGE semantic embeddings (768-dim) + cross-encoder reranking. Falls back gracefully when embeddings unavailable.
 - **Confidence & provenance tracking** — every memory scores 0-100 confidence and source (explicit, inferred, observed).
@@ -254,7 +254,7 @@ Layer 1: Prompt Engineering  ──  src/core/prompts.js     (10 versioned templ
 Layer 2: Context Engineering  ──  src/core/search.js       (hybrid FTS5 + semantic)
                                   src/core/embedding.js    (BGE-base, cross-encoder)
                                   src/core/relations.js    (memory graph)
-Layer 3: Harness Engineering  ──  src/mcp/server.js       (78 MCP tools, webhooks)
+Layer 3: Harness Engineering  ──  src/mcp/server.js       (93 MCP tools, webhooks)
                                   src/core/hooks.js        (event-driven automation)
 Layer 4: Loop Engineering     ──  src/core/self-improve.js (6 improvement hooks)
                                   src/core/reflection.js   (consolidate, crystallize)
