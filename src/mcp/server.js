@@ -1475,6 +1475,35 @@ const TOOLS = [
       },
     },
   },
+
+  // ── v8.0.0: Evidence-theoretic conflict resolution ──
+  {
+    name: 'memory_resolve_conflict',
+    description: '⚖️ RESOLVE CONFLICT — Adjudicate contradictory observations using Dempster-Shafer evidence fusion (statistical corroboration + LLM adjudication). Archives the loser with an explicit reason, records the resolution (conflict coefficient k + deciding evidence), and boosts the winner. Pass explicit winnerId/loserId/reason for human-guided resolution, or omit them to auto-adjudicate a conflict pair.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        winnerId: { type: 'number', description: 'Explicit winner observation id (human/agent-guided)' },
+        loserId: { type: 'number', description: 'Explicit loser observation id (human/agent-guided)' },
+        reason: { type: 'string', description: 'Why the winner wins (used for explicit resolution)' },
+        confidence: { type: 'number', description: 'Your conviction in the winner, 0-1 (default 0.9, explicit only)' },
+        aId: { type: 'number', description: 'First conflict observation id (auto-adjudication)' },
+        bId: { type: 'number', description: 'Second conflict observation id (auto-adjudication)' },
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_resolution_history',
+    description: '📜 RESOLUTION HISTORY — Recent evidence-theoretic resolutions (winner, loser, conflict coefficient, deciding evidence) so an agent can see why past conflicts were settled instead of re-opening them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        limit: { type: 'number', description: 'Max resolutions to return (default 5)' },
+      },
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -2131,6 +2160,30 @@ async function callTool(name, args) {
         saveObservation: !!args.saveObservation,
         saveSummary: !!args.saveSummary,
       });
+
+    // ── v8.0.0: Evidence-theoretic conflict resolution ──
+    case 'memory_resolve_conflict':
+      if (args.winnerId && args.loserId) {
+        return api.resolveExplicit({
+          winnerId: args.winnerId,
+          loserId: args.loserId,
+          reason: args.reason,
+          confidence: args.confidence,
+          project: args.project,
+        });
+      }
+      if (args.aId && args.bId) {
+        return api.resolvePair({
+          aId: args.aId,
+          bId: args.bId,
+          project: args.project,
+          resolutionType: 'adjudicated',
+        });
+      }
+      throw new Error('Provide either winnerId+loserId+reason (explicit) or aId+bId (auto-adjudicate)');
+
+    case 'memory_resolution_history':
+      return api.resolutionHistory(args.project, args.limit);
 
     default:
       throw new Error('Unknown tool: ' + name);

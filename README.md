@@ -1,4 +1,4 @@
-# agentic-cortex v6.7.0 — The 5-Layer Agent Brain + Test-Time Reasoning
+# agentic-cortex v7.0.0 — The 5-Layer Agent Brain + Test-Time Reasoning
 
 Persistent, self-improving memory **and orchestration** for AI coding agents (Codebuff, Claude Code, Cursor, Codex, OpenCode). Implements the full **5-Layer Graph Engineering** framework: Prompt Engineering → Context Engineering → Harness Engineering → Loop Engineering → Graph Engineering. Install & forget — auto-injects context via git hooks, infers what you're working on, detects when improvement stalls, coordinates multi-agent teams, and prevents the same mistakes from repeating across projects.
 
@@ -16,8 +16,9 @@ Persistent, self-improving memory **and orchestration** for AI coding agents (Co
 - **Usage-weighted injection** — every symbol an agent retrieves is tracked (access_count/last_accessed_at) and fed back into task-scoped selection: frequently-needed code wins ties and becomes the fallback when a task matches nothing.
 - **Memory-safe by default** — the ~400MB embedding model is NEVER auto-loaded. Search/bootstrap/sync stay keyword-only unless you opt in with `AGENTIC_CORTEX_EMBEDDINGS=1` or an explicit embedding command (`code-index embed`, `search --semantic`). No more OOM halts on weak machines.
 - **Session context compactor** — map-reduce compression of observations or transcripts into a "state so far" summary (~95% smaller) that replaces raw conversation history — attacks the biggest token cost: per-turn history re-sending.
+- **Evidence-theoretic conflict resolution (Dempster-Shafer)** — contradictory observations are no longer superseded silently. Each side gets a *belief mass* (confidence + corroboration + usage); the statistical channel is fused with LLM adjudication via Dempster's rule. Adjudication is a **two-shot debate**: first the LLM builds the strongest case for *each* side (adversarial argument generation, preventing judge anchoring), then judges with both cases on the record — the full deliberation is persisted for auditability. The resolution records the conflict coefficient k, the combined belief, and the *deciding evidence*; the winner's boost is agreement-weighted (a knife-edge k≈1 resolution gets almost none). Bootstrap injects recent resolutions as `<settled_debates>` so agents see why a debate was settled instead of re-opening it — and flags **weak resolutions** (high conflict coefficient k, statistical near-tie, or a winner that never clearly out-massed the loser) with a `severity="weak_resolution"` warning so agents treat the topic as an OPEN QUESTION, not settled precedent. Human/agent-guided resolution via `agentic-cortex resolve --winner ID --loser ID --reason ...`.
 - **Agent-optimized knowledge.md** — XML-structured, 4× token reduction vs markdown. Built for LLM consumption, not human skimming.
-- **93 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
+- **110 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
 - **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error.
 - **Hybrid search** — FTS5 keyword + BGE semantic embeddings (768-dim) + cross-encoder reranking. Falls back gracefully when embeddings unavailable.
 - **Confidence & provenance tracking** — every memory scores 0-100 confidence and source (explicit, inferred, observed).
@@ -204,7 +205,7 @@ agentic-cortex code-index search "token budget calc" --semantic
 `bootstrap` `save` `search` `get` `edit` `forget` `list` `bulk`
 
 ### Intelligence
-`conflicts` `answer` `analytics` `daily-summary` `reflect` `maintenance` `freshness` `crystallize` `eval-log`
+`conflicts` `resolve` `answer` `analytics` `daily-summary` `reflect` `maintenance` `freshness` `crystallize` `eval-log`
 
 ### Brain Orchestration
 `fsm` `rules` `workflow` `experiment`

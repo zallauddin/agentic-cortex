@@ -169,12 +169,38 @@ function ensureSchema(db) {
       target_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
       relation_type TEXT NOT NULL,
       confidence INTEGER DEFAULT 100,
+      reason TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(source_id, target_id, relation_type)
     );
     CREATE INDEX IF NOT EXISTS idx_relations_source ON memory_relations(source_id);
     CREATE INDEX IF NOT EXISTS idx_relations_target ON memory_relations(target_id);
     CREATE INDEX IF NOT EXISTS idx_relations_type ON memory_relations(relation_type);
+
+    -- Resolution records: first-class "why it lost" artifacts from conflict
+    -- adjudication. Stores the Dempster-Shafer evidence fusion (conflict
+    -- coefficient k, combined belief, per-channel masses), the deciding
+    -- evidence, and the corroborating observation ids that tipped the scale.
+    CREATE TABLE IF NOT EXISTS resolution_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      winner_id INTEGER NOT NULL REFERENCES observations(id),
+      loser_id INTEGER NOT NULL REFERENCES observations(id),
+      relation_id INTEGER REFERENCES memory_relations(id),
+      resolution_type TEXT NOT NULL DEFAULT 'consolidation',
+      conflict_coefficient REAL NOT NULL DEFAULT 0,
+      combined_belief REAL NOT NULL DEFAULT 0,
+      statistical_mass REAL NOT NULL DEFAULT 0,
+      llm_mass REAL NOT NULL DEFAULT 0,
+      agreement_weight REAL NOT NULL DEFAULT 1,
+      evidence_ids TEXT NOT NULL DEFAULT '[]',
+      reason TEXT NOT NULL DEFAULT '',
+      debate TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_resolutions_project ON resolution_records(project_path);
+    CREATE INDEX IF NOT EXISTS idx_resolutions_winner ON resolution_records(winner_id);
+    CREATE INDEX IF NOT EXISTS idx_resolutions_loser ON resolution_records(loser_id);
   `);
 
   // Hooks table for auto-capture triggers
@@ -196,6 +222,8 @@ function ensureSchema(db) {
   `);
 
   // Multi-agent support: agent_id column on observations + agent_sessions table
+  try { db.exec(`ALTER TABLE memory_relations ADD COLUMN reason TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE resolution_records ADD COLUMN debate TEXT`); } catch {}
   try { db.exec(`ALTER TABLE observations ADD COLUMN agent_id TEXT`); } catch {}
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_agent ON observations(agent_id)`);

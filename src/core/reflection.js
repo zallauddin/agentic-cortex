@@ -207,18 +207,39 @@ async function consolidateMemories(db, opts = {}) {
 
   let merged = 0;
   let archived = 0;
+  let resolutions = 0;
+
+  // Evidence-theoretic resolution (v8): corroboration counts for all obs in
+  // one pass; the winner is no longer just "highest confidence" but the one
+  // with the highest Dempster-Shafer combined belief across statistical and
+  // (when available) LLM evidence channels.
+  const resolution = require('./resolution');
+  const corr = resolution.computeCorroboration(db, project);
 
   for (const cluster of clusters) {
-    const canonical = pickCanonical(cluster);
+    // Sort cluster members by combined belief mass (highest first) so the
+    // strongest claim becomes the canonical.
+    const ranked = [...cluster].sort((x, y) => {
+      const mx = resolution.statisticalMass(x, corr.get(x.id) || 0);
+      const my = resolution.statisticalMass(y, corr.get(y.id) || 0);
+      return my - mx;
+    });
+    const canonical = ranked[0];
     const others = cluster.filter(o => o.id !== canonical.id);
 
     const summary = await generateConsolidatedSummary(cluster);
 
     if (!dryRun) {
-      // Update canonical with consolidated content
+      // Update canonical with consolidated content — and embed the record of
+      // what it superseded and why, so the "why it lost" rides along in
+      // content rather than living only in an unqueried table.
+      const mergedContent =
+        (summary.content || '') +
+        '\n\n## Superseded\n' +
+        others.map(o => '- ' + (o.title || '(untitled)') + ' — because: resolved via evidence adjudication').join('\n');
       db.prepare(
         'UPDATE observations SET title = ?, content = ?, confidence = ? WHERE id = ?'
-      ).run(summary.title, summary.content, Math.min(100, canonical.confidence + 10), canonical.id);
+      ).run(summary.title, mergedContent, Math.min(100, canonical.confidence + 10), canonical.id);
 
       // Re-embed the updated canonical observation
       const updatedObs = db.prepare('SELECT * FROM observations WHERE id = ?').get(canonical.id);
@@ -230,19 +251,33 @@ async function consolidateMemories(db, opts = {}) {
         } catch {}
       }
 
-      // Archive others and link via supersedes
+      // Resolve each other-vs-canonical pair through the evidence engine:
+      // archives the loser, records the deciding evidence + conflict
+      // coefficient, and attaches the reason to the supersedes edge.
       for (const other of others) {
-        db.prepare('UPDATE observations SET is_active = 0 WHERE id = ?').run(other.id);
-        db.prepare(
-          'INSERT INTO memory_relations (source_id, target_id, relation_type, confidence) VALUES (?, ?, ?, ?)'
-        ).run(canonical.id, other.id, 'supersedes', 90);
+        try {
+          const res = await resolution.resolveConflict(db, {
+            project,
+            a: canonical,
+            b: other,
+            corroboration: corr,
+            resolutionType: 'consolidation',
+          });
+          if (res.status === 'resolved') resolutions++;
+        } catch {
+          // Fallback: silent supersede as before (never break consolidation).
+          db.prepare('UPDATE observations SET is_active = 0 WHERE id = ?').run(other.id);
+          db.prepare(
+            'INSERT INTO memory_relations (source_id, target_id, relation_type, confidence) VALUES (?, ?, ?, ?)'
+          ).run(canonical.id, other.id, 'supersedes', 90);
+        }
         archived++;
       }
       merged++;
     }
   }
 
-  return { clusters: clusters.length, merged, archived, dryRun };
+  return { clusters: clusters.length, merged, archived, resolutions, dryRun };
 }
 
 // ─── 2. Promote Patterns ────────────────────────────────────────────

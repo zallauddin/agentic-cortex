@@ -46,4 +46,5 @@ module.exports = {
   swarm: require('./swarm'),
   codeIndex: require('./code-index'),
   compactor: require('./compactor'),
+  resolution: require('./resolution'),
 };

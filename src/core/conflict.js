@@ -93,7 +93,32 @@ async function checkConflicts(db, opts) {
     })
   );
 
-  return { conflicts: top, totalFound: conflicts.length, project };
+  // v8: Evidence-theoretic auto-resolution — instead of just flagging the
+  // conflict, adjudicate it with Dempster-Shafer fusion and record the
+  // winner, loser, conflict coefficient k, and the deciding evidence.
+  const resolutions = [];
+  if (opts.autoResolve) {
+    try {
+      const resolution = require('./resolution');
+      const corr = resolution.computeCorroboration(db, project);
+      for (const c of top) {
+        if (c.llm_contradiction === false) continue; // LLM says not a real contradiction
+        const fullA = db.prepare('SELECT * FROM observations WHERE id = ?').get(c.a.id);
+        const fullB = db.prepare('SELECT * FROM observations WHERE id = ?').get(c.b.id);
+        if (!fullA || !fullB) continue;
+        const res = await resolution.resolveConflict(db, {
+          project,
+          a: fullA,
+          b: fullB,
+          corroboration: corr,
+          resolutionType: 'adjudicated',
+        });
+        resolutions.push(res);
+      }
+    } catch { /* auto-resolve unavailable — fall back to flagged-only */ }
+  }
+
+  return { conflicts: top, totalFound: conflicts.length, project, resolutions };
 }
 
 module.exports = { checkConflicts };
