@@ -44,4 +44,6 @@ module.exports = {
   warRoom: require('./war-room'),
   deterministicReasoner: require('./deterministic-reasoner'),
   swarm: require('./swarm'),
+  codeIndex: require('./code-index'),
+  compactor: require('./compactor'),
 };

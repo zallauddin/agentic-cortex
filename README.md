@@ -9,6 +9,13 @@ Persistent, self-improving memory **and orchestration** for AI coding agents (Co
 - **Machine-wide global vault** — battle-tested learnings auto-promoted across projects. If you learned it once, you never make the mistake again on this machine.
 - **Auto-promotion with relative thresholds** — top 20% confidence + 2× median utility auto-promote to global vault during reflection. Self-tunes as your project grows.
 - **XML codebase graph** — deterministic static analysis, SHA-256 cached, zero LLM cost. Injected as structured XML, not markdown.
+- **Symbol-level code index** — every function/method/class with its **real body** indexed in SQLite. Bootstrap injects *task-scoped* symbols (relevant files + transitive import closure) with actual code, not just a static map — so agents know the code, not just its shape.
+- **Semantic code search** — symbols are embedded (BGE) and hybrid-searched by meaning (`code-index search "token budget calc" --semantic` finds the budget-forcing code).
+- **Change-aware ingestion** — git hooks re-parse only the changed files (partial graph regen) and record a "code change" memory after every commit/merge/pull. The index keeps up as the codebase grows.
+- **Distilled symbol summaries** — one-line LLM summaries (docstring fallback) cached per symbol, so more symbols fit the same token budget.
+- **Usage-weighted injection** — every symbol an agent retrieves is tracked (access_count/last_accessed_at) and fed back into task-scoped selection: frequently-needed code wins ties and becomes the fallback when a task matches nothing.
+- **Memory-safe by default** — the ~400MB embedding model is NEVER auto-loaded. Search/bootstrap/sync stay keyword-only unless you opt in with `AGENTIC_CORTEX_EMBEDDINGS=1` or an explicit embedding command (`code-index embed`, `search --semantic`). No more OOM halts on weak machines.
+- **Session context compactor** — map-reduce compression of observations or transcripts into a "state so far" summary (~95% smaller) that replaces raw conversation history — attacks the biggest token cost: per-turn history re-sending.
 - **Agent-optimized knowledge.md** — XML-structured, 4× token reduction vs markdown. Built for LLM consumption, not human skimming.
 - **93 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
 - **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error.
@@ -133,6 +140,49 @@ agentic-cortex machine-search "Windows path normalization"
 
 # Manually promote
 agentic-cortex promote-global 42
+```
+
+### Code Index & Context Compaction (v7)
+
+```bash
+# Build the symbol-level index (functions/methods/classes + real bodies)
+agentic-cortex code-index ingest [--embed] [--summarize]
+
+# Re-parse only git-changed files (runs automatically via post-commit/merge hooks)
+agentic-cortex code-index ingest --changed-only
+
+# Find code by name OR meaning
+agentic-cortex code-index search "hybrid search"
+agentic-cortex code-index search "token budget calculation" --semantic --body
+
+# Distilled one-line summaries + semantic vectors
+agentic-cortex code-index summarize
+agentic-cortex code-index embed
+
+# Compact session context into a "state so far" summary
+agentic-cortex compact [--session ID] [--save-observation]
+```
+
+Bootstrap automatically includes a `<code_symbols>` block with real bodies for the
+files relevant to the current task. MCP tools: `memory_code_symbols`,
+`memory_code_context`, `memory_ingest_code`, `memory_code_stats`,
+`memory_compact_context`.
+
+**Usage feedback loop** — every retrieval bumps a symbol's `access_count`, and
+task-scoped injection prefers frequently-needed code (`code-index top` shows
+the hot list). This is a local behavioral signal and is not synced between
+machines.
+
+**Memory safety (important)** — the BGE embedding model loads ~400MB into the
+process, so embeddings are **disabled by default** to prevent OOM halts on
+memory-constrained machines. All automatic paths (bootstrap, search, git-sync
+re-embed) degrade to fast keyword search. To enable semantic features:
+
+```bash
+export AGENTIC_CORTEX_EMBEDDINGS=1   # global opt-in
+# or per-command (explicit):
+agentic-cortex code-index embed
+agentic-cortex code-index search "token budget calc" --semantic
 ```
 
 ### Auto-Detect Memory Types

@@ -59,6 +59,44 @@ function _getGlobalDir() {
   return path.join(_getRepoDir(), '.cortex', 'global');
 }
 
+/**
+ * Re-embed rows in the background with a hard cap and bounded concurrency, so
+ * a sync never spikes memory (the ~400MB embedding model is only loaded when
+ * explicitly enabled; every failure is silently swallowed).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} sql - Parameterized SELECT with a trailing LIMIT placeholder (?) appended
+ * @param {Array} params - Bind params BEFORE the limit
+ * @param {number} limit - Max rows to embed
+ * @param {Function} toText - (row) => embedding text
+ */
+function _reembedRows(db, sql, params, limit, toText) {
+  try {
+    const embedding = require('../core/embedding');
+    if (!embedding.embeddingsEnabled()) return; // no model load unless opted in
+    const rows = db.prepare(sql).all(...params, limit);
+    if (rows.length === 0) return;
+
+    const update = (table, id, vec) => {
+      db.prepare('UPDATE ' + table + ' SET embedding = ? WHERE id = ?').run(JSON.stringify(vec), id);
+    };
+    const table = sql.includes('FROM observations') ? 'observations' : 'code_symbols';
+
+    // Bounded concurrency (2) — sequential-ish, keeps peak memory flat.
+    let i = 0;
+    const worker = async () => {
+      while (i < rows.length) {
+        const row = rows[i++];
+        try {
+          const vec = await embedding.computeEmbedding(toText(row));
+          update(table, row.id, vec);
+        } catch { /* model disabled or unavailable — skip row */ }
+      }
+    };
+    Promise.all([worker(), worker()]).catch(() => {});
+  } catch { /* embedding unavailable — ok */ }
+}
+
 // ─── Pull: Import team knowledge into local __global__ scope ────────
 
 /**
@@ -189,28 +227,15 @@ function syncPull(db, repoUrl) {
     }
   }
 
-  // ── Re-embed imported observations ──
+  // ── Re-embed imported observations (memory-safe: capped, bounded) ──
   if (newCount > 0 || updatedCount > 0) {
-    try {
-      const embedding = require('../core/embedding');
-      const newObs = db.prepare(
-        'SELECT id, title, content FROM observations WHERE project_path = ? AND embedding IS NULL AND is_active = 1 ORDER BY created_at DESC LIMIT ?'
-      ).all('__global__', newCount + updatedCount + 10);
-
-      // Collect all embedding promises and await them
-      const embedPromises = [];
-      for (const obs of newObs) {
-        const text = [obs.title || '', obs.content].filter(Boolean).join('. ');
-        embedPromises.push(
-          embedding.computeEmbedding(text).then(v => {
-            db.prepare('UPDATE observations SET embedding = ? WHERE id = ?').run(JSON.stringify(v), obs.id);
-          }).catch(() => {})
-        );
-      }
-      // Fire-and-forget in background — don't block pull return
-      // Embeddings will be ready by the time the agent searches
-      Promise.all(embedPromises).catch(() => {});
-    } catch { /* embedding unavailable — ok */ }
+    _reembedRows(
+      db,
+      'SELECT id, title, content FROM observations WHERE project_path = ? AND embedding IS NULL AND is_active = 1 ORDER BY created_at DESC LIMIT ?',
+      ['__global__'],
+      100,
+      (row) => [row.title || '', row.content].filter(Boolean).join('. ')
+    );
   }
 
   const total = files.length;
@@ -340,4 +365,8 @@ function _shellQuote(str) {
   return "'" + str.replace(/'/g, "'\\''") + "'";
 }
 
-module.exports = { syncPull, syncPush, _getRepoUrl };
+module.exports = {
+  syncPull,
+  syncPush,
+  _getRepoUrl,
+};
