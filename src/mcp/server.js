@@ -1406,6 +1406,75 @@ const TOOLS = [
       },
     },
   },
+
+  // ── v7.0.0: Code index — symbol-level code knowledge ──
+  {
+    name: 'memory_code_symbols',
+    description: '📚 CODE SYMBOLS — Search the symbol-level code index by name or meaning (hybrid keyword + semantic). Returns functions/methods/classes with signatures, docs, and optional real bodies — so the agent knows what a symbol does without reading the whole file. Pair with memory_ingest_code to refresh the index.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What to look for (e.g., "token budget calculation" or "embedSymbols")' },
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+        limit: { type: 'integer', description: 'Max results (default 10)', default: 10 },
+        semantic: { type: 'boolean', description: 'Force semantic scoring (default true when embeddings available)', default: true },
+        includeBody: { type: 'boolean', description: 'Include the real function body (default false)', default: false },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'memory_code_context',
+    description: '🎯 TASK-SCOPED CODE — Fetch real symbol bodies for the files relevant to the current task (transitive import closure), budget-capped. This is the “knows the code inside out” layer: inject it at session start so you don\'t re-read files to discover what you already know.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task: { type: 'string', description: 'What the agent is working on (drives file relevance scoring)' },
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+        tokenBudget: { type: 'integer', description: 'Approximate token cap for the block (default 1200)', default: 1200 },
+      },
+      required: ['task'],
+    },
+  },
+  {
+    name: 'memory_ingest_code',
+    description: '♻️ INGEST CODE — (Re)build or refresh the symbol-level code index for a project from the deterministic codebase graph. Use --changedOnly after git operations to re-parse just the changed files (cheap, incremental). Optionally embed symbols for semantic search and/or generate one-line distilled summaries.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+        changedOnly: { type: 'boolean', description: 'Only re-parse files changed in git (default false)', default: false },
+        embed: { type: 'boolean', description: 'Also compute semantic embeddings for new symbols', default: false },
+        summarize: { type: 'boolean', description: 'Also generate one-line distilled summaries for new symbols', default: false },
+      },
+    },
+  },
+  {
+    name: 'memory_code_stats',
+    description: '📊 CODE INDEX STATS — Symbol index size, kind breakdown, embed/summary coverage for a project.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path (defaults to AGENTIC_CORTEX_PROJECT or cwd)' },
+      },
+    },
+  },
+
+  // ── v7.0.0: Session context compactor ──
+  {
+    name: 'memory_compact_context',
+    description: '🗜️ COMPACT CONTEXT — Compress a session\'s observations (or a raw transcript) into a “state so far” summary. Swap the summary in for raw conversation history to cut per-turn token cost. Optionally save it back as an observation for the next bootstrap.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Session to compact (defaults to AGENTIC_CORTEX_SESSION or recent project activity)' },
+        project: { type: 'string', description: 'Project path' },
+        transcript: { type: 'array', items: { type: 'object' }, description: 'Raw [{role, content}] transcript entries (alternative to sessionId)' },
+        saveObservation: { type: 'boolean', description: 'Persist the summary as a context observation tagged for bootstrap', default: false },
+        saveSummary: { type: 'boolean', description: 'Also update the session summary', default: false },
+      },
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
@@ -2024,6 +2093,44 @@ async function callTool(name, args) {
 
     case 'memory_war_room_selfcheck':
       return api.warRoomSelfCheck({ maxScenarios: args.maxScenarios || 4, project: args.project });
+
+    // ── v7.0.0: Code index ──
+    case 'memory_code_symbols':
+      return api.codeSearch(args.query, {
+        project: args.project,
+        limit: args.limit || 10,
+        semantic: args.semantic !== false,
+        includeBody: !!args.includeBody,
+      });
+
+    case 'memory_code_context':
+      return {
+        xml: api.codeContext(args.project, args.task, args.tokenBudget || 1200),
+      };
+
+    case 'memory_ingest_code': {
+      const result = args.changedOnly
+        ? await api.codeIngestDiff(args.project, {})
+        : api.codeIngest(args.project, { regenerate: true });
+      if (args.embed) result.embed = await api.codeEmbed(args.project, {});
+      if (args.summarize) result.summarize = await api.codeSummarize(args.project, {});
+      return result;
+    }
+
+    case 'memory_code_stats':
+      return api.codeStats(args.project);
+
+    // ── v7.0.0: Session context compactor ──
+    case 'memory_compact_context':
+      if (Array.isArray(args.transcript)) {
+        return api.compactTranscript(args.transcript, {});
+      }
+      return api.compactContext({
+        sessionId: args.sessionId || process.env.AGENTIC_CORTEX_SESSION || undefined,
+        project: args.project,
+        saveObservation: !!args.saveObservation,
+        saveSummary: !!args.saveSummary,
+      });
 
     default:
       throw new Error('Unknown tool: ' + name);

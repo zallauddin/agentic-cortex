@@ -191,6 +191,294 @@ function splitParams(str) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// 1.5 SYMBOL BODY EXTRACTION (v7) — captures actual function/method/class
+// bodies so agents can retrieve real code, not just signatures.
+// ═══════════════════════════════════════════════════════════════════
+
+const MAX_BODY_CHARS = 2000;
+
+/**
+ * Find the index of the first '{' that begins a code block at or after `from`,
+ * skipping over string literals and comments. Returns -1 if a ';' is hit first
+ * (declaration without a body, e.g. an interface field or abstract method).
+ */
+function findBlockOpen(content, from) {
+  let i = from;
+  const n = content.length;
+  while (i < n) {
+    const ch = content[i];
+    if (ch === '/') {
+      const next = content[i + 1];
+      if (next === '/') { i += 2; while (i < n && content[i] !== '\n') i++; continue; }
+      if (next === '*') { i += 2; while (i < n && !(content[i] === '*' && content[i + 1] === '/')) i++; i += 2; continue; }
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const quote = ch;
+      i++;
+      while (i < n) {
+        if (content[i] === '\\') { i += 2; continue; }
+        if (content[i] === quote) break;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (ch === '{') return i;
+    if (ch === ';' || ch === ')') {
+      // ')' after params is expected; ';' means no body follows
+      if (ch === ';') return -1;
+    }
+    i++;
+  }
+  return -1;
+}
+
+/**
+ * Given the index of an opening '{', return the index of its matching '}',
+ * skipping strings and comments.
+ */
+function matchBrace(content, openIndex) {
+  let depth = 0;
+  let i = openIndex;
+  const n = content.length;
+  while (i < n) {
+    const ch = content[i];
+    if (ch === '/') {
+      const next = content[i + 1];
+      if (next === '/') { i += 2; while (i < n && content[i] !== '\n') i++; continue; }
+      if (next === '*') { i += 2; while (i < n && !(content[i] === '*' && content[i + 1] === '/')) i++; i += 2; continue; }
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const quote = ch;
+      i++;
+      while (i < n) {
+        if (content[i] === '\\') { i += 2; continue; }
+        if (content[i] === quote) break;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+    i++;
+  }
+  return -1;
+}
+
+/** Compute the 1-based line number of a character index. */
+function lineOf(content, index) {
+  if (index < 0 || index >= content.length) return 0;
+  let line = 1;
+  for (let i = 0; i < index; i++) {
+    if (content[i] === '\n') line++;
+  }
+  return line;
+}
+
+/** @type {Set<string>} Keywords that look like method calls but are control flow */
+const CONTROL_KEYWORDS = new Set([
+  'if', 'for', 'while', 'switch', 'catch', 'with', 'function', 'return',
+  'typeof', 'new', 'delete', 'void', 'in', 'of', 'async', 'await', 'instanceof',
+  'throw', 'else', 'do', 'case', 'extends', 'yield', 'try', 'class', 'import', 'export',
+]);
+
+/**
+ * Scan backwards from `beforeIndex` for a JSDoc comment (`/** ... *\/`)
+ * that immediately precedes a declaration. Returns { text, end } where
+ * `end` is the index just past the closing '*\/' (start of the signature),
+ * or null if no doc comment is found. Scans at most 1500 chars / ~40 lines
+ * so unrelated earlier comments are never captured.
+ */
+function grabDoc(content, beforeIndex) {
+  let i = beforeIndex;
+  // Skip trailing whitespace; i ends right after the last non-ws char.
+  while (i > 0 && /\s/.test(content[i - 1])) i--;
+  if (i < 2) return null;
+  // The last non-ws char before the declaration must be the '/' of a '*\/'.
+  if (content[i - 1] !== '/' || content[i - 2] !== '*') return null;
+  const start = Math.max(0, i - 1500);
+  let open = -1;
+  for (let j = i - 3; j >= start; j--) {
+    if (content[j] === '/' && content[j + 1] === '*') { open = j; break; }
+  }
+  if (open < 0) return null;
+  return { text: content.slice(open, i), end: i };
+}
+
+/** Clean a doc comment into plain text. */
+function cleanDoc(doc) {
+  return (doc || '')
+    .replace(/^\/\*\*?/, '')
+    .replace(/\*\/$/, '')
+    .replace(/^\s*\* ?/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
+/**
+ * Extract symbol bodies from JS/TS/JSX source. Returns
+ * [{ name, kind, signature, doc, body, startLine }].
+ */
+function extractJsSymbols(content) {
+  const symbols = [];
+  const seen = new Set();
+
+  const push = (name, kind, sigStart, sigEnd) => {
+    if (!name || name.length > 60 || seen.has(kind + ':' + name)) return;
+    const open = findBlockOpen(content, sigEnd);
+    if (open < 0) return;
+    const close = matchBrace(content, open);
+    if (close < 0) return;
+    seen.add(kind + ':' + name);
+    let body = content.slice(open, close + 1);
+    if (body.length > MAX_BODY_CHARS) body = body.slice(0, MAX_BODY_CHARS) + '\n  // …(truncated)';
+    const doc = grabDoc(content, sigStart);
+    symbols.push({
+      name,
+      kind,
+      signature: content.slice(doc ? doc.end : sigStart, open).trim().replace(/\s+/g, ' ').slice(0, 300),
+      doc: cleanDoc(doc ? doc.text : ''),
+      body,
+      startLine: lineOf(content, sigStart),
+    });
+  };
+
+  // Named function declarations
+  const fnRe = /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/g;
+  let m;
+  while ((m = fnRe.exec(content)) !== null) {
+    push(m[1], 'function', m.index, fnRe.lastIndex);
+  }
+
+  // Arrow function declarations: const name = (params) => { ... }
+  const arrowRe = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\s*(?:function\s*)?\(/g;
+  while ((m = arrowRe.exec(content)) !== null) {
+    if (m[1].length > 40) continue;
+    push(m[1], 'function', m.index, arrowRe.lastIndex);
+  }
+
+  // Class declarations + their methods
+  const classRe = /(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+[\w$.]+)?\s*\{/g;
+  let cm;
+  while ((cm = classRe.exec(content)) !== null) {
+    const openIdx = content.indexOf('{', classRe.lastIndex - 1);
+    if (openIdx < 0) continue;
+    const closeIdx = matchBrace(content, openIdx);
+    if (closeIdx < 0) continue;
+
+    // Whole-class symbol (body capped)
+    const clsName = cm[1];
+    if (!seen.has('class:' + clsName)) {
+      seen.add('class:' + clsName);
+      let clsBody = content.slice(openIdx, closeIdx + 1);
+      if (clsBody.length > MAX_BODY_CHARS) clsBody = clsBody.slice(0, MAX_BODY_CHARS) + '\n  // …(truncated)';
+      const doc = grabDoc(content, cm.index);
+      symbols.push({
+        name: clsName,
+        kind: 'class',
+        signature: content.slice(doc ? doc.end : cm.index, openIdx + 1).trim().replace(/\s+/g, ' ').slice(0, 300),
+        doc: cleanDoc(doc ? doc.text : ''),
+        body: clsBody,
+        startLine: lineOf(content, cm.index),
+      });
+    }
+
+    // Methods inside the class body
+    const methodRe = /(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*(?::\s*[^{]+)?\{/g;
+    methodRe.lastIndex = openIdx + 1;
+    let mm;
+    while ((mm = methodRe.exec(content)) !== null) {
+      if (mm.index >= closeIdx) break;
+      const mName = mm[1];
+      if (mName === 'constructor' || mName.startsWith('_') || CONTROL_KEYWORDS.has(mName)) continue;
+      const mOpen = content.indexOf('{', methodRe.lastIndex - 1);
+      if (mOpen < 0 || mOpen > closeIdx) continue;
+      const mClose = matchBrace(content, mOpen);
+      if (mClose < 0 || mClose > closeIdx) continue;
+      const seenKey = 'method:' + clsName + '.' + mName;
+      if (seen.has(seenKey)) continue;
+      seen.add(seenKey);
+      let mBody = content.slice(mOpen, mClose + 1);
+      if (mBody.length > MAX_BODY_CHARS) mBody = mBody.slice(0, MAX_BODY_CHARS) + '\n  // …(truncated)';
+      const doc = grabDoc(content, mm.index);
+      symbols.push({
+        name: clsName + '.' + mName,
+        kind: 'method',
+        signature: mName + '(' + mm[2] + ')',
+        doc: cleanDoc(doc ? doc.text : ''),
+        body: mBody,
+        startLine: lineOf(content, mm.index),
+      });
+    }
+  }
+
+  return symbols.sort((a, b) => a.startLine - b.startLine);
+}
+
+/**
+ * Extract symbol bodies from Python source (indentation-based).
+ */
+function extractPySymbols(content) {
+  const symbols = [];
+  const lines = content.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const m = line.match(/^(?:async\s+)?def\s+(\w+)\s*\(/);
+    if (m) {
+      const indent = (line.match(/^\s*/) || [''])[0].length;
+      const name = m[1];
+      const body = [];
+      let j = i + 1;
+      while (j < lines.length) {
+        const l = lines[j];
+        if (l.trim() === '') { body.push(l); j++; continue; }
+        const li = (l.match(/^\s*/) || [''])[0].length;
+        if (li > indent) { body.push(l); j++; } else break;
+      }
+      let bodyText = body.join('\n');
+      if (bodyText.length > MAX_BODY_CHARS) bodyText = bodyText.slice(0, MAX_BODY_CHARS) + '\n  # …(truncated)';
+      // Docstring from first body lines
+      let doc = '';
+      const firstNonEmpty = body.findIndex(l => l.trim() !== '');
+      if (firstNonEmpty >= 0) {
+        const d = body[firstNonEmpty].trim();
+        if (d.startsWith('"""') || d.startsWith("'''")) {
+          doc = d.replace(/^['"]{3}/, '').trim();
+        }
+      }
+      symbols.push({
+        name,
+        kind: 'function',
+        signature: line.trim().slice(0, 300),
+        doc: doc.slice(0, 240),
+        body: bodyText,
+        startLine: i + 1,
+      });
+      i = j;
+    } else {
+      i++;
+    }
+  }
+  return symbols;
+}
+
+/**
+ * Extract symbol bodies for a source file, dispatching by extension.
+ */
+function extractSymbolBodies(content, filePath) {
+  const ext = extname(filePath);
+  if (ext === '.py') return extractPySymbols(content);
+  if (['.ts', '.tsx', '.js', '.jsx', '.mjs', '.mts'].includes(ext)) return extractJsSymbols(content);
+  return [];
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // 2. DEEP PRISMA SCHEMA EXTRACTION
 // ═══════════════════════════════════════════════════════════════════
 
@@ -922,8 +1210,28 @@ function formatGraphAsMarkdown(output) {
 // MAIN
 // ═══════════════════════════════════════════════════════════════════
 
+/** Parse a single source file into a graph node (used by full + partial builds). */
+function parseSourceFile(filePath) {
+  const content = readFileSync(filePath, 'utf-8');
+  const relPath = normalizePath(relative(PROJECT_ROOT, filePath));
+  return {
+    path: relPath,
+    role: detectRole(filePath),
+    exports: parseExports(content, filePath),
+    imports: parseImports(content, filePath).map(i => i.replace(/\\/g, '/')),
+    functions: parseFunctionSignatures(content, filePath),
+    symbols: extractSymbolBodies(content, filePath),
+    size: content.length,
+  };
+}
+
 function main() {
   const skipCache = process.argv.includes('--skip-cache');
+  let onlyFiles = null;
+  const ofIdx = process.argv.indexOf('--only-files');
+  if (ofIdx >= 0 && process.argv[ofIdx + 1]) {
+    onlyFiles = new Set(process.argv[ofIdx + 1].split(',').filter(Boolean).map(f => normalizePath(f)));
+  }
   const outputFormat = process.argv.includes('--output') 
     ? process.argv[process.argv.indexOf('--output') + 1] 
     : 'json';
@@ -934,36 +1242,70 @@ function main() {
     files.push(f);
   }
 
-  // Cache check
-  if (!skipCache && existsSync(GRAPH_CACHE)) {
-    try {
-      const cached = JSON.parse(readFileSync(GRAPH_CACHE, 'utf-8'));
-      if (cached.fingerprint === projectFingerprint(files)) {
-        if (outputFormat === 'json') {
-          console.log(JSON.stringify(cached));
-        } else {
-          console.log(formatGraphAsMarkdown(cached));
-        }
-        return;
-      }
-    } catch { /* cache corrupt, regenerate */ }
+  let cached = null;
+  if (existsSync(GRAPH_CACHE)) {
+    try { cached = JSON.parse(readFileSync(GRAPH_CACHE, 'utf-8')); } catch { cached = null; }
   }
 
-  // Build graph
+  // ── Partial update mode: re-parse only the given files, keep the rest ──
+  if (onlyFiles && cached && !skipCache) {
+    const graph = cached.graph || {};
+    let changed = 0;
+    for (const f of files) {
+      const rel = normalizePath(relative(PROJECT_ROOT, f));
+      if (onlyFiles.has(rel)) {
+        try { graph[rel] = parseSourceFile(f); changed++; } catch { /* unreadable, keep old */ }
+      }
+    }
+    // Recompute derived views (cheap, keeps layerMap/services/routes fresh)
+    let layerMap = { layerCounts: { UI: 0, API: 0, Service: 0, Data: 0 }, crossLayerEdges: {}, requestPath: '', hubFiles: [] };
+    try { layerMap = buildLayerMap(graph); } catch {}
+    let services = {};
+    try { services = detectServices(graph); } catch {}
+    let apiRoutes = [];
+    try { apiRoutes = detectApiRoutes(files); } catch {}
+    let prismaSchema = { models: [], enums: [] };
+    for (const f of files) {
+      if (f.endsWith('.prisma')) {
+        try { prismaSchema = parsePrismaSchema(readFileSync(f, 'utf-8')); } catch {}
+      }
+    }
+    const output = {
+      generated: new Date().toISOString(),
+      fingerprint: projectFingerprint(files),
+      fileCount: Object.keys(graph).length,
+      apiRoutes,
+      services,
+      prismaSchema,
+      layerMap,
+      paradigms: cached.paradigms || [],
+      techStack: cached.techStack || { runtime: [], frameworks: [], databases: [], tools: [] },
+      graph,
+    };
+    try { writeFileSync(GRAPH_CACHE, JSON.stringify(output, null, 2)); } catch {}
+    if (outputFormat === 'json') console.log(JSON.stringify(output));
+    else if (outputFormat === 'xml') console.log(formatGraphAsXML(output));
+    else console.log(formatGraphAsMarkdown(output));
+    return;
+  }
+
+  // ── Full cache check ──
+  if (!skipCache && cached) {
+    if (cached.fingerprint === projectFingerprint(files)) {
+      if (outputFormat === 'json') {
+        console.log(JSON.stringify(cached));
+      } else {
+        console.log(formatGraphAsMarkdown(cached));
+      }
+      return;
+    }
+  }
+
+  // ── Full build ──
   const graph = {};
   for (const filePath of files) {
     try {
-      const content = readFileSync(filePath, 'utf-8');
-      const relPath = normalizePath(relative(PROJECT_ROOT, filePath));
-
-      graph[relPath] = {
-        path: relPath,
-        role: detectRole(filePath),
-        exports: parseExports(content, filePath),
-        imports: parseImports(content, filePath).map(i => i.replace(/\\/g, '/')),
-        functions: parseFunctionSignatures(content, filePath),
-        size: content.length,
-      };
+      graph[normalizePath(relative(PROJECT_ROOT, filePath))] = parseSourceFile(filePath);
     } catch { /* binary or unreadable, skip */ }
   }
 

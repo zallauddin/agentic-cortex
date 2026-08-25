@@ -206,33 +206,36 @@ describe('module exports', () => {
 
 // ─── Pipeline Functions (mocked) ─────────────────────────────────────
 
-describe('pipeline functions (no transformers installed)', () => {
-  it('getEmbedPipeline should throw when @xenova/transformers is not installed', async () => {
+describe('pipeline functions (embeddings disabled by default)', () => {
+  // Memory safety: embeddings are OFF unless AGENTIC_CORTEX_EMBEDDINGS=1, so
+  // none of these may load a model. They return promises that REJECT with the
+  // "disabled" error — swallow the rejection (deliberately not awaited, the
+  // same as the original intent of never triggering a model download).
+  it('getEmbedPipeline returns a rejected Promise when disabled', async () => {
     const { getEmbedPipeline } = require('../src/core/embedding');
-    // The module caches the pipeline, so if it was previously loaded it won't throw.
-    // In a fresh test environment without the package, it should throw.
-    // Since better-sqlite3 is installed, @xenova/transformers might be too.
-    // We just verify it's a function that returns a promise.
     const result = getEmbedPipeline();
     assert.ok(result instanceof Promise, 'getEmbedPipeline should return a Promise');
-    // Don't await — it would try to download the model
+    await assert.rejects(result, /disabled/);
   });
 
-  it('getRerankPipeline should return a Promise', () => {
+  it('getRerankPipeline returns a rejected Promise when disabled', async () => {
     const { getRerankPipeline } = require('../src/core/embedding');
     const result = getRerankPipeline();
     assert.ok(result instanceof Promise, 'getRerankPipeline should return a Promise');
+    await assert.rejects(result, /disabled/);
   });
 
-  it('computeEmbedding should return a Promise', () => {
+  it('computeEmbedding returns a rejected Promise when disabled', async () => {
     const { computeEmbedding } = require('../src/core/embedding');
     const result = computeEmbedding('test text');
     assert.ok(result instanceof Promise, 'computeEmbedding should return a Promise');
+    await assert.rejects(result, /disabled/);
   });
 
-  it('rerank should return a Promise', () => {
+  it('rerank returns a rejected Promise when disabled', async () => {
     const { rerank } = require('../src/core/embedding');
     const result = rerank('test query', [{ id: 1, content: 'test' }]);
     assert.ok(result instanceof Promise, 'rerank should return a Promise');
+    await assert.rejects(result, /disabled/);
   });
 });
