@@ -4239,6 +4239,11 @@ module.exports = {
   compactContext: (opts) => core.compactor.compactObservations(_getDB(), opts),
   compactTranscript: (entries, opts) => core.compactor.compactTranscript(entries, opts),
   compactionHistory: (opts) => core.compactor.getCompactionHistory(_getDB(), opts),
+  // ── v8.0.0: Agent capability manifest + framework auto-discovery ──
+  getManifest: (opts) => core.manifest.getManifest(opts || {}),
+  writeManifestFile: (opts) => core.manifest.writeManifestFile(opts || {}),
+  discoverFrameworks: (opts) => core.manifest.discoverFrameworks(opts || {}),
+  composeWithFramework: (frameworkOrId, opts) => core.manifest.composeWithFramework(frameworkOrId, opts || {}),
   // ── v8.0.0: Evidence-theoretic conflict resolution (Dempster-Shafer) ──
   resolveConflict: (opts) => core.resolution.resolveConflict(_getDB(), opts),
   resolvePair: async (opts) => {
