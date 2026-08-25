@@ -47,4 +47,5 @@ module.exports = {
   codeIndex: require('./code-index'),
   compactor: require('./compactor'),
   resolution: require('./resolution'),
+  manifest: require('./manifest'),
 };

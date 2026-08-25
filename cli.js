@@ -2118,6 +2118,69 @@ commands.benchmark = {
 
 // ─── Inject: Inject memories + graph into knowledge.md ──────────
 
+commands.manifest = {
+  desc: 'Output the machine-readable agent capability manifest (schema v1)',
+  args: ['[--json]', '[--write]', '[--project PATH]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--json') opts.json = true;
+      if (args[i] === '--write') opts.write = true;
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const { getManifest, writeManifestFile } = require('./src/api');
+    const manifest = getManifest({ project: opts.project });
+    if (opts.write) {
+      const written = writeManifestFile({ project: opts.project });
+      if (written.ok) console.log('Manifest written: ' + written.file);
+      else console.error('Failed to write manifest: ' + written.error);
+    }
+    console.log(opts.json ? JSON.stringify(manifest, null, 2) : JSON.stringify(manifest, null, 2));
+  }
+};
+
+commands.discover = {
+  desc: 'Scan for agent frameworks agentic-cortex can compose with',
+  args: ['[--json]', '[--compose ID]', '[--project PATH]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--json') opts.json = true;
+      if (args[i] === '--compose') opts.compose = args[++i];
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const { discoverFrameworks, composeWithFramework } = require('./src/api');
+    const frameworks = discoverFrameworks({ project: opts.project });
+    if (opts.compose) {
+      const plan = composeWithFramework(opts.compose, { project: opts.project });
+      console.log(opts.json ? JSON.stringify(plan, null, 2) : JSON.stringify(plan, null, 2));
+      return;
+    }
+    if (opts.json) {
+      console.log(JSON.stringify({ frameworks }, null, 2));
+      return;
+    }
+    if (frameworks.length === 0) {
+      console.log('No agent frameworks detected in this project.');
+      console.log('Run "agentic-cortex discover --compose claude-code" to see wiring for a specific framework.');
+      return;
+    }
+    console.log('Discovered ' + frameworks.length + ' framework(s):');
+    for (const fw of frameworks) {
+      console.log('  ' + fw.name + ' (' + fw.id + ')' + (fw.scope === 'project' ? ' — project scope' : ' — user scope'));
+      if (fw.evidence.projectConfig.length) console.log('    config: ' + fw.evidence.projectConfig.join(', '));
+      if (fw.evidence.registeredMcp.length) console.log('    MCP servers: ' + fw.evidence.registeredMcp.map(m => m.name).join(', '));
+    }
+    console.log('\nTo see wiring: agentic-cortex discover --compose <id>');
+  }
+};
+
 commands.inject = {
   desc: 'Inject session memories + codebase graph into knowledge.md',
   args: ['[--project PATH]'],
