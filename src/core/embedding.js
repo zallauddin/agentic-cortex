@@ -13,6 +13,38 @@
 
 const { EMBED_MODEL, RERANK_MODEL } = require('./constants');
 
+// ─── Embedding enablement gate (memory safety) ─────────────────────
+//
+// The BGE embedding model loads ~400MB into the process the first time it is
+// used. On memory-constrained machines that causes OOM halts when the model is
+// auto-loaded by opportunistic paths (bootstrap, search, sync re-embed).
+//
+// Workaround: embeddings are DISABLED by default. Every call site degrades to
+// deterministic keyword search. Set AGENTIC_CORTEX_EMBEDDINGS=1 (or call
+// forceEmbeddingsEnabled(true)) to opt in — typically only for the explicit
+// `agentic-cortex code-index embed` / `search --semantic` commands.
+
+/** @type {boolean|null} null = follow env; true/false = forced override */
+let _forcedEmbeddings = null;
+
+/**
+ * Whether the embedding model may be loaded.
+ * @returns {boolean}
+ */
+function embeddingsEnabled() {
+  if (_forcedEmbeddings !== null) return _forcedEmbeddings;
+  return process.env.AGENTIC_CORTEX_EMBEDDINGS === '1';
+}
+
+/**
+ * Override the enablement gate (used by explicit commands like `embed` and
+ * `search --semantic` where the user has asked for embeddings).
+ * @param {boolean} [v=true]
+ */
+function forceEmbeddingsEnabled(v = true) {
+  _forcedEmbeddings = !!v;
+}
+
 // ─── Pipeline singletons ──────────────────────────────────────────
 
 /** @type {Function|null} Lazy singleton for the feature-extraction pipeline */
@@ -24,12 +56,19 @@ let _rerankPipeline = null;
 /**
  * Get or create the embedding pipeline (lazy singleton).
  * Downloads the model (~400MB) on first run; subsequent runs are instant.
+ * Throws unless embeddings are enabled (see embeddingsEnabled).
  *
  * @returns {Promise<Function>} The feature-extraction pipeline
- * @throws {Error} If @xenova/transformers is not installed
+ * @throws {Error} If embeddings are disabled or @xenova/transformers is missing
  */
 async function getEmbedPipeline() {
   if (_embedPipeline) return _embedPipeline;
+  if (!embeddingsEnabled()) {
+    throw new Error(
+      'Semantic embeddings disabled (memory safety). Set AGENTIC_CORTEX_EMBEDDINGS=1 to enable, ' +
+      'or use an explicit embedding command. Degrading to keyword search.'
+    );
+  }
   try {
     const { pipeline } = require('@xenova/transformers');
     _embedPipeline = await pipeline('feature-extraction', EMBED_MODEL);
@@ -52,6 +91,12 @@ async function getEmbedPipeline() {
  */
 async function getRerankPipeline() {
   if (_rerankPipeline) return _rerankPipeline;
+  if (!embeddingsEnabled()) {
+    throw new Error(
+      'Semantic reranking disabled (memory safety). Set AGENTIC_CORTEX_EMBEDDINGS=1 to enable. ' +
+      'Degrading to keyword search.'
+    );
+  }
   try {
     const { pipeline } = require('@xenova/transformers');
     _rerankPipeline = await pipeline('text-classification', RERANK_MODEL);
@@ -259,4 +304,6 @@ module.exports = {
   clearEmbeddingCache,
   getEmbeddingCacheStats,
   disposePipelines,
+  embeddingsEnabled,
+  forceEmbeddingsEnabled,
 };

@@ -507,8 +507,13 @@ async function search(query, opts) {
     ? Math.max((opts.limit || 10) * (opts.rerankTopN || 5), 50)
     : undefined;
 
-  let queryVec;
-  try { queryVec = await core.embedding.computeEmbedding(query); } catch { queryVec = null; }
+  // Memory safety: only load the embedding model when the user explicitly asked
+  // for semantic search. Plain keyword search must stay model-free.
+  let queryVec = null;
+  if (opts.semantic) {
+    try { core.embedding.forceEmbeddingsEnabled(true); } catch { /* ignore */ }
+    try { queryVec = await core.embedding.computeEmbedding(query); } catch { queryVec = null; }
+  }
 
   // Check for embedding dimension mismatch once (cached)
   if (queryVec) {
@@ -1306,11 +1311,52 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
       const graphBlock = _getGraphSummary(project, graphRemaining);
       if (graphBlock) {
         output += `  ${graphBlock}\n`;
+        tokenEstimate += Math.ceil(graphBlock.length / 4);
       }
     } catch {}
   }
 
-  output += '</agentic_cortex_context>';
+  // ── Layer 6.5: Task-scoped code symbols with real bodies (v7 code index) ──
+  // The symbol block is the lowest-priority layer, so it is rebuilt from a
+  // smaller budget at the end if the real output still overshoots the declared
+  // budget (the running char/4 estimate undercounts XML/format overhead).
+  let symbolBlock = '';
+  let symbolBudget = 0;
+  if (includeGraph) {
+    try {
+      symbolBudget = Math.max(300, budgetTokens - tokenEstimate - 200);
+      symbolBlock = core.codeIndex.getCodeContext(db, project, workingOn, symbolBudget);
+    } catch { /* code index unavailable — skip */ }
+  }
+
+  // ── Layer 8: Final budget enforcement ──
+  // Measure the real output (excluding the just-appended closing tag) and, if
+  // over budget, regenerate the symbol block with a reduced budget. Repeat a
+  // bounded number of times; the generator itself respects the budget, so this
+  // converges in practice.
+  const closingTag = '</agentic_cortex_context>';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const body = output + (symbolBlock ? `  ${symbolBlock}\n` : '');
+    const est = Math.ceil((body.length + closingTag.length) / 4);
+    if (est <= budgetTokens) break;
+    // Reduce the symbol budget by the entire overage so the next render fits.
+    const overageTokens = est - budgetTokens;
+    if (!symbolBlock || overageTokens >= symbolBudget) {
+      // Nothing meaningful left to trim — drop the symbol block entirely.
+      symbolBlock = '';
+      break;
+    }
+    symbolBudget = Math.max(50, symbolBudget - overageTokens);
+    try {
+      symbolBlock = core.codeIndex.getCodeContext(db, project, workingOn, symbolBudget);
+    } catch { symbolBlock = ''; break; }
+  }
+  if (symbolBlock) {
+    output += `  ${symbolBlock}\n`;
+    tokenEstimate += Math.ceil(symbolBlock.length / 4);
+  }
+
+  output += closingTag;
 
   // ── Layer 7: Usage instructions (appended after XML block) ──
   output += '\n\n<!--\nINSTRUCTIONS: The above is your project memory context. Use it to:\n1. Avoid repeating past mistakes (check <warnings> and <reflexion_context>)\n2. Apply previous learnings (check <actionable_insights>)\n3. For hard problems: use memory_tree_search({ problem: "..." }) to explore multiple reasoning branches\n4. Search deeper if needed: agentic-cortex search "your query" --project .\n5. Save new observations: agentic-cortex save "title" "content" --type decision\n6. Self-correct after failures: memory_reflexion({ sessionId, problem, failedPath, verificationError })\n-->\n';
@@ -4144,4 +4190,24 @@ module.exports = {
   swarmSynthesize: (goal, opts) => swarm.synthesizeGoal(_getDB(), goal, opts),
   swarmExecute: (taskId, opts) => swarm.executeTask(_getDB(), taskId, opts),
   swarmExecutePipeline: (goal, opts) => swarm.executePipeline(_getDB(), goal, opts),
+  // ── v7.0.0: Code index (symbol-level code knowledge) ──
+  codeIngest: (project, opts) => core.codeIndex.ingestProject(_getDB(), project, opts),
+  codeRegenerate: (project, opts) => core.codeIndex.regenerateGraph(project, opts),
+  codeEmbed: (project, opts) => {
+    // Explicit embedding request — the caller opted into the ~400MB model.
+    try { core.embedding.forceEmbeddingsEnabled(true); } catch { /* ignore */ }
+    return core.codeIndex.embedSymbols(_getDB(), project, opts);
+  },
+  codeRecordAccess: (project, rows) => core.codeIndex.recordSymbolAccess(_getDB(), project, rows),
+  codeTop: (project, opts) => core.codeIndex.getTopSymbols(_getDB(), project, opts),
+  codeSearch: async (query, opts) => core.codeIndex.searchSymbols(_getDB(), query, opts),
+  codeSymbols: (project, workingOn, tokenBudget, opts) => core.codeIndex.getTaskScopedSymbols(_getDB(), project, workingOn, tokenBudget, opts),
+  codeContext: (project, workingOn, tokenBudget) => core.codeIndex.getCodeContext(_getDB(), project, workingOn, tokenBudget),
+  codeSummarize: (project, opts) => core.codeIndex.summarizeSymbols(_getDB(), project, opts),
+  codeIngestDiff: (project, opts) => core.codeIndex.ingestDiff(_getDB(), project, opts),
+  codeStats: (project) => core.codeIndex.symbolStats(_getDB(), project),
+  // ── v7.0.0: Session context compactor ──
+  compactContext: (opts) => core.compactor.compactObservations(_getDB(), opts),
+  compactTranscript: (entries, opts) => core.compactor.compactTranscript(entries, opts),
+  compactionHistory: (opts) => core.compactor.getCompactionHistory(_getDB(), opts),
 };

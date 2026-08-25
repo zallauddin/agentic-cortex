@@ -614,6 +614,85 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_swarm_tasks_status ON swarm_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_swarm_tasks_role ON swarm_tasks(agent_role, status);
   `);
+
+  // Phase 28: Code symbol index — symbol-level code knowledge (functions,
+  // methods, classes with bodies). Powers task-scoped code retrieval,
+  // semantic code search, and change-aware ingestion. Populated by
+  // scripts/ingest-code.mjs / code-index commands from .infinit-graph.json.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS code_symbols (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      symbol_name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'function',
+      signature TEXT,
+      doc TEXT,
+      summary TEXT,
+      body TEXT,
+      body_hash TEXT,
+      role TEXT,
+      layer TEXT,
+      imports TEXT DEFAULT '[]',
+      exports TEXT DEFAULT '[]',
+      embedding TEXT,
+      access_count INTEGER DEFAULT 0,
+      last_accessed_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(project_path, file_path, symbol_name, kind)
+    );
+    CREATE INDEX IF NOT EXISTS idx_code_symbols_project ON code_symbols(project_path);
+    CREATE INDEX IF NOT EXISTS idx_code_symbols_file ON code_symbols(project_path, file_path);
+    CREATE INDEX IF NOT EXISTS idx_code_symbols_name ON code_symbols(symbol_name);
+    CREATE INDEX IF NOT EXISTS idx_code_symbols_role ON code_symbols(project_path, role);
+    CREATE INDEX IF NOT EXISTS idx_code_symbols_summary ON code_symbols(project_path, summary);
+    CREATE INDEX IF NOT EXISTS idx_code_symbols_updated ON code_symbols(updated_at);
+  `);
+
+  // Migration for pre-v7.1 databases without access tracking columns.
+  // Order matters: the ALTERs must run before the index references the columns.
+  try { db.exec(`ALTER TABLE code_symbols ADD COLUMN access_count INTEGER DEFAULT 0`); } catch {}
+  try { db.exec(`ALTER TABLE code_symbols ADD COLUMN last_accessed_at TEXT`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_code_symbols_access ON code_symbols(access_count, last_accessed_at)`); } catch {}
+
+  // FTS5 virtual table for symbol keyword search
+  try {
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS code_symbols_fts USING fts5(symbol_name, signature, doc, summary, content=code_symbols, content_rowid=id)`);
+  } catch {}
+  try {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS code_symbols_ai AFTER INSERT ON code_symbols BEGIN
+        INSERT INTO code_symbols_fts(rowid, symbol_name, signature, doc, summary) VALUES (new.id, new.symbol_name, new.signature, new.doc, new.summary);
+      END;
+      CREATE TRIGGER IF NOT EXISTS code_symbols_ad AFTER DELETE ON code_symbols BEGIN
+        INSERT INTO code_symbols_fts(code_symbols_fts, rowid, symbol_name, signature, doc, summary) VALUES ('delete', old.id, old.symbol_name, old.signature, old.doc, old.summary);
+      END;
+      CREATE TRIGGER IF NOT EXISTS code_symbols_au AFTER UPDATE ON code_symbols BEGIN
+        INSERT INTO code_symbols_fts(code_symbols_fts, rowid, symbol_name, signature, doc, summary) VALUES ('delete', old.id, old.symbol_name, old.signature, old.doc, old.summary);
+        INSERT INTO code_symbols_fts(rowid, symbol_name, signature, doc, summary) VALUES (new.id, new.symbol_name, new.signature, new.doc, new.summary);
+      END;
+    `);
+  } catch {}
+
+  // Session context compactions — audit trail for compressed "state so far"
+  // summaries (Feature: session context compactor).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_compactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      project_path TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'session',
+      input_count INTEGER DEFAULT 0,
+      input_chars INTEGER DEFAULT 0,
+      output TEXT NOT NULL,
+      output_chars INTEGER DEFAULT 0,
+      ratio REAL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_compactions_session ON session_compactions(session_id);
+    CREATE INDEX IF NOT EXISTS idx_compactions_project ON session_compactions(project_path);
+  `);
 }
 
 /**
