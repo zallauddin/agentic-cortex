@@ -576,6 +576,43 @@ commands.conflicts = {
   }
 };
 
+// ─── Evidence-theoretic conflict resolution (v8) ──────────────────
+
+commands.resolve = {
+  desc: 'Resolve a conflict with Dempster-Shafer evidence fusion. Auto-adjudicates a pair, or takes an explicit winner/loser + reason.',
+  args: ['[--pair A_ID,B_ID]', '[--winner ID --loser ID --reason TEXT]', '[--project PATH]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--pair') {
+        const [a, b] = String(args[++i]).split(',').map(Number);
+        opts.aId = a; opts.bId = b;
+      }
+      if (args[i] === '--winner') opts.winnerId = parseInt(args[++i], 10);
+      if (args[i] === '--loser') opts.loserId = parseInt(args[++i], 10);
+      if (args[i] === '--reason') opts.reason = args[++i];
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    try {
+      let result;
+      if (opts.winnerId && opts.loserId) {
+        result = await api.resolveExplicit({ winnerId: opts.winnerId, loserId: opts.loserId, reason: opts.reason, project: opts.project });
+      } else if (opts.aId && opts.bId) {
+        result = await api.resolvePair({ aId: opts.aId, bId: opts.bId, project: opts.project, resolutionType: 'adjudicated' });
+      } else {
+        throw new Error('Provide --pair A,B or --winner ID --loser ID [--reason TEXT]');
+      }
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error('Resolution error:', err.message);
+      process.exit(1);
+    }
+  }
+};
+
 // ─── Grounded QA ─────────────────────────────────────────────────
 
 commands.answer = {

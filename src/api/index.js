@@ -1074,6 +1074,35 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
     }
   } catch { /* past failures query failed — skip */ }
 
+  // ── Layer 2.6: Settled Debates (v8) ──
+  // Injects recent evidence-theoretic resolutions — the winner, the loser, the
+  // conflict coefficient, and the DECIDING EVIDENCE — so an agent re-opening
+  // a settled debate sees the precedent and its justification instead of
+  // re-litigating the same conflict next session. Resolutions that were WEAK
+  // (high conflict coefficient k, or a statistical near-tie) get an explicit
+  // warning: the debate is NOT truly settled — treat it as open territory.
+  try {
+    const resolutions = core.resolution.getRecentResolutions(db, project, 5);
+    if (resolutions.length > 0) {
+      const weakCount = resolutions.filter(r => core.resolution.classifyResolution(r).weak).length;
+      const statusAttr = weakCount > 0 ? ` status="partially_settled" weak_count="${weakCount}"` : '';
+      output += `  <settled_debates count="${resolutions.length}"${statusAttr}>\n`;
+      for (const r of resolutions) {
+        const cls = core.resolution.classifyResolution(r);
+        const weakAttr = cls.weak ? ' weak="true"' : '';
+        output += `    <resolution winner="${_xmlEscape(r.winner_title || '(untitled)')}" conflict_coefficient="${Number(r.conflict_coefficient).toFixed(2)}" agreement="${Number(r.agreement_weight).toFixed(2)}"${weakAttr}>\n`;
+        if (cls.weak) {
+          output += `      <warning severity="weak_resolution">NOT decisive: ${_xmlEscape(cls.reasons.join('; '))}. The winner won by little — treat this topic as an OPEN QUESTION and revisit if new evidence appears.</warning>\n`;
+        }
+        output += `      <decided_over>${_xmlEscape(r.loser_title || '(untitled)')}</decided_over>\n`;
+        output += `      <deciding_evidence>${_xmlEscape(r.reason || '')}</deciding_evidence>\n`;
+        output += '    </resolution>\n';
+        tokenEstimate += 60;
+      }
+      output += '  </settled_debates>\n';
+    }
+  } catch { /* no resolutions yet — skip */ }
+
   // ── Layer 2.75: Test-Time Reasoning Context ──
   // Injects reflexion context, estimates difficulty, suggests tree search for hard problems.
   // This is the "working memory" that prevents repeated reasoning mistakes within a session.
@@ -4210,4 +4239,37 @@ module.exports = {
   compactContext: (opts) => core.compactor.compactObservations(_getDB(), opts),
   compactTranscript: (entries, opts) => core.compactor.compactTranscript(entries, opts),
   compactionHistory: (opts) => core.compactor.getCompactionHistory(_getDB(), opts),
+  // ── v8.0.0: Evidence-theoretic conflict resolution (Dempster-Shafer) ──
+  resolveConflict: (opts) => core.resolution.resolveConflict(_getDB(), opts),
+  resolvePair: async (opts) => {
+    // Auto-adjudicate a pair by ids (aId, bId) via DS fusion.
+    const db = _getDB();
+    const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+    const a = db.prepare('SELECT * FROM observations WHERE id = ?').get(opts.aId);
+    const b = db.prepare('SELECT * FROM observations WHERE id = ?').get(opts.bId);
+    if (!a || !b) throw new Error('Both observations must exist: aId=' + opts.aId + ' bId=' + opts.bId);
+    return core.resolution.resolveConflict(db, {
+      project,
+      a,
+      b,
+      resolutionType: opts.resolutionType || 'adjudicated',
+    });
+  },
+  resolveExplicit: (opts) => {
+    // Human/agent-guided: winner, loser, and reason supplied explicitly.
+    const db = _getDB();
+    const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+    const a = db.prepare('SELECT * FROM observations WHERE id = ?').get(opts.winnerId);
+    const b = db.prepare('SELECT * FROM observations WHERE id = ?').get(opts.loserId);
+    if (!a || !b) throw new Error('Both observations must exist: winnerId=' + opts.winnerId + ' loserId=' + opts.loserId);
+    return core.resolution.resolveConflict(db, {
+      project,
+      a,
+      b,
+      explicit: { winnerId: opts.winnerId, loserId: opts.loserId, reason: opts.reason, confidence: opts.confidence },
+      resolutionType: 'explicit',
+    });
+  },
+  resolutionHistory: (project, limit) => core.resolution.getRecentResolutions(_getDB(), project, limit || 5),
+  resolutionStats: (project) => core.resolution.resolutionStats(_getDB(), project),
 };
