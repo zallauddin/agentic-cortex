@@ -794,6 +794,39 @@ const TOOLS = [
     },
   },
   {
+    name: 'memory_manifest',
+    description: '📜 MANIFEST — Machine-readable capability manifest (schema v1.0.0). Lists all 40+ capabilities (memory, code, reasoning, learning, audit, orchestration, integration) with versions and the interfaces each is exposed via. Use for feature-detection before composing agentic-cortex with another framework.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path for scoped manifest output' },
+        write: { type: 'boolean', description: 'Also write agentic-cortex.manifest.json to the project' },
+      },
+    },
+  },
+  {
+    name: 'memory_discover',
+    description: '🕵️ DISCOVER FRAMEWORKS — Scan the machine for agent frameworks agentic-cortex can compose with (Claude Code, Cursor, OpenCode, Codebuff, generic MCP clients). Returns evidence: config files found, registered MCP servers, env vars. Pair with memory_compose for wiring.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path to scan (default cwd)' },
+      },
+    },
+  },
+  {
+    name: 'memory_compose',
+    description: '🔗 COMPOSE — Return the exact wiring to compose agentic-cortex with a discovered agent framework: which MCP config to write, which memory/reasoning/audit/orchestration tools to expose. Input: framework id (claude-code, cursor, opencode, codebuff, generic-mcp) or a discovered framework object.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        framework: { type: 'string', description: 'Framework id (claude-code, cursor, opencode, codebuff, generic-mcp)' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['framework'],
+    },
+  },
+  {
     name: 'memory_send',
     description: 'Send a message/task/handoff to another agent\'s mailbox (inter-agent event primitive). The recipient reads it via memory_inbox.',
     inputSchema: {
@@ -1890,6 +1923,21 @@ async function callTool(name, args) {
 
     case 'memory_provider':
       return api.providerInfo();
+
+    case 'memory_manifest': {
+      const manifest = api.getManifest({ project: args.project });
+      if (args.write) {
+        const written = api.writeManifestFile({ project: args.project });
+        return { ...manifest, written };
+      }
+      return manifest;
+    }
+
+    case 'memory_discover':
+      return { frameworks: api.discoverFrameworks({ project: args.project }) };
+
+    case 'memory_compose':
+      return api.composeWithFramework(args.framework, { project: args.project });
 
     case 'memory_send':
       return api.sendMessage(args);
