@@ -235,6 +235,8 @@ const CAPABILITIES = [
   { id: 'orchestration.workflow', version: '1', description: 'DAG workflow executor with parallel branches, rollback, sub-agent spawning', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.rules', version: '1', description: 'Priority-based condition→action declarative rules', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.swarm', version: '1', description: 'Persona-based multi-agent swarm: 8 roles, dependency DAG, role→reasoning-engine dispatch', exposedVia: ['mcp', 'cli', 'node'] },
+  { id: 'orchestration.swarm-workers', version: '1', description: 'Spawn real agent subprocesses (Claude Code, OpenCode, Codebuff, Cursor) as swarm workers via the launcher registry + compose wiring — coder actually edits files, tester actually runs tests, results feed the failure loop', exposedVia: ['mcp', 'cli', 'node'] },
+  { id: 'orchestration.swarm-plan-bridge', version: '1', description: 'Import .swarm plan.json/plan-ledger specs into swarm_tasks (QA gates → reviewer/tester/verifier tasks), execute through the engine, and sync results back to plan.json + the ledger', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.mailbox', version: '1', description: 'Inter-agent mailbox (send/inbox/mark-read) for agent coordination', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.agent-sessions', version: '1', description: 'Namespaced agent sessions with shared memory discovery', exposedVia: ['mcp', 'cli', 'node'] },
 

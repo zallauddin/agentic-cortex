@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run']);
+  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_swarm_replan_goal', 'memory_swarm_retry_now', 'memory_swarm_job_create', 'memory_swarm_job_run', 'memory_swarm_job_cancel', 'memory_swarm_plan_import', 'memory_swarm_plan_run', 'memory_swarm_plan_sync', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -1286,28 +1286,180 @@ const TOOLS = [
   },
   {
     name: 'memory_swarm_execute',
-    description: '⚡ SWARM EXECUTE — Run a single swarm task through its persona-specific reasoning engine. Analyzer→beam search, Planner→budget-forcing, Coder→MCTS, Tester→self-consistency, Reviewer→beam search, Verifier→budget-forcing, Reasoner→deterministic inference, Orchestrator→synthesize.',
+    description: '⚡ SWARM EXECUTE — Run a single swarm task. Default: persona-specific reasoning engine (Analyzer→beam search, Planner→budget-forcing, Coder→MCTS, Tester→self-consistency, Reviewer→beam search, Verifier→budget-forcing, Reasoner→deterministic, Orchestrator→synthesize). With workerMode=process, launches a real agent subprocess (Claude Code/OpenCode/Codebuff/Cursor) so the coder actually edits files and the tester actually runs tests.',
     inputSchema: {
       type: 'object',
       properties: {
         taskId: { type: 'number', description: 'Task ID to execute' },
         project: { type: 'string', description: 'Project path' },
         dryRun: { type: 'boolean', description: 'If true, return the execution plan without running' },
+        workerMode: { type: 'string', description: 'process | in-process — use a real agent subprocess (default: in-process)' },
+        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | codebuff | cursor' },
+        worker: { type: 'string', description: 'Explicit worker config as JSON: { command, args?, env?, timeoutMs?, cwd?, framework? }' },
+        workerRoles: { type: 'array', items: { type: 'string' }, description: 'Only these roles use the worker (e.g. [coder, tester])' },
       },
       required: ['taskId'],
     },
   },
   {
     name: 'memory_swarm_execute_pipeline',
-    description: '⚡ SWARM EXECUTE ALL — Run all pending tasks for a goal in dependency order. Each persona dispatches to its role-specific reasoning engine.',
+    description: '⚡ SWARM EXECUTE ALL — Run all pending tasks for a goal through a bounded worker pool. Independent DAG branches run concurrently (concurrency cap). Runs a closed failure loop: transient failures are retried with backoff, exhausted tasks are replanned as fresh attempts, and beyond the attempt budget they escalate to the war room. With workerMode=process, runnable tasks launch real agent subprocesses instead of in-process reasoning engines.',
     inputSchema: {
       type: 'object',
       properties: {
         goal: { type: 'string', description: 'Goal whose tasks to execute' },
         project: { type: 'string', description: 'Project path' },
         dryRun: { type: 'boolean', description: 'If true, return the execution plan without running' },
+        concurrency: { type: 'number', description: 'Worker-pool size — max simultaneous tasks (default 4)' },
+        maxRounds: { type: 'number', description: 'Round budget for the failure loop' },
+        waitRetries: { type: 'boolean', description: 'Wait out backoff windows within the run (default true)' },
+        workerMode: { type: 'string', description: 'process | in-process — launch real agent subprocesses (default: in-process)' },
+        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | codebuff | cursor' },
+        worker: { type: 'string', description: 'Explicit worker config as JSON: { command, args?, env?, timeoutMs?, cwd?, framework? }' },
+        workerRoles: { type: 'array', items: { type: 'string' }, description: 'Only these roles use the worker (e.g. [coder, tester])' },
       },
       required: ['goal'],
+    },
+  },
+  {
+    name: 'memory_swarm_worker_info',
+    description: '🤖 SWARM WORKER INFO — Report the worker wiring: enabled mode, resolved worker (framework, command, args, timeout, availability), and which agent frameworks were discovered on this machine. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path to scan for frameworks' },
+      },
+    },
+  },
+  {
+    name: 'memory_swarm_plan_import',
+    description: '🗂️ SWARM PLAN IMPORT — Import the .swarm plan (plan.json / SWARM_PLAN.json / latest ledger snapshot) into swarm_tasks: each plan task becomes a coder task + one QA-gate task per selected gate (reviewer → reviewer, test_engineer → tester, hallucination_guard → verifier), dependencies chained from the plan. Idempotent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path containing .swarm/' },
+        gates: { type: 'array', items: { type: 'string' }, description: 'QA gates (default: parsed from .swarm/context.md)' },
+      },
+      required: ['project'],
+    },
+  },
+  {
+    name: 'memory_swarm_plan_run',
+    description: '▶️ SWARM PLAN RUN — Import the .swarm plan, execute it through the core engine (parallel pool, failure loop, optional worker mode), and sync results back to plan.json + the plan-ledger. One source of truth: the plan drives swarm_tasks, execution writes back.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path containing .swarm/' },
+        concurrency: { type: 'number', description: 'Worker-pool size (default 4)' },
+        workerMode: { type: 'string', description: 'process | in-process — launch real agent subprocesses for tasks' },
+        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | codebuff | cursor' },
+        worker: { type: 'string', description: 'Explicit worker config as JSON: { command, args?, env?, timeoutMs?, cwd?, framework? }' },
+      },
+      required: ['project'],
+    },
+  },
+  {
+    name: 'memory_swarm_plan_sync',
+    description: '🔄 SWARM PLAN SYNC — Write the engine\'s swarm_tasks statuses back into .swarm/plan.json and append task_status_changed + snapshot events to the plan-ledger (with plan hashes). Call after executing imported tasks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path containing .swarm/' },
+      },
+      required: ['project'],
+    },
+  },
+  {
+    name: 'memory_swarm_plan_info',
+    description: '📋 SWARM PLAN INFO — Summarize the .swarm plan (phases, task counts, statuses), QA gate selection, ledger depth, and how many tasks are imported into swarm_tasks. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path containing .swarm/' },
+      },
+      required: ['project'],
+    },
+  },
+  {
+    name: 'memory_swarm_replan_goal',
+    description: '🔄 SWARM REPLAN — Re-decompose every permanently failed task of a goal (plus its not-yet-completed dependents) into fresh attempts. Past the attempt budget, tasks are escalated to the war room instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'Goal to replan' },
+        project: { type: 'string', description: 'Project path' },
+      },
+      required: ['goal'],
+    },
+  },
+  {
+    name: 'memory_swarm_escalations',
+    description: '🚨 SWARM ESCALATIONS — List swarm tasks that exhausted their retry/replan budget and were escalated to the war room (with failure class, last error, and suggestion).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'Optional goal filter' },
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_swarm_retry_now',
+    description: '⏱️ SWARM RETRY NOW — Clear a task\'s backoff window so it is immediately pickable again by the next get-next/execute call.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'number', description: 'Task ID to force-retry' },
+      },
+      required: ['taskId'],
+    },
+  },
+  {
+    name: 'memory_swarm_job_create',
+    description: '🗂️ SWARM JOB CREATE — Enqueue a goal as a persistent job in the swarm_jobs queue. The queue survives restarts: run the job later with memory_swarm_job_run, and it resumes from where the DAG left off.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'Goal to run as a job' },
+        project: { type: 'string', description: 'Project path' },
+        concurrency: { type: 'number', description: 'Worker-pool size (default 4)' },
+        maxRounds: { type: 'number', description: 'Round budget for the failure loop' },
+      },
+      required: ['goal'],
+    },
+  },
+  {
+    name: 'memory_swarm_job_run',
+    description: '▶️ SWARM JOB RUN — Run (or resume) a queued/paused job. If the process died mid-run, tasks left running are recovered to pending and the DAG continues. Independent branches execute concurrently up to the job\'s concurrency limit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        jobId: { type: 'number', description: 'Job ID to run' },
+      },
+      required: ['jobId'],
+    },
+  },
+  {
+    name: 'memory_swarm_jobs',
+    description: '🗂️ SWARM JOBS — List swarm jobs (optionally filtered by project/status) with their round progress and completion counts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path filter' },
+        status: { type: 'string', description: 'Status filter: queued | running | paused | completed | failed | canceled' },
+        limit: { type: 'number', description: 'Max rows (default 50)' },
+      },
+    },
+  },
+  {
+    name: 'memory_swarm_job_cancel',
+    description: '⏹️ SWARM JOB CANCEL — Cancel a queued/running job. A running job stops at its next round checkpoint.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        jobId: { type: 'number', description: 'Job ID to cancel' },
+      },
+      required: ['jobId'],
     },
   },
   {
@@ -1542,6 +1694,26 @@ const TOOLS = [
 const TOOL_MAP = new Map(TOOLS.map(t => [t.name, t]));
 
 // ─── Tool execution ──────────────────────────────────────────────────
+
+/**
+ * Extract swarm worker options from MCP args and merge them into the base
+ * opts. `args.worker` is a JSON string (MCP has no nested object literals
+ * in this tool set).
+ */
+function _swarmWorkerOpts(args, base = {}) {
+  const out = { ...base };
+  if (args.workerMode) out.workerMode = args.workerMode;
+  if (args.workerFramework) out.workerFramework = args.workerFramework;
+  if (args.workerRoles) out.workerRoles = args.workerRoles;
+  if (args.worker) {
+    try {
+      out.worker = typeof args.worker === 'string' ? JSON.parse(args.worker) : args.worker;
+    } catch {
+      out.worker = null;
+    }
+  }
+  return out;
+}
 
 async function callTool(name, args) {
   switch (name) {
@@ -2107,8 +2279,38 @@ async function callTool(name, args) {
     case 'memory_swarm_complete_task':
       return api.swarmCompleteTask(args.taskId, args.summary, args.obsId);
 
-    case 'memory_swarm_fail_task':
-      return api.swarmFailTask(args.taskId, args.reason);
+    case 'memory_swarm_fail_task': {
+      const task = api.swarmFailTask(args.taskId, args.reason, { permanent: true });
+      const replanned = task && task.goal
+        ? api.swarmReplanGoal(task.goal, { project: args.project })
+        : Promise.resolve([]);
+      return Promise.resolve(replanned).then(created => ({ task, replanned: created }));
+    }
+
+    case 'memory_swarm_replan_goal':
+      return api.swarmReplanGoal(args.goal, { project: args.project });
+
+    case 'memory_swarm_escalations':
+      return api.swarmEscalations(args.goal, { project: args.project });
+
+    case 'memory_swarm_retry_now':
+      return api.swarmRetryNow(args.taskId);
+
+    case 'memory_swarm_job_create':
+      return api.swarmCreateJob(args.goal, {
+        project: args.project,
+        concurrency: args.concurrency,
+        maxRounds: args.maxRounds,
+      });
+
+    case 'memory_swarm_job_run':
+      return api.swarmRunJob(args.jobId, {});
+
+    case 'memory_swarm_jobs':
+      return api.swarmListJobs({ project: args.project, status: args.status, limit: args.limit });
+
+    case 'memory_swarm_job_cancel':
+      return api.swarmCancelJob(args.jobId);
 
     case 'memory_swarm_next_task':
       return api.swarmNextTask(args.role, { project: args.project });
@@ -2120,10 +2322,31 @@ async function callTool(name, args) {
       return api.swarmSynthesize(args.goal, { project: args.project });
 
     case 'memory_swarm_execute':
-      return api.swarmExecute(args.taskId, { project: args.project, dryRun: args.dryRun });
+      return api.swarmExecute(args.taskId, _swarmWorkerOpts(args, { project: args.project, dryRun: args.dryRun }));
 
     case 'memory_swarm_execute_pipeline':
-      return api.swarmExecutePipeline(args.goal, { project: args.project, dryRun: args.dryRun });
+      return api.swarmExecutePipeline(args.goal, _swarmWorkerOpts(args, {
+        project: args.project,
+        dryRun: args.dryRun,
+        concurrency: args.concurrency,
+      }));
+
+    case 'memory_swarm_worker_info':
+      return api.swarmWorkerInfo({ project: args.project });
+
+    case 'memory_swarm_plan_import':
+      return api.swarmPlanImport(args.project, { gates: args.gates });
+
+    case 'memory_swarm_plan_run':
+      return api.swarmPlanRun(args.project, _swarmWorkerOpts(args, {
+        concurrency: args.concurrency,
+      }));
+
+    case 'memory_swarm_plan_sync':
+      return api.swarmPlanSync(args.project, {});
+
+    case 'memory_swarm_plan_info':
+      return api.swarmPlanInfo(args.project, {});
 
     case 'memory_swarm_progress':
       return api.swarmGoalProgress(args.goal, { project: args.project });
