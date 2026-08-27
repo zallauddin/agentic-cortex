@@ -85,6 +85,14 @@ const swarm = require('../core/swarm');
 core.swarm = swarm;
 // Inject API reference so swarm tasks can dispatch to reasoning engines
 swarm.setApi(module.exports, save);
+// Real-agent worker launcher (Phase 30): swarm tasks can spawn actual
+// coding-agent subprocesses (Claude Code, OpenCode, Codebuff, Cursor).
+const worker = require('../core/worker');
+core.worker = worker;
+// Plan-ledger bridge (Phase 31): import .swarm plans into swarm_tasks and
+// sync execution results back to plan.json + the ledger.
+const swarmPlan = require('../core/swarm-plan');
+core.swarmPlan = swarmPlan;
 
 // Initialize Phase 28: Deterministic reasoner
 const deterministicReasoner = require('../core/deterministic-reasoner');
@@ -4212,7 +4220,21 @@ module.exports = {
   swarmNextTask: (role, opts) => swarm.getNextTask(_getDB(), role, opts),
   swarmStartTask: (taskId) => swarm.startTask(_getDB(), taskId),
   swarmCompleteTask: (taskId, summary, obsId) => swarm.completeTask(_getDB(), taskId, summary, obsId),
-  swarmFailTask: (taskId, reason) => swarm.failTask(_getDB(), taskId, reason),
+  swarmFailTask: (taskId, reason, opts) => swarm.failTask(_getDB(), taskId, reason, opts),
+  swarmRetryNow: (taskId) => swarm.retryNow(_getDB(), taskId),
+  swarmClaimTask: (taskId) => swarm.claimTask(_getDB(), taskId),
+  swarmWorkerInfo: (opts) => core.worker.workerInfo(opts),
+  swarmPlanImport: (project, opts) => core.swarmPlan.importPlan(_getDB(), project, opts),
+  swarmPlanSync: (project, opts) => core.swarmPlan.syncPlan(_getDB(), project, opts),
+  swarmPlanInfo: (project, opts) => core.swarmPlan.planInfo(_getDB(), project, opts),
+  swarmPlanRun: (project, opts) => core.swarmPlan.runPlan(_getDB(), project, opts),
+  swarmReplanGoal: (goal, opts) => swarm.replanGoal(_getDB(), goal, opts),
+  swarmEscalations: (goal, opts) => swarm.listEscalations(_getDB(), goal, opts),
+  swarmCreateJob: (goal, opts) => swarm.createJob(_getDB(), goal, opts),
+  swarmRunJob: (jobId, opts) => swarm.runJob(_getDB(), jobId, opts),
+  swarmListJobs: (opts) => swarm.listJobs(_getDB(), opts),
+  swarmGetJob: (jobId) => swarm.getJob(_getDB(), jobId),
+  swarmCancelJob: (jobId) => swarm.cancelJob(_getDB(), jobId),
   swarmGoalTasks: (goal, opts) => swarm.getGoalTasks(_getDB(), goal, opts),
   swarmGoalProgress: (goal, opts) => swarm.getGoalProgress(_getDB(), goal, opts),
   swarmActiveGoals: (opts) => swarm.listActiveGoals(_getDB(), opts),

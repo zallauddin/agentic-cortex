@@ -636,11 +636,77 @@ function ensureSchema(db) {
       result_observation_id INTEGER,
       started_at TEXT,
       completed_at TEXT,
+      retry_count INTEGER DEFAULT 0,
+      max_retries INTEGER DEFAULT 2,
+      last_error TEXT,
+      failure_class TEXT,
+      failure_suggestion TEXT,
+      next_retry_at TEXT,
+      attempt INTEGER DEFAULT 1,
+      retry_of INTEGER,
+      escalated INTEGER DEFAULT 0,
+      plan_id TEXT,
+      plan_task_id TEXT,
+      phase_id TEXT,
+      acceptance TEXT,
+      task_size TEXT,
+      qa_gates TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_swarm_tasks_project ON swarm_tasks(project_path);
     CREATE INDEX IF NOT EXISTS idx_swarm_tasks_status ON swarm_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_swarm_tasks_role ON swarm_tasks(agent_role, status);
+  `);
+
+  // Migration for pre-v7.2 swarm databases without failure-loop columns.
+  // Order matters: the ALTERs must run before the indexes reference the columns.
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN retry_count INTEGER DEFAULT 0`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN max_retries INTEGER DEFAULT 2`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN last_error TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN failure_class TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN failure_suggestion TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN next_retry_at TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN attempt INTEGER DEFAULT 1`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN retry_of INTEGER`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN escalated INTEGER DEFAULT 0`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN plan_id TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN plan_task_id TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN phase_id TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN acceptance TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN task_size TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE swarm_tasks ADD COLUMN qa_gates TEXT`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_tasks_retry ON swarm_tasks(status, next_retry_at)`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_tasks_escalated ON swarm_tasks(project_path, escalated)`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_tasks_plan ON swarm_tasks(project_path, plan_id, plan_task_id)`); } catch {}
+
+  // Phase 29: Swarm jobs — persistent queue for parallel swarm execution.
+  // A job is one goal run. Because all state lives in swarm_tasks, a job can
+  // be resumed after a restart: runJob() recovers any tasks left 'running'.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS swarm_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      goal TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      round INTEGER DEFAULT 0,
+      max_rounds INTEGER DEFAULT 12,
+      concurrency INTEGER DEFAULT 4,
+      total_tasks INTEGER DEFAULT 0,
+      completed_tasks INTEGER DEFAULT 0,
+      failed_tasks INTEGER DEFAULT 0,
+      retried_tasks INTEGER DEFAULT 0,
+      replanned_tasks INTEGER DEFAULT 0,
+      escalated_tasks INTEGER DEFAULT 0,
+      result_summary TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      started_at TEXT,
+      finished_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_swarm_jobs_status ON swarm_jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_swarm_jobs_project ON swarm_jobs(project_path);
+    CREATE INDEX IF NOT EXISTS idx_swarm_jobs_goal ON swarm_jobs(goal);
   `);
 
   // Phase 28: Code symbol index — symbol-level code knowledge (functions,
