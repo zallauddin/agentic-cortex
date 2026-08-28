@@ -141,11 +141,9 @@ describe('manifest — agent capability manifest + framework auto-discovery', ()
       assert.ok(plan.wiring.reasoningTools.includes('memory_tree_search'));
     });
 
-    it('returns wiring for codebuff (node-library strategy)', () => {
-      const plan = manifest.composeWithFramework('codebuff', { project: projectDir });
-      assert.equal(plan.ok, true);
-      assert.equal(plan.wiring.nodeRequire, 'agentic-cortex');
-      assert.equal(plan.wiring.envOverride, 'AGENTIC_CORTEX_PATH');
+    it('rejects removed legacy framework identifiers', () => {
+      const plan = manifest.composeWithFramework('legacy-agent-id', { project: projectDir });
+      assert.equal(plan.ok, false);
     });
 
     it('errors on unknown frameworks with a hint', () => {

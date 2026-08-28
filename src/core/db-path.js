@@ -93,8 +93,8 @@ function getLegacyDbPathIfExists() {
   if (existsSync(legacyPath)) {
     return legacyPath;
   }
-  // Also check old names from previous package versions
-  const oldNames = ['freebuff-mem.db', 'infinit-mem.db'];
+  // Also check the legacy database name from previous package versions.
+  const oldNames = ['infinit-mem.db'];
   for (const oldName of oldNames) {
     const oldPath = join(process.cwd(), oldName);
     if (existsSync(oldPath)) return oldPath;
