@@ -177,68 +177,168 @@ Respond ONLY with valid JSON: {"score": 0.0-1.0, "valid": true/false, "reason": 
 // ─── Memory Cross-Check (Tier 3) ────────────────────────────────────
 
 /**
- * Check if a reasoning step contradicts existing memories/learnings.
- * Uses the search function to find relevant memories and checks for conflicts.
+ * Negation markers — a step and a memory that disagree in polarity (one
+ * asserts, the other denies) are treated as contradicting; matching
+ * polarity is evidence of corroboration. Deterministic, zero LLM cost.
+ */
+const NEGATION_RE = /\b(not|never|no|n't|cannot|can't|won't|shouldn't|don't|doesn't|isn't|aren't|without|avoid|prevent|refuse|unable|must not|should not)\b/i;
+
+/**
+ * Score a reasoning step against the brain: retrieve relevant memories
+ * (or reuse pre-retrieved ones via `opts.memories`, so tree-search does
+ * ONE consult per search instead of one per node) and measure both sides
+ * of the evidence:
+ *
+ *   - Corroboration (BOOST): a high-overlap memory whose claim polarity
+ *     matches the step and is not a past lesson — facts, decisions,
+ *     standards, preferences that agree with the step argue FOR it.
+ *   - Contradiction (PENALTY): a high-overlap memory that disagrees in
+ *     polarity (a learning claiming the opposite, or any typed memory
+ *     asserting the negation of the step) argues AGAINST it.
+ *
+ * So test-time reasoning argues FROM memory, not just beside it.
+ *
+ * Boost/penalty for corroborating memories by their eval-outcome record:
+ * a proven-good memory (weight > 0) corroborates STRONGER; a proven-bad
+ * one (weight < 0) corroborates WEAKER or becomes neutral. Unproven
+ * memories (weight 0 / absent) corroborate at the baseline rate.
+ */
+function _corroborationBoost(outcomeWeight, baseBoost) {
+  if (outcomeWeight > 0) return baseBoost + outcomeWeight * 0.05; // proven-good: up to +0.05
+  if (outcomeWeight < 0) return Math.max(0, baseBoost - Math.abs(outcomeWeight) * 0.05); // proven-bad: toward 0
+  return baseBoost;
+}
+
+/**
+ * Score a reasoning step against the brain: retrieve relevant memories
+ * (or reuse pre-retrieved ones via `opts.memories`, so tree-search does
+ * ONE consult per search instead of one per node) and measure both sides
+ * of the evidence:
+ *
+ *   - Corroboration (BOOST): a high-overlap memory whose claim polarity
+ *     matches the step and is not a past lesson — facts, decisions,
+ *     standards, preferences that agree with the step argue FOR it.
+ *   - Contradiction (PENALTY): a high-overlap memory that disagrees in
+ *     polarity (a learning claiming the opposite, or any typed memory
+ *     asserting the negation of the step) argues AGAINST it.
+ *
+ * When `opts.db` is available, the corroboration boost is scaled by the
+ * memory's eval-outcome record (proven-good memories argue stronger than
+ * unproven ones; proven-bad ones argue weaker). So test-time reasoning
+ * argues FROM memory, weighted by what the brain has PROVEN.
  *
  * @param {string} stepContent — The reasoning step
  * @param {string} project — Project path
- * @param {Object} [opts] — { searchFn? }
- * @returns {Promise<{ valid: boolean, score: number, reason: string, contradictingMemories: Array }>}
+ * @param {Object} [opts] — { db? searchFn?, memories? (pre-retrieved results), outcomeStats? (Map to reuse) }
+ * @returns {Promise<{ valid: boolean, score: number, reason: string, contradictingMemories: Array, corroboratingMemories: Array, outcomeBoosted: boolean }>}
  */
 async function verifyAgainstMemory(stepContent, project, opts = {}) {
   const searchFn = opts.searchFn || _searchFn;
-  if (!searchFn) {
-    return { valid: true, score: 0.5, reason: 'No search available, neutral score', contradictingMemories: [] };
+  let results = opts.memories || null;
+  if (!results && !searchFn) {
+    return { valid: true, score: 0.5, reason: 'No search available, neutral score', contradictingMemories: [], corroboratingMemories: [], blindSpot: true, evidenceCoverage: { resultCount: 0, types: [], hasDissent: false } };
+  }
+
+  // Outcome evidence for corroboration weighting. Reuse opts.outcomeStats
+  // when provided (one callback per search); else build from db best-effort.
+  let outcomeStats = opts.outcomeStats || null;
+  if (!outcomeStats && opts.db) {
+    try {
+      const { memoryOutcomeStats } = require('./self-improve');
+      outcomeStats = memoryOutcomeStats(opts.db, project);
+    } catch { outcomeStats = null; }
   }
 
   try {
-    const results = await searchFn(stepContent, {
-      project,
-      limit: 5,
-      minConfidence: 60,
-    });
-
-    if (!results || results.length === 0) {
-      return { valid: true, score: 0.7, reason: 'No contradicting memories found', contradictingMemories: [] };
+    if (!results) {
+      results = await searchFn(stepContent, {
+        project,
+        limit: 5,
+        minConfidence: 60,
+      });
     }
 
-    // Check for contradictions via LLM or keyword overlap
-    const contradictions = [];
+    if (!results || results.length === 0) {
+      return { valid: true, score: 0.7, reason: 'No memories found, neutral score', contradictingMemories: [], corroboratingMemories: [], blindSpot: true, evidenceCoverage: { resultCount: 0, types: [], hasDissent: false } };
+    }
+
     const keywords = new Set(stepContent.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+    const stepNeg = NEGATION_RE.test(stepContent);
+    const contradictions = [];
+    const corroborations = [];
+    const seenIds = new Set();
+    const consideredTypes = new Set();
 
     for (const mem of results) {
+      if (mem.id != null && seenIds.has(mem.id)) continue;
+      if (mem.id != null) seenIds.add(mem.id);
+      consideredTypes.add(mem.type || 'unknown');
       const memText = ((mem.title || '') + ' ' + (mem.content || '')).toLowerCase();
       const memWords = new Set(memText.split(/\s+/).filter(w => w.length > 3));
       const overlap = [...keywords].filter(w => memWords.has(w)).length;
       const overlapRatio = overlap / Math.max(keywords.size, 1);
+      if (overlapRatio <= 0.3) continue;
 
-      if (overlapRatio > 0.3 && mem.type === 'learning') {
-        contradictions.push({
-          id: mem.id,
-          title: mem.title,
-          content: mem.content ? mem.content.slice(0, 200) : '',
-          confidence: mem.confidence,
-          overlap: overlapRatio,
-        });
+      const entry = {
+        id: mem.id,
+        title: mem.title,
+        content: mem.content ? mem.content.slice(0, 200) : '',
+        confidence: mem.confidence,
+        overlap: overlapRatio,
+      };
+      const memNeg = NEGATION_RE.test(memText);
+
+      // Opposite polarity → contradiction. Past lessons (learnings) are
+      // conservative: they only count as evidence when they disagree.
+      if (stepNeg !== memNeg && (mem.type === 'learning' || memNeg)) {
+        contradictions.push(entry);
+      } else if (stepNeg === memNeg && mem.type !== 'learning' && Number(mem.confidence || 0) >= 60) {
+        // Matching polarity, not a lesson, confident → corroborating evidence.
+        const st = outcomeStats ? outcomeStats.get(mem.id) : null;
+        const outWeight = st ? st.weight : (typeof mem.outcome_weight === 'number' ? mem.outcome_weight : 0);
+        entry.outcome_weight = outWeight;
+        entry.outcome_runs = st ? st.runs : (typeof mem.outcome_runs === 'number' ? mem.outcome_runs : 0);
+        // Baseline 0.05; proven-good memories boost more, proven-bad less.
+        entry.boost = _corroborationBoost(outWeight, 0.05);
+        corroborations.push(entry);
       }
     }
 
-    if (contradictions.length === 0) {
-      return { valid: true, score: 0.8, reason: 'No contradictions detected in memory', contradictingMemories: [] };
+    let score;
+    let reason;
+    let outcomeBoosted = false;
+    if (contradictions.length > 0) {
+      // High-overlap contradictions reduce score (as before).
+      const avgOverlap = contradictions.reduce((s, c) => s + c.overlap, 0) / contradictions.length;
+      score = Math.max(0.1, 0.8 - (avgOverlap * 0.6));
+      reason = `Found ${contradictions.length} potentially contradicting memory/memories`;
+    } else {
+      // Base 0.8, +boost per corroborating memory (cap 0.95). The brain
+      // argues FOR the step; proven-good memories argue stronger, proven-bad
+      // ones weaker — so reasoning is weighted by what the brain PROVED.
+      const boosts = corroborations.map(c => c.boost);
+      const hasProvenGood = boosts.some(b => b > 0.05);
+      const hasProvenBad = boosts.some(b => b < 0.05);
+      outcomeBoosted = hasProvenGood || hasProvenBad;
+      score = Math.min(0.95, 0.8 + boosts.reduce((s, b) => s + b, 0));
+      reason = corroborations.length > 0
+        ? `Corroborated by ${corroborations.length} memory/memories` + (outcomeBoosted ? ' (outcome-weighted)' : '')
+        : 'No contradictions detected in memory';
     }
 
-    // High-overlap contradictions reduce score
-    const avgOverlap = contradictions.reduce((s, c) => s + c.overlap, 0) / contradictions.length;
-    const score = Math.max(0.1, 0.8 - (avgOverlap * 0.6));
-
+    const blindSpot = results.length > 0 && consideredTypes.size <= 1 && contradictions.length === 0;
     return {
       valid: score >= 0.5,
-      score,
-      reason: `Found ${contradictions.length} potentially contradicting memory/memories`,
+      score: Math.round(score * 1000) / 1000,
+      reason,
       contradictingMemories: contradictions,
+      corroboratingMemories: corroborations,
+      outcomeBoosted,
+      blindSpot,
+      evidenceCoverage: { resultCount: results.length, types: [...consideredTypes], hasDissent: contradictions.length > 0 },
     };
   } catch {
-    return { valid: true, score: 0.5, reason: 'Memory check failed, neutral score', contradictingMemories: [] };
+    return { valid: true, score: 0.5, reason: 'Memory check failed, neutral score', contradictingMemories: [], corroboratingMemories: [] };
   }
 }
 
@@ -293,7 +393,7 @@ Respond ONLY with valid JSON: {"score": 0.0-1.0, "valid": true/false, "reason": 
  * When outcomeOnly=true: skips Tiers 1/2/3 for non-terminal steps,
  *   only scores final answers via verifyOutcome(). Saves ~80% cost.
  */
-async function verifyStep({ stepContent, priorSteps = [], problem = '', stepType = 'reasoning', project = '', db = null, searchFn = null, outcomeOnly = false }) {
+async function verifyStep({ stepContent, priorSteps = [], problem = '', stepType = 'reasoning', project = '', db = null, searchFn = null, memories = null, outcomeStats = null, outcomeOnly = false }) {
   if (outcomeOnly) {
     const looksTerminal = /\b(?:ANSWER|final answer|conclusion|therefore|to summarize)\b/i.test(stepContent) || priorSteps.length === 0;
     if (looksTerminal) return verifyOutcome({ stepContent, problem, db });
@@ -316,7 +416,7 @@ async function verifyStep({ stepContent, priorSteps = [], problem = '', stepType
   // Tier 2 + 3 in parallel
   const [llmResult, memoryResult] = await Promise.all([
     verifyWithLLM(stepContent, priorSteps, problem, { db }),
-    verifyAgainstMemory(stepContent, project, { searchFn }),
+    verifyAgainstMemory(stepContent, project, { db, searchFn, memories, outcomeStats }),
   ]);
 
   // Weighted combination: deterministic (0.2) + LLM (0.5) + memory (0.3)
@@ -361,7 +461,7 @@ async function verifyStep({ stepContent, priorSteps = [], problem = '', stepType
  * @param {Object} [params.searchFn] — Search function
  * @returns {Promise<{ valid: boolean, steps: Array<{ step, score, valid, reason }>, chainScore: number }>}
  */
-async function verifyChain({ steps, problem = '', project = '', db = null, searchFn = null }) {
+async function verifyChain({ steps, problem = '', project = '', db = null, searchFn = null, memories = null, outcomeStats = null }) {
   const results = [];
   const priorSteps = [];
 
@@ -375,6 +475,8 @@ async function verifyChain({ steps, problem = '', project = '', db = null, searc
       project,
       db,
       searchFn,
+      memories,
+      outcomeStats,
     });
 
     results.push({

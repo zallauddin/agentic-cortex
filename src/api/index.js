@@ -98,6 +98,10 @@ core.swarmPlan = swarmPlan;
 const deterministicReasoner = require('../core/deterministic-reasoner');
 core.deterministicReasoner = deterministicReasoner;
 
+// Offline-first task execution: deterministic planning, bounded edits, and checks.
+const offlineAgent = require('../core/offline-agent');
+core.offlineAgent = offlineAgent;
+
 // Rules hook is registered in init() to avoid TDZ with _apiDb
 let _rulesHookRegistered = false;
 
@@ -546,12 +550,47 @@ async function search(query, opts) {
 
   if (wantsRerank) {
     results = await core.search.rerankResults(query, results);
-    // Restore requested limit after rerank (reranker returns all candidates).
-    if (opts.limit) results = results.slice(0, opts.limit);
   }
+
+  // Outcome-weighted retrieval: the eval-log feedback loop closed at
+  // selection time — memories injected into successful eval runs are
+  // boosted, ones injected into failures are demoted. Best-effort; a
+  // weighting failure never breaks a search.
+  try {
+    results = core.search.applyOutcomeWeights(db, results, { project: opts.project });
+  } catch { /* best-effort */ }
+
+  // Restore the requested limit (rerank returns all candidates; outcome
+  // weights may reorder the list).
+  if (opts.limit) results = results.slice(0, opts.limit);
+
+  // Frontier 1/2: diversify evidence before exposing it. This prevents a
+  // single highly-ranked memory cluster from masking dissent and records an
+  // explicit blind-spot probe when coverage is weak.
+  results = core.search.diversifyResults(results, { limit: opts.limit || results.length, lambda: opts.diversityLambda });
+  const coverage = core.search.buildCoverageReport(query, results, opts);
+  if (coverage.probe && opts.recordProbe !== false) {
+    try {
+      db.prepare('INSERT INTO memory_probes (project_path, query, probe_type, status, rationale, candidate_ids) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(opts.project || project, coverage.probe.query, coverage.probe.type, coverage.probe.status, coverage.probe.rationale, JSON.stringify(results.map(r => r.id)));
+    } catch { /* schema migration or probe write is non-fatal */ }
+  }
+  results = results.map(r => ({ ...r, coverage: { status: coverage.coverage, blindSpots: coverage.blindSpots } }));
 
   // Track access for returned results
   _trackAccess(db, results.map(r => r.id));
+
+  // Auto-injection tracking: mark the returned observations as pending
+  // attribution to the eval run that consumes them. When the call runs in an
+  // agent/session context (opts.agentId or the AGENTIC_CORTEX_AGENT_ID env),
+  // the pending rows are scoped to that agent so endAgentSession attributes
+  // them to THAT agent's eval instead of racing the time window. writeEvalLog
+  // auto-links fresh pending rows when no explicit injectedObservationIds are
+  // given. Best-effort — a tracking failure never breaks a search.
+  try {
+    const searchAgentId = opts.agentId || opts.agent_id || process.env.AGENTIC_CORTEX_AGENT_ID || null;
+    selfImprove.recordSearchInjections(db, opts.project, results.map(r => r.id), { agentId: searchAgentId });
+  } catch { /* best-effort */ }
 
   return results;
 }
@@ -2118,7 +2157,30 @@ function endAgentSession(agentId, sessionId) {
     "UPDATE agent_sessions SET ended_at = datetime('now') WHERE agent_id = ? AND session_id = ? AND ended_at IS NULL"
   ).run(agentId, sessionId);
   if (r.changes === 0) throw new Error('Active agent session not found: ' + agentId + '/' + sessionId);
-  return { agent_id: agentId, session_id: sessionId, status: 'ended' };
+  const row = db.prepare('SELECT project_path FROM agent_sessions WHERE agent_id = ? AND session_id = ?').get(agentId, sessionId);
+  // Session-scoped attribution: any observations this agent searched during
+  // its active session are attributed to the eval the agent writes at end of
+  // session. Best-effort — attribution failure never blocks ending the session.
+  let linked = 0;
+  try {
+    const evalLogId = selfImprove.writeEvalLog(db, {
+      project: (row && row.project_path) || process.env.AGENTIC_CORTEX_PROJECT || process.cwd(),
+      intentId: null,
+      intentContent: null,
+      actionId: null,
+      actionContent: null,
+      outcomeId: null,
+      outcomeContent: 'agent session ' + sessionId + ' ended',
+      verdict: 'NEUTRAL',
+      verdictReason: 'endAgentSession',
+    });
+    const res = selfImprove.linkAgentSessionInjections(
+      db, evalLogId, agentId, sessionId,
+      (row && row.project_path) || process.env.AGENTIC_CORTEX_PROJECT || process.cwd()
+    );
+    linked = res.linked;
+  } catch { /* best-effort */ }
+  return { agent_id: agentId, session_id: sessionId, status: 'ended', linked };
 }
 
 /**
@@ -2816,6 +2878,14 @@ async function searchAllProjects(query, opts = {}) {
     ...r,
     project: r.project_path === '__global__' ? '[GLOBAL VAULT]' : r.project_path,
   }));
+
+  // Attach each hit's eval-outcome proven-ness inline (cross-project stats,
+  // no reordering — scores across projects aren't comparable via outcome
+  // weight). Best-effort: a failure never breaks the search.
+  try {
+    const weighted = core.search.attachOutcomeFields(db, enriched);
+    if (weighted) enriched.splice(0, enriched.length, ...weighted);
+  } catch { /* best-effort */ }
 
   _trackAccess(db, results.map(r => r.id));
   return enriched;
@@ -4021,6 +4091,30 @@ function getEvalLogStats(opts) {
   return selfImprove.getEvalLogStats(db, project);
 }
 
+/**
+ * Link injected observations to an eval run so their downstream outcome
+ * (success/failure verdict) can be attributed back to the memories.
+ * @param {Object} opts — { project?, evalId, observationIds: number[] }
+ * @returns {{inserted: number}}
+ */
+function recordEvalInjections(opts) {
+  const db = _getDB();
+  const project = (opts && opts.project) || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  return selfImprove.recordEvalInjections(db, opts.evalId, opts.observationIds || [], { project });
+}
+
+/**
+ * Per-observation outcome correlation stats: how often a memory was injected
+ * into successful vs failed evals, and its resulting boost/demote multiplier.
+ * @param {Object} [opts] — { project? }
+ * @returns {Array<{observationId, injectedCount, successRate, boost, runs}>}
+ */
+function memoryOutcomeStats(opts) {
+  const db = _getDB();
+  const project = (opts && opts.project) || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  return selfImprove.memoryOutcomeStats(db, project);
+}
+
 // ─── Recovery (Tier 1: probe-gated retry, LLM cache, counter-evidence) ──
 
 /**
@@ -4090,6 +4184,8 @@ module.exports = {
   listExperiments,
   getEvaluationLog,
   getEvalLogStats,
+  recordEvalInjections,
+  memoryOutcomeStats,
   // ── v5.0.0: Brain orchestration layer ──
   init: async () => { await init(); return { status: 'initialized' }; },
   // FSM
@@ -4138,6 +4234,31 @@ module.exports = {
   getReasoningTrace: (traceId) => treeSearch.loadTrace(_getDB(), traceId),
   reasoningStats,
   synthesizeSolution,
+  // Frontier 1-3: explicit retrieval coverage and blind-spot probes.
+  coverageProbe: async (query, opts = {}) => {
+    const db = _getDB();
+    const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+    const results = await search(query, { ...opts, project, limit: opts.limit || 10, recordProbe: false });
+    const coverage = core.search.buildCoverageReport(query, results, opts);
+    let probeId = null;
+    if (coverage.probe && opts.record !== false) {
+      const row = db.prepare('INSERT INTO memory_probes (project_path, query, probe_type, status, rationale, candidate_ids) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(project, coverage.probe.query, coverage.probe.type, coverage.probe.status, coverage.probe.rationale, JSON.stringify(results.map(r => r.id)));
+      probeId = Number(row.lastInsertRowid);
+    }
+    return { ...coverage, probe: coverage.probe ? { ...coverage.probe, id: probeId } : null, results };
+  },
+  listCoverageProbes: (opts = {}) => {
+    const db = _getDB();
+    const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+    return db.prepare('SELECT * FROM memory_probes WHERE project_path = ? AND (? IS NULL OR status = ?) ORDER BY created_at DESC LIMIT ?')
+      .all(project, opts.status || null, opts.status || null, opts.limit || 20);
+  },
+  resolveCoverageProbe: (id, observationId) => {
+    const db = _getDB();
+    return db.prepare("UPDATE memory_probes SET status = 'resolved', resolved_by = ?, resolved_at = datetime('now') WHERE id = ?")
+      .run(observationId || null, id).changes > 0;
+  },
   // Adaptive Budget
   estimateDifficulty: (params) => adaptiveBudget.estimateDifficulty({ ...params, db: _getDB() }),
   calculateBudget: adaptiveBudget.calculateBudget,
@@ -4241,6 +4362,12 @@ module.exports = {
   swarmSynthesize: (goal, opts) => swarm.synthesizeGoal(_getDB(), goal, opts),
   swarmExecute: (taskId, opts) => swarm.executeTask(_getDB(), taskId, opts),
   swarmExecutePipeline: (goal, opts) => swarm.executePipeline(_getDB(), goal, opts),
+  // Offline-first execution and capability audit
+  offlineCapabilities: offlineAgent.auditCapabilities,
+  offlinePlan: (project, task, opts) => offlineAgent.planTask(project, task, opts),
+  offlineApplyChanges: (project, changes) => offlineAgent.applyChanges(project, changes),
+  offlineRunCheck: (project, check, opts) => offlineAgent.runCheck(project, check, opts),
+  offlineExecute: (project, task, opts) => offlineAgent.executeTask(project, task, opts),
   // ── v7.0.0: Code index (symbol-level code knowledge) ──
   codeIngest: (project, opts) => core.codeIndex.ingestProject(_getDB(), project, opts),
   codeRegenerate: (project, opts) => core.codeIndex.regenerateGraph(project, opts),

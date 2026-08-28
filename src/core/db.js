@@ -325,6 +325,56 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_eval_log_time ON evaluation_log(evaluated_at);
   `);
 
+  // Phase 14b: Eval-memory injections — which memories were injected into
+  // each eval run. Closes the eval-log feedback loop: outcome-weighted
+  // retrieval boosts memories that were injected into successful evals and
+  // demotes ones that were injected into failures. `source` records HOW the
+  // link was made so operators can audit provenance: 'manual' (explicit
+  // injectedObservationIds), 'auto' (time-window search auto-link), or
+  // 'session' (endAgentSession attribution).
+  // Migrate pre-source DBs first (the ALTER must precede the CREATE below so
+  // a fresh table and an existing table both end up source-aware).
+  try { db.exec(`ALTER TABLE eval_memory_injections ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'`); } catch {}
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS eval_memory_injections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      eval_log_id INTEGER NOT NULL,
+      observation_id INTEGER NOT NULL,
+      project_path TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'manual',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_eval_inj_pair ON eval_memory_injections(eval_log_id, observation_id);
+    CREATE INDEX IF NOT EXISTS idx_eval_inj_obs ON eval_memory_injections(observation_id, project_path);
+  `);
+
+  // Phase 14c: Pending eval injections — observations a search() returned
+  // for a project, awaiting attribution to the eval run that used them.
+  // writeEvalLog auto-links fresh pending rows (consume-on-link) when the
+  // caller doesn't pass injectedObservationIds, so injections are tracked
+  // without manual wiring. One row per scope (time-window OR agent/session) &
+  // observation; re-searching refreshes the timestamp. `scope_key` is '' for
+  // the plain time-window scope, or 'agent:<id>' for agent/session-attributed
+  // searches (so the same memory searched by two agents tracks separately).
+  // Migrate pre-session DBs BEFORE creating the scope-aware indexes: an
+  // existing table may lack scope_key/agent_id, so the columns must land
+  // first or the index DDL below throws. Best-effort — each step is idempotent.
+  try { db.exec(`ALTER TABLE pending_eval_injections ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { db.exec(`ALTER TABLE pending_eval_injections ADD COLUMN agent_id TEXT`); } catch {}
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pending_eval_injections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      observation_id INTEGER NOT NULL,
+      scope_key TEXT NOT NULL DEFAULT '',
+      agent_id TEXT,
+      searched_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_inj_scope_pair ON pending_eval_injections(scope_key, project_path, observation_id);
+    CREATE INDEX IF NOT EXISTS idx_pending_inj_time ON pending_eval_injections(project_path, searched_at);
+    CREATE INDEX IF NOT EXISTS idx_pending_inj_agent ON pending_eval_injections(scope_key, project_path);
+  `);
+
   // Phase 15: FSM engine — state machines, transitions, per-agent state
   db.exec(`
     CREATE TABLE IF NOT EXISTS state_machines (
@@ -768,6 +818,26 @@ function ensureSchema(db) {
       END;
     `);
   } catch {}
+
+  // Frontier 1-3: blind-spot probes and calibrated retrieval evidence.
+  // Probes are deliberately separate from memories: an unanswered question
+  // must not be promoted into a fact merely because it was retrieved.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_probes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      query TEXT NOT NULL,
+      probe_type TEXT NOT NULL DEFAULT 'coverage',
+      status TEXT NOT NULL DEFAULT 'open',
+      rationale TEXT,
+      candidate_ids TEXT NOT NULL DEFAULT '[]',
+      resolved_by INTEGER REFERENCES observations(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_probes_project_status ON memory_probes(project_path, status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_memory_probes_query ON memory_probes(project_path, query);
+  `);
 
   // Session context compactions — audit trail for compressed "state so far"
   // summaries (Feature: session context compactor).

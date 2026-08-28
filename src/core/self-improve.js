@@ -740,9 +740,13 @@ async function spawnExperiment(db, opts = {}) {
  * @param {string} [entry.verdictReason] - Reason for verdict
  * @param {number} [entry.confidenceDelta] - Confidence delta applied
  * @param {string} [entry.variableChanged] - What variable was changed (for experiments)
+ * @param {number[]} [entry.injectedObservationIds] - Observation IDs that were
+ *   injected into this run's context. Recorded in eval_memory_injections so
+ *   outcome-weighted retrieval can correlate verdicts with injected memories.
+ * @returns {number} The new evaluation_log row id
  */
 function writeEvalLog(db, entry) {
-  db.prepare(
+  const r = db.prepare(
     'INSERT INTO evaluation_log (project_path, intent_id, intent_content, action_id, action_content, outcome_id, outcome_content, llm_verdict, verdict_reason, confidence_delta, variable_changed) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
   ).run(
     entry.project || process.cwd(),
@@ -757,6 +761,253 @@ function writeEvalLog(db, entry) {
     entry.confidenceDelta || 0,
     (entry.variableChanged || '').slice(0, 200) || null,
   );
+  const evalLogId = Number(r.lastInsertRowid);
+  if (entry.injectedObservationIds && entry.injectedObservationIds.length > 0) {
+    recordEvalInjections(db, evalLogId, entry.injectedObservationIds, { project: entry.project });
+  } else {
+    // No manual wiring: attribute the observations search() returned for this
+    // project recently — the eval run's context was built from them.
+    autoLinkEvalInjections(db, evalLogId, entry.project, { windowMinutes: entry.autoLinkWindowMinutes });
+  }
+  return evalLogId;
+}
+
+/**
+ * Record which observations search() returned for a project, marking them
+ * as pending attribution to the eval run that consumed them. Each
+ * (scope_key, project, observation) triple is stored once; re-searching
+ * refreshes the timestamp. The scope is either the plain time-window scope
+ * (agentId omitted, scope_key '') OR an agent/session-attributed scope
+ * (`agent:<agentId>`), so a session's searches are attributed to THAT agent's
+ * eval instead of racing any later eval in the same time window.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} project - Project path the search ran under
+ * @param {Array<number>} observationIds - Observation ids search() returned
+ * @param {Object} [opts] - { agentId? }
+ * @returns {{ tracked: number }}
+ */
+function recordSearchInjections(db, project, observationIds, opts = {}) {
+  const agentId = opts.agentId || null;
+  const scopeKey = agentId ? 'agent:' + agentId : '';
+  const upsert = db.prepare(
+    'INSERT INTO pending_eval_injections (project_path, observation_id, scope_key, agent_id, searched_at) VALUES (?, ?, ?, ?, datetime(\'now\')) ' +
+    'ON CONFLICT(scope_key, project_path, observation_id) DO UPDATE SET searched_at = datetime(\'now\')'
+  );
+  let tracked = 0;
+  for (const id of (observationIds || [])) {
+    const n = Number(id);
+    if (!n) continue;
+    upsert.run(project || process.cwd(), n, scopeKey, agentId);
+    tracked++;
+  }
+  return { tracked };
+}
+
+/**
+ * Pale of both scopes into a WHERE fragment. Shared by autoLinkEvalInjections
+ * (time-window scope, no agent) and linkAgentSessionInjections.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} evalLogId - evaluation_log row id
+ * @param {string[]} observationIds - ids to link
+ * @param {string} project - project for the injection rows
+ * @param {Object} [opts] - { scopeKey? } extra filter (ANDed) for the pending
+ *   DELETE, so only the matching scope's rows are consumed.
+ * @returns {{ linked: number }}
+ */
+function _linkAndConsume(db, evalLogId, observationIds, project, opts = {}) {
+  const source = opts.source || 'auto';
+  const linked = recordEvalInjections(db, evalLogId, observationIds, { project, source }).linked;
+  if (observationIds.length > 0) {
+    let sql = 'DELETE FROM pending_eval_injections WHERE observation_id IN (' +
+      observationIds.map(() => '?').join(',') + ')';
+    const params = [...observationIds];
+    if (opts.scopeKey != null) { sql += ' AND scope_key = ?'; params.push(opts.scopeKey); }
+    db.prepare(sql).run(...params);
+  }
+  return { linked };
+}
+
+/**
+ * Link pending search-returned observations to an eval run and consume them.
+ * Only rows searched within `windowMinutes` (default 60) of the eval count,
+ * so a stale pending row from an unrelated earlier search is never wrongly
+ * attributed. Consumed rows are deleted — one eval per search batch.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} evalLogId - evaluation_log row id
+ * @param {string} [project] - Project path; defaults to cwd
+ * @param {Object} [opts] - { windowMinutes? }
+ * @returns {{ linked: number }}
+ */
+function autoLinkEvalInjections(db, evalLogId, project, opts = {}) {
+  const windowMinutes = opts.windowMinutes == null ? 60 : opts.windowMinutes;
+  const proj = project || process.cwd();
+  const pending = db.prepare(
+    `SELECT observation_id FROM pending_eval_injections
+     WHERE project_path = ? AND scope_key = '' AND searched_at >= datetime('now', ?)`
+  ).all(proj, '-' + windowMinutes + ' minutes');
+  if (pending.length === 0) return { linked: 0 };
+  return _linkAndConsume(db, evalLogId, pending.map(p => p.observation_id), proj, { scopeKey: '', source: 'auto' });
+}
+
+/**
+ * Session-scoped attribution: link the observations an agent searched while
+ * its session was active to the eval the agent writes at end of session.
+ * Only rows scoped to this agent are touched — another agent's searches (or
+ * unattributed time-window searches) are left alone. This replaces the time
+ * window as the attribution boundary: whatever THIS agent searched during its
+ * session is attributed to THIS agent's eval, with no race against unrelated
+ * evals or same-window searches from other agents.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} evalLogId - evaluation_log row id
+ * @param {string} agentId - agent whose session is ending
+ * @param {string|number} sessionId - session identifier (for provenance)
+ * @param {string} [project] - project; defaults to cwd. When omitted, all of
+ *   the agent's pending rows across projects are linked.
+ * @returns {{ linked: number, sessionId: string|number }}
+ */
+function linkAgentSessionInjections(db, evalLogId, agentId, sessionId, project = null) {
+  const scopeKey = 'agent:' + agentId;
+  const params = [scopeKey];
+  let sql = `SELECT observation_id FROM pending_eval_injections WHERE scope_key = ?`;
+  if (project) { sql += ' AND project_path = ?'; params.push(project); }
+  const pending = db.prepare(sql).all(...params);
+  if (pending.length === 0) return { linked: 0, sessionId };
+  const ids = pending.map(p => p.observation_id);
+  const r = _linkAndConsume(db, evalLogId, ids, project || process.cwd(), { scopeKey, source: 'session' });
+  r.sessionId = sessionId;
+  return r;
+}
+
+/**
+ * Record which observations were injected into an eval run. Each pair
+ * (eval_log_id, observation_id) is stored once — the correlation source for
+ * outcome-weighted retrieval.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} evalLogId - evaluation_log row id
+ * @param {Array<number>} observationIds - Injected observation ids
+ * @param {Object} [opts] - { project? }
+ * @returns {{ linked: number }}
+ */
+function recordEvalInjections(db, evalLogId, observationIds, opts = {}) {
+  const project = opts.project || process.cwd();
+  // Provenance: 'manual' (explicit ids), 'auto' (time-window link), or
+  // 'session' (endAgentSession attribution).
+  const source = opts.source || 'manual';
+  const ins = db.prepare(
+    'INSERT OR IGNORE INTO eval_memory_injections (eval_log_id, observation_id, project_path, source) VALUES (?, ?, ?, ?)'
+  );
+  let linked = 0;
+  for (const id of (observationIds || [])) {
+    const n = Number(id);
+    if (!n) continue;
+    ins.run(Number(evalLogId), n, project, source);
+    linked++;
+  }
+  return { linked };
+}
+
+/**
+ * Outcome history per injected memory: how often each observation was part
+ * of an eval run, and whether those runs succeeded or failed. Closes the
+ * eval-log feedback loop — retrieval can boost memories with a proven-good
+ * outcome record and demote proven-bad ones.
+ *
+ * Verdict polarity: SUCCESS/REINFORCE count as success; FAILURE/CONTRADICT
+ * as failure; NEUTRAL contributes to runs but neither side. A memory needs
+ * `minRuns` (default 2) recorded runs before its weight is non-zero, so a
+ * single unlucky eval never reshapes retrieval.
+ *
+ * PROVENANCE-AWARE weighting (default on): evidence linked through auto or
+ * session attribution is less certain about true causation than manually
+ * wired `injectedObservationIds`, so each source contributes to the weight
+ * scaled by a confidence multiplier — manual 1.0, session 0.6, auto 0.4.
+ * The effective weight is the sum of each source's (success-failure) * m
+ * divided by the sum of (runs * m), which keeps the result in [-1, 1] while
+ * making auto-attributed memories need more evidence to argue either way.
+ * The raw per-source counts are always returned so callers can audit, and
+ * `weightSources` breaks the final weight down per source.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} [project]
+ * @param {Object} [opts] - { minRuns?, weightBySource? (default true),
+ *   sourceWeights? ({ manual, session, auto } multipliers, default above) }
+ * @returns {Map<number, { runs, successes, failures, successRate,
+ *   weight, bySource: { manual: {runs,successes,failures,weightContribution},
+ *   session: {...}, auto: {...} }, weightSources: {manual,session,auto} }>}
+ */
+function memoryOutcomeStats(db, project, opts = {}) {
+  const minRuns = opts.minRuns == null ? 2 : opts.minRuns;
+  const weightBySource = opts.weightBySource !== false;
+  const sw = Object.assign({ manual: 1, session: 0.6, auto: 0.4 }, opts.sourceWeights || {});
+
+  const rows = db.prepare(`
+    SELECT i.observation_id, i.source,
+      COUNT(*) as runs,
+      SUM(CASE WHEN e.llm_verdict IN ('SUCCESS','REINFORCE') THEN 1 ELSE 0 END) as successes,
+      SUM(CASE WHEN e.llm_verdict IN ('FAILURE','CONTRADICT') THEN 1 ELSE 0 END) as failures
+    FROM eval_memory_injections i
+    JOIN evaluation_log e ON e.id = i.eval_log_id
+    ${project ? 'WHERE i.project_path = ?' : ''}
+    GROUP BY i.observation_id, i.source
+  `).all(...(project ? [project] : []));
+
+  // Aggregate per observation across sources.
+  const agg = new Map();
+  for (const r of rows) {
+    const key = r.observation_id;
+    if (!agg.has(key)) agg.set(key, { bySource: { manual: { runs: 0, successes: 0, failures: 0 }, session: { runs: 0, successes: 0, failures: 0 }, auto: { runs: 0, successes: 0, failures: 0 } } });
+    const a = agg.get(key);
+    const src = a.bySource[r.source] || (a.bySource[r.source] = { runs: 0, successes: 0, failures: 0 });
+    src.runs += r.runs || 0;
+    src.successes += r.successes || 0;
+    src.failures += r.failures || 0;
+  }
+
+  const stats = new Map();
+  for (const [observationId, a] of agg) {
+    let runs = 0, successes = 0, failures = 0;
+    let wNum = 0, wDen = 0;
+    const weightSources = { manual: 0, session: 0, auto: 0 };
+    const bySource = {};
+    for (const src of ['manual', 'session', 'auto']) {
+      const s = a.bySource[src];
+      if (!s || s.runs === 0) continue;
+      runs += s.runs;
+      successes += s.successes;
+      failures += s.failures;
+      const m = src === 'manual' ? sw.manual : (src === 'session' ? sw.session : sw.auto);
+      const net = (s.successes - s.failures) * m;
+      const den = s.runs * m;
+      wNum += net;
+      wDen += den;
+      weightSources[src] = net / den; // per-source weight in [-1, 1]
+      bySource[src] = { ...s, weightContribution: Math.round(m * 1000) / 1000 };
+    }
+    const successRate = runs > 0 ? Math.round((successes / runs) * 1000) / 1000 : null;
+    // Effective weight: weighted net over weighted runs (each source's runs
+    // scaled by its confidence multiplier), clamped to [-1, 1] naturally since
+    // |wNum| <= wDen. When down-weighting is disabled, fall back to the plain
+    // ratio so legacy behavior is preserved exactly.
+    let weight;
+    if (runs === 0) {
+      weight = 0;
+    } else if (!weightBySource) {
+      weight = runs >= minRuns ? Math.round(((successes - failures) / runs) * 1000) / 1000 : 0;
+    } else {
+      weight = runs >= minRuns ? Math.round((wDen > 0 ? (wNum / wDen) : 0) * 1000) / 1000 : 0;
+    }
+    stats.set(observationId, {
+      runs, successes, failures, successRate, weight,
+      bySource,
+      weightSources,
+    });
+  }
+  return stats;
 }
 
 /**
@@ -778,10 +1029,47 @@ function getEvaluationLog(db, opts = {}) {
   const params = [];
   if (project) { sql += ' AND project_path = ?'; params.push(project); }
   if (verdict) { sql += ' AND llm_verdict = ?'; params.push(verdict); }
+
+  // Provenance counts per eval: how many fitted observations, broken down by
+  // link source. Distinct + they fuel the audit flag below.
+  const injSql =
+    'SELECT eval_log_id, source, COUNT(*) as cnt ' +
+    'FROM eval_memory_injections WHERE eval_log_id IN (' +
+    'SELECT id FROM evaluation_log WHERE 1=1' +
+    (project ? ' AND project_path = ?' : '') +
+    (verdict ? ' AND llm_verdict = ?' : '') +
+    ')' +
+    'GROUP BY eval_log_id, source';
+  const isqlParams = [];
+  if (project) isqlParams.push(project);
+  if (verdict) isqlParams.push(verdict);
+  const injRows = db.prepare(injSql).all(...isqlParams);
+  const provenance = new Map(); // eval_log_id -> {auto, session, manual, total}
+  for (const row of injRows) {
+    const key = row.eval_log_id;
+    if (!provenance.has(key)) provenance.set(key, { auto: 0, session: 0, manual: 0, total: 0 });
+    const p = provenance.get(key);
+    p[row.source] = (p[row.source] || 0) + row.cnt;
+    p.total += row.cnt;
+  }
+
   sql += ' ORDER BY evaluated_at DESC LIMIT ?';
   params.push(limit);
 
-  return db.prepare(sql).all(...params);
+  return db.prepare(sql).all(...params).map(row => {
+    const p = provenance.get(row.id) || { auto: 0, session: 0, manual: 0, total: 0 };
+    return {
+      ...row,
+      injected: p.total,
+      injectedSources: { manual: p.manual, auto: p.auto, session: p.session },
+      // Auto-attributed = linked via search (time-window or session) rather
+      // than manually wired injectedObservationIds.
+      autoAttributed: p.total > 0 && p.manual === 0,
+      clearlyAuto: p.auto > 0,
+      viaSession: p.session > 0,
+      linkProvenance: p.total === 0 ? 'none' : (p.manual > 0 ? 'manual' : (p.session > 0 ? 'session' : 'auto')),
+    };
+  });
 }
 
 /**
@@ -978,6 +1266,11 @@ module.exports = {
   verifyLearning,
   spawnExperiment,
   writeEvalLog,
+  recordEvalInjections,
+  recordSearchInjections,
+  autoLinkEvalInjections,
+  linkAgentSessionInjections,
+  memoryOutcomeStats,
   getEvaluationLog,
   getEvalLogStats,
   detectPlateau,
