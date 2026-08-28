@@ -3,7 +3,7 @@
  *
  * Provides lazy singleton database initialization with WAL mode, foreign keys,
  * and busy timeout. Includes schema creation (tables, indexes, FTS5 virtual
- * tables, triggers) and migration from legacy freebuff-mem.db.
+ * tables, triggers) and migration from legacy database names.
  *
  * @module core/db
  */
@@ -20,7 +20,7 @@ let _db = null;
 
 /**
  * Get or create the database connection (lazy singleton).
- * Handles migration from freebuff-mem.db on first access.
+ * Handles migration from legacy database names on first access.
  * Sets WAL mode, foreign keys, and busy timeout.
  *
  * @returns {import('better-sqlite3').Database} The database instance
@@ -39,7 +39,7 @@ function getDb() {
 
   // Auto-migrate from old database names to agentic-cortex.db on upgrade
   const dbDir = path.dirname(dbPath);
-  const oldNames = ['freebuff-mem.db', 'infinit-mem.db'];
+  const oldNames = ['infinit-mem.db'];
   for (const oldName of oldNames) {
     const oldDbPath = path.join(dbDir, oldName);
     if (!fs.existsSync(dbPath) && fs.existsSync(oldDbPath)) {

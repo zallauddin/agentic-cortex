@@ -3,7 +3,7 @@
  *
  * Turns a swarm persona from a *logical* agent (in-process reasoning engine
  * producing text) into a *real* agent: a headless subprocess of an installed
- * coding-agent harness (Claude Code, OpenCode, Codebuff, Cursor) with file
+ * coding-agent harness with file
  * editing, shell, and test-running tools — so the coder persona actually
  * edits files and the tester actually runs tests.
  *
@@ -16,7 +16,7 @@
  *
  * Worker selection (in order of precedence):
  *   1. opts.worker           — explicit { command, args?, env?, timeoutMs?, cwd?, framework? }
- *   2. opts.workerFramework  — framework id ('claude-code', 'opencode', 'codebuff', 'cursor')
+ *   2. opts.workerFramework  — framework id ('claude-code', 'opencode', 'cursor')
  *   3. env AGENTIC_CORTEX_WORKER — framework id, 'off', or JSON worker config
  *
  * Worker mode is opt-in:
@@ -57,12 +57,6 @@ const WORKER_FRAMEWORKS = {
     name: 'OpenCode',
     command: 'opencode',
     buildArgs: (prompt) => ['run', prompt],
-  },
-  codebuff: {
-    id: 'codebuff',
-    name: 'Codebuff',
-    command: 'codebuff',
-    buildArgs: (prompt) => [prompt],
   },
   cursor: {
     id: 'cursor',

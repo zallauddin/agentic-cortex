@@ -819,7 +819,7 @@ const TOOLS = [
   },
   {
     name: 'memory_discover',
-    description: '🕵️ DISCOVER FRAMEWORKS — Scan the machine for agent frameworks agentic-cortex can compose with (Claude Code, Cursor, OpenCode, Codebuff, generic MCP clients). Returns evidence: config files found, registered MCP servers, env vars. Pair with memory_compose for wiring.',
+    description: '🕵️ DISCOVER FRAMEWORKS — Scan the machine for agent frameworks agentic-cortex can compose with (Claude Code, Cursor, OpenCode, generic MCP clients). Returns evidence: config files found, registered MCP servers, env vars. Pair with memory_compose for wiring.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -829,11 +829,11 @@ const TOOLS = [
   },
   {
     name: 'memory_compose',
-    description: '🔗 COMPOSE — Return the exact wiring to compose agentic-cortex with a discovered agent framework: which MCP config to write, which memory/reasoning/audit/orchestration tools to expose. Input: framework id (claude-code, cursor, opencode, codebuff, generic-mcp) or a discovered framework object.',
+    description: '🔗 COMPOSE — Return the exact wiring to compose agentic-cortex with a discovered agent framework: which MCP config to write, which memory/reasoning/audit/orchestration tools to expose. Input: framework id (claude-code, cursor, opencode, generic-mcp) or a discovered framework object.',
     inputSchema: {
       type: 'object',
       properties: {
-        framework: { type: 'string', description: 'Framework id (claude-code, cursor, opencode, codebuff, generic-mcp)' },
+        framework: { type: 'string', description: 'Framework id (claude-code, cursor, opencode, generic-mcp)' },
         project: { type: 'string', description: 'Project path' },
       },
       required: ['framework'],
@@ -1322,7 +1322,7 @@ const TOOLS = [
   },
   {
     name: 'memory_swarm_execute',
-    description: '⚡ SWARM EXECUTE — Run a single swarm task. Default: persona-specific reasoning engine (Analyzer→beam search, Planner→budget-forcing, Coder→MCTS, Tester→self-consistency, Reviewer→beam search, Verifier→budget-forcing, Reasoner→deterministic, Orchestrator→synthesize). With workerMode=process, launches a real agent subprocess (Claude Code/OpenCode/Codebuff/Cursor) so the coder actually edits files and the tester actually runs tests.',
+    description: '⚡ SWARM EXECUTE — Run a single swarm task. Default: persona-specific reasoning engine (Analyzer→beam search, Planner→budget-forcing, Coder→MCTS, Tester→self-consistency, Reviewer→beam search, Verifier→budget-forcing, Reasoner→deterministic, Orchestrator→synthesize). With workerMode=process, launches a real agent subprocess (Claude Code/OpenCode/Cursor) so the coder actually edits files and the tester actually runs tests.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1330,7 +1330,7 @@ const TOOLS = [
         project: { type: 'string', description: 'Project path' },
         dryRun: { type: 'boolean', description: 'If true, return the execution plan without running' },
         workerMode: { type: 'string', description: 'process | in-process — use a real agent subprocess (default: in-process)' },
-        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | codebuff | cursor' },
+        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | cursor' },
         worker: { type: 'string', description: 'Explicit worker config as JSON: { command, args?, env?, timeoutMs?, cwd?, framework? }' },
         workerRoles: { type: 'array', items: { type: 'string' }, description: 'Only these roles use the worker (e.g. [coder, tester])' },
       },
@@ -1350,7 +1350,7 @@ const TOOLS = [
         maxRounds: { type: 'number', description: 'Round budget for the failure loop' },
         waitRetries: { type: 'boolean', description: 'Wait out backoff windows within the run (default true)' },
         workerMode: { type: 'string', description: 'process | in-process — launch real agent subprocesses (default: in-process)' },
-        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | codebuff | cursor' },
+        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | cursor' },
         worker: { type: 'string', description: 'Explicit worker config as JSON: { command, args?, env?, timeoutMs?, cwd?, framework? }' },
         workerRoles: { type: 'array', items: { type: 'string' }, description: 'Only these roles use the worker (e.g. [coder, tester])' },
       },
@@ -1388,7 +1388,7 @@ const TOOLS = [
         project: { type: 'string', description: 'Project path containing .swarm/' },
         concurrency: { type: 'number', description: 'Worker-pool size (default 4)' },
         workerMode: { type: 'string', description: 'process | in-process — launch real agent subprocesses for tasks' },
-        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | codebuff | cursor' },
+        workerFramework: { type: 'string', description: 'Framework id: claude-code | opencode | cursor' },
         worker: { type: 'string', description: 'Explicit worker config as JSON: { command, args?, env?, timeoutMs?, cwd?, framework? }' },
       },
       required: ['project'],

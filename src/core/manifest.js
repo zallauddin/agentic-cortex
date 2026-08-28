@@ -61,15 +61,6 @@ const KNOWN_FRAMEWORKS = [
     mcpKey: 'mcp',
   },
   {
-    id: 'codebuff',
-    name: 'Codebuff',
-    kind: 'coding-agent',
-    files: ['.freebuff/', 'AGENTS.md'],
-    env: ['CODEBUFF_SESSION'],
-    mcpFiles: [],
-    mcpKey: null,
-  },
-  {
     id: 'generic-mcp',
     name: 'Generic MCP client',
     kind: 'mcp-client',
@@ -235,7 +226,7 @@ const CAPABILITIES = [
   { id: 'orchestration.workflow', version: '1', description: 'DAG workflow executor with parallel branches, rollback, sub-agent spawning', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.rules', version: '1', description: 'Priority-based condition→action declarative rules', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.swarm', version: '1', description: 'Persona-based multi-agent swarm: 8 roles, dependency DAG, role→reasoning-engine dispatch', exposedVia: ['mcp', 'cli', 'node'] },
-  { id: 'orchestration.swarm-workers', version: '1', description: 'Spawn real agent subprocesses (Claude Code, OpenCode, Codebuff, Cursor) as swarm workers via the launcher registry + compose wiring — coder actually edits files, tester actually runs tests, results feed the failure loop', exposedVia: ['mcp', 'cli', 'node'] },
+  { id: 'orchestration.swarm-workers', version: '1', description: 'Spawn real agent subprocesses as swarm workers via the launcher registry + compose wiring — coder actually edits files, tester actually runs tests, results feed the failure loop', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.swarm-plan-bridge', version: '1', description: 'Import .swarm plan.json/plan-ledger specs into swarm_tasks (QA gates → reviewer/tester/verifier tasks), execute through the engine, and sync results back to plan.json + the ledger', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.mailbox', version: '1', description: 'Inter-agent mailbox (send/inbox/mark-read) for agent coordination', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'orchestration.agent-sessions', version: '1', description: 'Namespaced agent sessions with shared memory discovery', exposedVia: ['mcp', 'cli', 'node'] },
@@ -418,18 +409,6 @@ function composeWithFramework(frameworkOrId, opts = {}) {
         reasoningTools: ['memory_tree_search', 'memory_reason_all'],
         auditTools: ['memory_resolve_conflict'],
         orchestrationTools: ['memory_workflow', 'memory_swarm_decompose'],
-      };
-      break;
-
-    case 'codebuff':
-      plan.strategy = 'use AC as a node library in-process (AGENTIC_CORTEX_PATH) or via MCP; AGENTS.md already discovered via setup';
-      plan.wiring = {
-        nodeRequire: 'agentic-cortex',
-        envOverride: 'AGENTIC_CORTEX_PATH',
-        memoryTools: ['memory_bootstrap', 'memory_save', 'memory_search', 'memory_code_symbols', 'memory_code_context'],
-        reasoningTools: ['memory_tree_search', 'memory_reason_all', 'memory_verify_code', 'memory_self_consistency'],
-        auditTools: ['memory_resolve_conflict', 'memory_resolution_history'],
-        orchestrationTools: ['memory_fsm', 'memory_workflow', 'memory_swarm_decompose', 'memory_swarm_execute_pipeline'],
       };
       break;
 

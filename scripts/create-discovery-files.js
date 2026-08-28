@@ -6,7 +6,7 @@
  *   - AGENTS.md             (OpenCode, Claude Code — canonical MCP-first discovery)
  *   - .claude/CLAUDE.md     (Claude Code)
  *   - .cursor/rules/agentic-cortex.mdc  (Cursor, alwaysApply: true)
- *   - .opencode/agentic-cortex.md  (OpenCode / Codebuff)
+ *   - .opencode/agentic-cortex.md  (OpenCode)
  *
  * Also creates MCP server configuration files:
  *   - .mcp.json  (Claude Code)

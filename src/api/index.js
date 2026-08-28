@@ -86,7 +86,7 @@ core.swarm = swarm;
 // Inject API reference so swarm tasks can dispatch to reasoning engines
 swarm.setApi(module.exports, save);
 // Real-agent worker launcher (Phase 30): swarm tasks can spawn actual
-// coding-agent subprocesses (Claude Code, OpenCode, Codebuff, Cursor).
+// coding-agent subprocesses and compatible local agent tools.
 const worker = require('../core/worker');
 core.worker = worker;
 // Plan-ledger bridge (Phase 31): import .swarm plans into swarm_tasks and
