@@ -315,7 +315,7 @@ function recordFailure(db, { commandKey, errorText, project, suggestion }) {
 
   const count = db.prepare(
     `SELECT count FROM failure_lessons WHERE project_path = ? AND command_key = ?`
-  ).get(proj, command_key);
+  ).get(proj, commandKey);
 
   return { kind, target, suggestion: sugg, count: count ? count.count : 1 };
 }

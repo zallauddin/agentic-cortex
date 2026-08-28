@@ -82,3 +82,6 @@ src/bench/locomo10.json
 # Agent auto-generated artifacts (do not commit - regenerated every bootstrap)
 knowledge.md
 .infinit-graph.json
+
+# Codebuff tool metadata (do not commit)
+.freebuff/
