@@ -14,9 +14,9 @@ describe('Prompts: built-in templates', () => {
     prompts.resetTemplates();
   });
 
-  it('should have 10 built-in templates', () => {
+  it('should have 20 built-in templates', () => {
     const templates = prompts.listTemplates();
-    assert.equal(templates.length, 10);
+    assert.equal(templates.length, 20);
   });
 
   it('should include all expected template names', () => {
@@ -24,15 +24,25 @@ describe('Prompts: built-in templates', () => {
     const names = templates.map(t => t.name).sort();
     assert.deepEqual(names, [
       'analyze-plateau',
+      'check-goal-reached',
       'classify-outcome',
       'consolidate-observations',
       'crystallize-raw-to-synthesis',
       'design-experiment',
       'extract-skill',
+      'generate-reasoning-branches',
       'promote-pattern',
       'rca-from-error',
+      'reflexion-critique',
       'resolve-conflict',
+      'swarm-analyze',
+      'swarm-implement',
+      'swarm-plan',
+      'swarm-review',
+      'swarm-verify',
+      'synthesize-solution',
       'verify-learning',
+      'verify-reasoning-step',
     ]);
   });
 
@@ -217,7 +227,7 @@ describe('Prompts: listTemplates', () => {
       description: 'Custom template',
     });
     const templates = prompts.listTemplates();
-    assert.equal(templates.length, 11); // 10 built-in + 1 custom
+    assert.equal(templates.length, 21); // 20 built-in + 1 custom
     const custom = templates.find(t => t.name === 'my-custom');
     assert.ok(custom);
     assert.equal(custom.source, 'custom');
@@ -286,14 +296,14 @@ describe('Prompts: resetTemplates', () => {
       systemPrompt: 'Temp',
       userPromptTemplate: 'Temp {{x}}',
     });
-    assert.equal(prompts.listTemplates().length, 11);
+    assert.equal(prompts.listTemplates().length, 21);
 
     // Reset
     prompts.resetTemplates();
 
-    // Back to 10, no custom
+    // Back to 20, no custom
     const templates = prompts.listTemplates();
-    assert.equal(templates.length, 10);
+    assert.equal(templates.length, 20);
     assert.equal(prompts.getTemplate('temp-custom'), undefined);
     assert.ok(prompts.getTemplate('classify-outcome'));
   });

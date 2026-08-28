@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_swarm_replan_goal', 'memory_swarm_retry_now', 'memory_swarm_job_create', 'memory_swarm_job_run', 'memory_swarm_job_cancel', 'memory_swarm_plan_import', 'memory_swarm_plan_run', 'memory_swarm_plan_sync', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run']);
+  const stateModifyingTools = new Set(['memory_offline_execute', 'memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_swarm_replan_goal', 'memory_swarm_retry_now', 'memory_swarm_job_create', 'memory_swarm_job_run', 'memory_swarm_job_cancel', 'memory_swarm_plan_import', 'memory_swarm_plan_run', 'memory_swarm_plan_sync', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -690,7 +690,7 @@ const TOOLS = [
   },
   {
     name: 'memory_eval_log',
-    description: '📊 IMMUTABLE AUDIT TRAIL — Query the append-only evaluation log. AutoGTM\'s results.tsv: every evaluation is preserved forever for benchmarking and plateau detection. Use --stats for aggregate metrics.',
+    description: '📊 IMMUTABLE AUDIT TRAIL — Query the append-only evaluation log. AutoGTM\'s results.tsv: every evaluation is preserved forever for benchmarking and plateau detection. Use --stats for aggregate metrics. Each row carries attribution provenance: injected (count of linked memories), injectedSources ({manual, auto, session}), autoAttributed (linked via search, not manually wired), clearlyAuto (time-window auto-link), viaSession (endAgentSession), and linkProvenance (none|manual|auto|session).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -698,6 +698,19 @@ const TOOLS = [
         verdict: { type: 'string', description: 'Filter by verdict: SUCCESS, FAILURE, NEUTRAL, REINFORCE, CONTRADICT' },
         limit: { type: 'integer', description: 'Max rows', default: 50 },
         stats: { type: 'boolean', description: 'Return aggregate stats instead of raw rows', default: false },
+      },
+    },
+  },
+  {
+    name: 'memory_outcome_stats',
+    description: '📈 PROVEN-GOOD MEMORIES — Query which memories are proven-good or proven-bad by eval-outcome history. Each injected memory\'s verdict record is correlated (eval_memory_injections JOIN evaluation_log): weight +1 = always injected into successes, -1 = always failures, 0 = below the min-runs threshold or no signal. Consult before relying on a memory: prefer weight > 0 over unproven or negative-weight memories.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        minRuns: { type: 'integer', description: 'Minimum recorded eval runs before a memory gets a non-zero weight', default: 2 },
+        minWeight: { type: 'number', description: 'Only return memories with weight >= this value (e.g. 0.5 for proven-good only)', default: -1 },
+        limit: { type: 'integer', description: 'Max memories to return', default: 50 },
       },
     },
   },
@@ -869,6 +882,19 @@ const TOOLS = [
 
   // ── v6.3.0: Test-time compute reasoning (Phase 20) ────────────
   {
+    name: 'memory_coverage_probe',
+    description: '🕳️ BLIND-SPOT PROBE — Assess whether retrieved memories cover a query and return explicit missing-evidence questions. Use before trusting a narrow top-k result.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Question or task to assess' },
+        project: { type: 'string', description: 'Project path' },
+        limit: { type: 'number', description: 'Number of memories to retrieve', default: 10 },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'memory_tree_search',
     description: '🌳 TREE SEARCH — Run Tree of Thoughts / MCTS reasoning on a problem. Explores multiple reasoning branches, verifies each step with PRM, prunes invalid paths, and backtracks. Uses adaptive compute budget: harder problems get more exploration. Strategies: auto (default), beam, mcts, greedy.',
     inputSchema: {
@@ -941,6 +967,16 @@ const TOOLS = [
       },
       required: ['sessionId', 'problem', 'failedPath', 'verificationError'],
     },
+  },
+  {
+    name: 'memory_coverage_probes',
+    description: '📋 COVERAGE PROBES — List unresolved blind-spot questions created by retrieval coverage checks.',
+    inputSchema: { type: 'object', properties: { project: { type: 'string' }, status: { type: 'string', default: 'open' }, limit: { type: 'number', default: 20 } } },
+  },
+  {
+    name: 'memory_resolve_coverage_probe',
+    description: '✅ RESOLVE COVERAGE PROBE — Mark a blind-spot question resolved with supporting memory evidence.',
+    inputSchema: { type: 'object', properties: { id: { type: 'integer' }, observationId: { type: 'integer' } }, required: ['id'] },
   },
   {
     name: 'memory_reasoning_trace',
@@ -1991,6 +2027,38 @@ async function callTool(name, args) {
       return api.getEvaluationLog({ project: args.project, verdict: args.verdict, limit: args.limit });
     }
 
+    case 'memory_outcome_stats': {
+      // Map<observationId, {runs, successes, failures, successRate, weight}> →
+      // JSON-friendly array enriched with each memory's title/type so agents
+      // can see WHICH memories are proven-good, not just bare ids.
+      const stats = api.memoryOutcomeStats({ project: args.project, minRuns: args.minRuns });
+      const entries = [];
+      for (const [observationId, s] of stats) {
+        const obs = api.get(observationId) || {};
+        const weight = Math.round((s.weight || 0) * 1000) / 1000;
+        if (weight < (args.minWeight != null ? args.minWeight : -1)) continue;
+        entries.push({
+          observationId,
+          title: obs.title || '(deleted memory)',
+          type: obs.type || 'unknown',
+          runs: s.runs,
+          successes: s.successes,
+          failures: s.failures,
+          successRate: s.successRate,
+          weight,
+          provenGood: weight > 0,
+        });
+      }
+      // Proven-good first, then by weight desc, then by run count desc.
+      entries.sort((a, b) =>
+        (b.provenGood - a.provenGood) || (b.weight - a.weight) || (b.runs - a.runs)
+      );
+      return {
+        total: entries.length,
+        memories: entries.slice(0, args.limit || 50),
+      };
+    }
+
     case 'memory_fsm': {
       const agentId = args.agentId || process.env.AGENTIC_CORTEX_AGENT_ID || 'default';
       if (args.action === 'start') {
@@ -2125,6 +2193,16 @@ async function callTool(name, args) {
       return api.markMessageRead(args.id);
 
     // ── v6.3.0: Test-time compute reasoning ──
+    case 'memory_coverage_probe':
+      return api.coverageProbe(args.query, { project: args.project, limit: args.limit, record: args.record });
+
+    case 'memory_offline_capabilities':
+      return api.offlineCapabilities();
+    case 'memory_offline_plan':
+      return api.offlinePlan(args.project, args.task, args);
+    case 'memory_offline_execute':
+      return api.offlineExecute(args.project, args.task, { changes: args.changes || [], verify: args.verify, stopOnFailure: args.stopOnFailure });
+
     case 'memory_tree_search':
       return api.treeSearch({
         problem: args.problem,
@@ -2181,6 +2259,12 @@ async function callTool(name, args) {
         strategy: args.strategy || 'unknown',
         project: args.project,
       });
+
+    case 'memory_coverage_probes':
+      return api.listCoverageProbes({ project: args.project, status: args.status, limit: args.limit });
+
+    case 'memory_resolve_coverage_probe':
+      return api.resolveCoverageProbe(args.id, args.observationId);
 
     case 'memory_reasoning_trace':
       return api.getReasoningTrace(args.traceId);

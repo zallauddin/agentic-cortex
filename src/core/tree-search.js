@@ -116,12 +116,21 @@ function createTrace({ id = null, problem = '', strategy = 'beam', difficultySco
  * @param {string[]} params.currentChain — Steps taken so far
  * @param {number} params.branchCount — How many branches to generate
  * @param {number} params.budget — Remaining token budget
+ * @param {Array<Object>} [params.memories] — Pre-retrieved brain evidence; when
+ *   present, a compact block is injected so branches argue from memory
  * @returns {Promise<Array<{ content: string, type: string }>>}
  */
-async function generateBranches({ problem, currentChain = [], branchCount = 3, budget = 2000 }) {
+async function generateBranches({ problem, currentChain = [], branchCount = 3, budget = 2000, memories = null }) {
   const chainContext = currentChain.length > 0
     ? 'Steps taken so far:\n' + currentChain.map((s, i) => `${i + 1}. ${s}`).join('\n')
     : 'No steps taken yet — this is the first reasoning step.';
+
+  // Memory-informed generation: when the brain has evidence for this
+  // problem, the branches are asked to argue FROM it, not reinvent it.
+  const memoryContext = Array.isArray(memories) && memories.length > 0
+    ? '\n\nRelevant memory evidence (consult it — argue from what the brain already knows, and do not contradict it without strong reason):\n' +
+      memories.slice(0, 5).map((m, i) => `${i + 1}. [${m.type || 'memory'}${m.confidence != null ? ' · conf ' + m.confidence : ''}] ${m.title || ''}: ${String(m.content || '').slice(0, 200)}`).join('\n')
+    : '';
 
   const messages = [
     {
@@ -141,7 +150,7 @@ Respond ONLY with valid JSON: {"branches": [{"content": "step text", "type": "re
     },
     {
       role: 'user',
-      content: `Problem: ${problem}\n\n${chainContext}\n\nGenerate ${branchCount} candidate next steps:`,
+      content: `Problem: ${problem}\n\n${chainContext}\n\nGenerate ${branchCount} candidate next steps:${memoryContext}`,
     },
   ];
 
@@ -231,7 +240,7 @@ Respond ONLY with valid JSON: {"reached": true/false, "confidence": 0.0-1.0, "re
  * after filtering), instead of shallow verification, the path gets
  * deepened through multiple rounds of doubt prompting and reconsideration.
  */
-async function _expandAndVerifyNode({ trace, node, chain, branches, problem, project, depth, db, searchFn, budget, expandViaCode = false }) {
+async function _expandAndVerifyNode({ trace, node, chain, branches, problem, project, depth, db, searchFn, budget, expandViaCode = false, memories = null }) {
   const childNodes = [];
   let tokensAdded = 0;
 
@@ -285,7 +294,9 @@ async function _expandAndVerifyNode({ trace, node, chain, branches, problem, pro
         childNode.verificationResult = { valid: true, score: 0.5, tier: 'repl-fallback', reason: `REPL unavailable: ${e.message}` };
       }
     } else {
-      // ── Normal PRM verification ──
+      // ── Normal PRM verification ── the brain's evidence (pre-retrieved
+      //    once for this search) scores every node, so the trace shows WHY
+      //    each step was accepted or rejected in memory terms.
       const verification = await prm.verifyStep({
         stepContent: branch.content,
         priorSteps: chain,
@@ -294,6 +305,7 @@ async function _expandAndVerifyNode({ trace, node, chain, branches, problem, pro
         project,
         db,
         searchFn,
+        memories,
       });
 
       childNode.prmScore = verification.score;
@@ -406,11 +418,14 @@ async function _expandAndVerifyNode({ trace, node, chain, branches, problem, pro
  * @param {Object} [params.budgetOverrides] — Override budget parameters
  * @returns {Promise<ReasoningTrace>}
  */
-async function beamSearch({ problem, project = '', db = null, searchFn = null, budgetOverrides = {} }) {
-  // 1. Estimate difficulty and calculate budget
-  let memories = [];
-  if (searchFn) {
-    try { memories = await searchFn(problem, { project, limit: 10 }); } catch {}
+async function beamSearch({ problem, project = '', db = null, searchFn = null, budgetOverrides = {}, memories = null }) {
+  // 1. Estimate difficulty and calculate budget. The retrieved brain
+  //    evidence is threaded into node scoring and branch generation below
+  //    — one consult per search, not one per node.
+  if (!memories && searchFn) {
+    try { memories = await searchFn(problem, { project, limit: 10 }); } catch { memories = []; }
+  } else if (!memories) {
+    memories = [];
   }
 
   const { score: difficulty } = adaptiveBudget.estimateDifficulty({
@@ -444,11 +459,13 @@ async function beamSearch({ problem, project = '', db = null, searchFn = null, b
         currentChain: chain,
         branchCount: budget.beamWidth,
         budget: Math.max(200, budget.tokenBudget - totalTokensSpent),
+        memories,
       });
 
       const result = await _expandAndVerifyNode({
         trace, node, chain, branches, problem, project, depth, db, searchFn, budget,
         expandViaCode: budgetOverrides.expandViaCode || false,
+        memories,
       });
 
       totalTokensSpent += result.tokensAdded;
@@ -495,11 +512,13 @@ async function beamSearch({ problem, project = '', db = null, searchFn = null, b
  * @param {Object} params — Same as beamSearch
  * @returns {Promise<ReasoningTrace>}
  */
-async function mctsSearch({ problem, project = '', db = null, searchFn = null, budgetOverrides = {} }) {
-  // 1. Estimate difficulty and budget
-  let memories = [];
-  if (searchFn) {
-    try { memories = await searchFn(problem, { project, limit: 10 }); } catch {}
+async function mctsSearch({ problem, project = '', db = null, searchFn = null, budgetOverrides = {}, memories = null }) {
+  // 1. Estimate difficulty and budget. The retrieved brain evidence is
+  //    threaded into node scoring and branch generation below.
+  if (!memories && searchFn) {
+    try { memories = await searchFn(problem, { project, limit: 10 }); } catch { memories = []; }
+  } else if (!memories) {
+    memories = [];
   }
 
   const { score: difficulty } = adaptiveBudget.estimateDifficulty({
@@ -534,11 +553,13 @@ async function mctsSearch({ problem, project = '', db = null, searchFn = null, b
         currentChain: chain,
         branchCount: Math.min(2, budget.beamWidth),
         budget: Math.max(200, budget.tokenBudget - totalTokensSpent),
+        memories,
       });
 
       const result = await _expandAndVerifyNode({
         trace, node: selected, chain, branches, problem, project, depth: chain.length, db, searchFn, budget,
         expandViaCode: budgetOverrides.expandViaCode || false,
+        memories,
       });
 
       totalTokensSpent += result.tokensAdded;
@@ -691,6 +712,19 @@ function traceToJSON(trace) {
       stepContent: n.stepContent ? n.stepContent.slice(0, 200) : '',
       prmScore: n.prmScore, isPruned: n.isPruned, isTerminal: n.isTerminal,
       visitCount: n.visitCount, qValue: n.qValue,
+      // Why this node scored what it did — the brain evidence it was
+      // checked against (corroborating vs contradicting memory titles).
+      verificationResult: n.verificationResult ? {
+        score: n.verificationResult.score,
+        tier: n.verificationResult.tier,
+        reason: n.verificationResult.reason,
+        memory: n.verificationResult.details && n.verificationResult.details.memory
+          ? {
+              corroborating: (n.verificationResult.details.memory.corroboratingMemories || []).map(m => m.title || m.id),
+              contradicting: (n.verificationResult.details.memory.contradictingMemories || []).map(m => m.title || m.id),
+            }
+          : null,
+      } : null,
     })),
   };
 }
@@ -807,35 +841,39 @@ function loadTrace(db, traceId) {
  * @param {Object} [params.budgetOverrides] — Override budget parameters
  * @returns {Promise<Object>} Trace result
  */
-async function search({ problem, project = '', strategy = 'auto', db = null, searchFn = null, budgetOverrides = {} }) {
+async function search({ problem, project = '', strategy = 'auto', db = null, searchFn = null, budgetOverrides = {}, memories = null }) {
   const effectiveDb = db || _db;
   const effectiveSearch = searchFn || _searchFn;
+
+  // One brain consult per search: the retrieved evidence feeds difficulty
+  // estimation AND every node's PRM scoring and branch generation below.
+  if (!memories && effectiveSearch) {
+    try { memories = await effectiveSearch(problem, { project, limit: 10 }); } catch { memories = []; }
+  } else if (!memories) {
+    memories = [];
+  }
 
   let trace;
 
   if (strategy === 'mcts') {
-    trace = await mctsSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides });
+    trace = await mctsSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides, memories });
   } else if (strategy === 'beam') {
-    trace = await beamSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides });
+    trace = await beamSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides, memories });
   } else {
     // Auto: estimate difficulty first, then select strategy
-    let memories = [];
-    if (effectiveSearch) {
-      try { memories = await effectiveSearch(problem, { project, limit: 10 }); } catch {}
-    }
     const { score: difficulty } = adaptiveBudget.estimateDifficulty({
       problem, project, memories, db: effectiveDb,
     });
 
     if (difficulty <= 2) {
       // Easy: greedy (single path)
-      trace = await beamSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides: { beamWidth: 1, ...budgetOverrides } });
+      trace = await beamSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides: { beamWidth: 1, ...budgetOverrides }, memories });
     } else if (difficulty <= 5) {
       // Medium: beam search
-      trace = await beamSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides });
+      trace = await beamSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides, memories });
     } else {
       // Hard: MCTS
-      trace = await mctsSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides });
+      trace = await mctsSearch({ problem, project, db: effectiveDb, searchFn: effectiveSearch, budgetOverrides, memories });
     }
   }
 

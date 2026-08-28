@@ -95,6 +95,25 @@ describe('MCP tool definitions', () => {
     assert.ok(serverCode.includes("name: 'memory_auto_capture'"));
   });
 
+  it('should include the eval-log and outcome-stats tools', () => {
+    assert.ok(serverCode.includes("name: 'memory_eval_log'"));
+    assert.ok(serverCode.includes("name: 'memory_outcome_stats'"));
+    // The handler must exist and return a JSON-friendly { total, memories } shape.
+    assert.ok(serverCode.includes('case \'memory_outcome_stats\':'));
+    assert.ok(serverCode.includes('provenGood: weight > 0'));
+    assert.ok(serverCode.includes('memories: entries.slice(0, args.limit || 50)'));
+    // Search surfaces exist (their hits carry outcome fields via the API's
+    // outcome-weighted retrieval rather than MCP-side transforms).
+    assert.ok(serverCode.includes("name: 'memory_search'"));
+    // The eval-log tool documents attribution provenance so agents can audit
+    // auto-attributed vs manually wired injections.
+    assert.ok(serverCode.includes('autoAttributed'), 'eval-log tool exposes autoAttributed');
+    assert.ok(serverCode.includes('linkProvenance'), 'eval-log tool exposes linkProvenance');
+    assert.ok(serverCode.includes('injectedSources'), 'eval-log tool exposes injectedSources');
+    assert.ok(serverCode.includes("name: 'memory_search_all'"));
+    assert.ok(serverCode.includes("name: 'memory_eval_log'"));
+  });
+
   it('should include graph, export, import, embed, hook, daily-summary tools', () => {
     assert.ok(serverCode.includes("name: 'memory_relate'"));
     assert.ok(serverCode.includes("name: 'memory_graph'"));

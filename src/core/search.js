@@ -323,10 +323,185 @@ async function rerankResults(query, results) {
   }
 }
 
+/**
+ * Outcome-weighted selection: adjust search result scores by each memory's
+ * recorded eval-outcome history (eval_memory_injections JOIN
+ * evaluation_log). Memories injected into successful evals are boosted;
+ * ones injected into failures are demoted — the eval-log feedback loop
+ * closed at retrieval time.
+ *
+ * The adjustment applies to whatever numeric score a result carries
+ * (rerank_score, else combined_score), clamped to [0, 1]. Keyword-only
+ * results (no numeric score) keep the weight attached as a secondary sort
+ * key. Every result gains `outcome_weight` ([-1, 1], 0 below the min-runs
+ * threshold) and `outcome_runs` so callers can see the signal.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Array<Object>} results — hybrid/keyword/reranked search results
+ * @param {Object} [opts] — { project?, delta? (default 0.1), minRuns? }
+ * @returns {Array<Object>} re-sorted results with outcome fields attached
+ */
+function applyOutcomeWeights(db, results, opts = {}) {
+  if (!db || !results || results.length === 0) return results || [];
+  const delta = opts.delta || 0.1;
+  let stats = null;
+  try {
+    const { memoryOutcomeStats } = require('./self-improve');
+    stats = memoryOutcomeStats(db, opts.project, { minRuns: opts.minRuns });
+  } catch { stats = null; }
+
+  if (!stats || stats.size === 0) {
+    return results.map(r => ({ ...r, outcome_weight: 0, outcome_runs: 0 }));
+  }
+
+  const adjusted = results.map(r => {
+    const st = stats.get(r.id);
+    const weight = st ? st.weight : 0;
+    const out = {
+      ...r,
+      outcome_weight: Math.round(weight * 1000) / 1000,
+      outcome_runs: st ? st.runs : 0,
+    };
+    if (weight === 0) return out;
+    if (typeof r.rerank_score === 'number') {
+      out.rerank_score = Math.round(Math.max(0, Math.min(1, r.rerank_score + weight * delta)) * 1000) / 1000;
+    } else if (typeof r.combined_score === 'number') {
+      out.combined_score = Math.round(Math.max(0, Math.min(1, r.combined_score + weight * delta)) * 1000) / 1000;
+    }
+    return out;
+  });
+
+  // Re-sort: numeric score desc; keyword-only results by outcome weight.
+  adjusted.sort((a, b) => {
+    const sa = typeof a.rerank_score === 'number' ? a.rerank_score : (typeof a.combined_score === 'number' ? a.combined_score : null);
+    const sb = typeof b.rerank_score === 'number' ? b.rerank_score : (typeof b.combined_score === 'number' ? b.combined_score : null);
+    if (sa != null && sb != null) return sb - sa;
+    if (sa != null) return -1;
+    if (sb != null) return 1;
+    return (b.outcome_weight || 0) - (a.outcome_weight || 0);
+  });
+  return adjusted;
+}
+
+
+/**
+ * Attach each result's eval-outcome record as inline provenance fields
+ * (`outcome_weight`, `outcome_runs`) WITHOUT reordering. Unlike
+ * applyOutcomeWeights — which re-sorts by the adjusted score — this is for
+ * surfaces that should keep their existing ordering (e.g. cross-project
+ * search, where adjusting one project's scores against another's is
+ * misleading) but still want agents to see a memory's proven-ness at
+ * retrieval time.
+ *
+ * When `project` is given, the correlation stats are scoped to that
+ * project; otherwise stats span ALL projects keyed by observation id.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Array<Object>} results
+ * @param {Object} [opts] — { project?, minRuns? }
+ * @returns {Array<Object>} results with outcome_weight/outcome_runs attached
+ */
+/**
+ * Diversify retrieval so one dominant cluster cannot hide dissenting or
+ * orthogonal evidence. Maximal marginal relevance is deterministic and works
+ * with keyword-only results by using token overlap as a similarity proxy.
+ *
+ * @param {Array<Object>} results
+ * @param {Object} [opts] { limit?, lambda?, blindSpotThreshold? }
+ * @returns {Array<Object>} results annotated with coverage fields
+ */
+function diversifyResults(results, opts = {}) {
+  if (!Array.isArray(results) || results.length === 0) return results || [];
+  const limit = opts.limit || results.length;
+  const lambda = opts.lambda == null ? 0.72 : Math.max(0, Math.min(1, opts.lambda));
+  const selected = [];
+  const remaining = results.map((result, index) => ({ result, index }));
+  const tokens = result => new Set(String((result.title || '') + ' ' + (result.preview || result.content || '')).toLowerCase().split(/\\W+/).filter(t => t.length > 2));
+  const similarity = (a, b) => {
+    const ta = tokens(a), tb = tokens(b);
+    if (!ta.size || !tb.size) return 0;
+    let intersection = 0;
+    for (const token of ta) if (tb.has(token)) intersection++;
+    return intersection / Math.max(ta.size, tb.size);
+  };
+  while (selected.length < limit && remaining.length > 0) {
+    let best = null;
+    for (const candidate of remaining) {
+      const relevance = typeof candidate.result.rerank_score === 'number'
+        ? candidate.result.rerank_score
+        : (typeof candidate.result.combined_score === 'number' ? candidate.result.combined_score : 1 / (candidate.index + 1));
+      const redundancy = selected.length === 0 ? 0 : Math.max(...selected.map(s => similarity(candidate.result, s.result)));
+      const score = lambda * relevance - (1 - lambda) * redundancy;
+      if (!best || score > best.score) best = { candidate, score, redundancy };
+    }
+    const picked = best.candidate;
+    picked.result.coverage_score = Math.round(best.score * 1000) / 1000;
+    picked.result.redundancy_score = Math.round(best.redundancy * 1000) / 1000;
+    selected.push(picked);
+    remaining.splice(remaining.indexOf(picked), 1);
+  }
+  return selected.map(({ result }) => result);
+}
+
+/**
+ * Append a bounded blind-spot probe when retrieval is weak, novel, or
+ * one-sided. This makes uncertainty explicit instead of silently treating a
+ * top-k hit as complete coverage.
+ */
+function buildCoverageReport(query, results, opts = {}) {
+  const hits = Array.isArray(results) ? results : [];
+  const threshold = opts.blindSpotThreshold == null ? 0.45 : opts.blindSpotThreshold;
+  const topScore = hits.reduce((max, r) => Math.max(max,
+    Number(r.rerank_score ?? r.combined_score ?? r.semantic_score ?? 0)), 0);
+  const uniqueTypes = new Set(hits.map(r => r.type).filter(Boolean));
+  const hasContradiction = hits.some(r => Number(r.outcome_weight) < 0 || r.type === 'error');
+  const blindSpots = [];
+  if (hits.length === 0 || topScore < threshold) blindSpots.push('low_evidence');
+  if (hits.length > 0 && uniqueTypes.size === 1) blindSpots.push('single_memory_type');
+  if (hits.length > 0 && !hasContradiction) blindSpots.push('no_dissenting_evidence');
+  return {
+    query,
+    resultCount: hits.length,
+    topScore: Math.round(topScore * 1000) / 1000,
+    coverage: blindSpots.length === 0 ? 'covered' : 'partial',
+    blindSpots,
+    probe: blindSpots.length > 0 ? {
+      type: 'coverage',
+      query: `What evidence could disprove or qualify: ${query}`,
+      rationale: blindSpots.join(', '),
+      status: 'open',
+    } : null,
+  };
+}
+
+function attachOutcomeFields(db, results, opts = {}) {
+  if (!db || !results || results.length === 0) return results || [];
+  let stats = null;
+  try {
+    const { memoryOutcomeStats } = require('./self-improve');
+    stats = memoryOutcomeStats(db, opts.project, { minRuns: opts.minRuns });
+  } catch { stats = null; }
+  if (!stats || stats.size === 0) {
+    return results.map(r => ({ ...r, outcome_weight: 0, outcome_runs: 0 }));
+  }
+  return results.map(r => {
+    const st = stats.get(r.id);
+    return {
+      ...r,
+      outcome_weight: Math.round((st ? st.weight : 0) * 1000) / 1000,
+      outcome_runs: st ? st.runs : 0,
+    };
+  });
+}
+
 module.exports = {
   sanitizeDate,
   buildWhereClause,
   keywordSearch,
+  applyOutcomeWeights,
+  attachOutcomeFields,
+  diversifyResults,
+  buildCoverageReport,
   semanticSearch,
   hybridSearch,
   rerankResults,

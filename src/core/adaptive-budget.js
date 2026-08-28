@@ -46,9 +46,16 @@ function estimateDifficulty({ problem = '', project = '', memories = [], reflexi
   });
 
   const similarCount = relevantMemories.length;
+  const coverage = relevantMemories.length > 0
+    ? new Set(relevantMemories.map(m => m.type).filter(Boolean)).size
+    : 0;
+  // Novelty is not the only risk: a one-sided, single-type retrieval is a
+  // blind spot even when it contains many near-duplicates.
   const memoryScore = similarCount === 0 ? 4 : similarCount === 1 ? 2 : similarCount === 2 ? 1 : 0;
+  const coveragePenalty = similarCount > 0 && coverage <= 1 ? 1 : 0;
+  score += coveragePenalty;
   score += memoryScore;
-  factors.memorySimilarity = { count: similarCount, score: memoryScore };
+  factors.memorySimilarity = { count: similarCount, score: memoryScore, typeCoverage: coverage, coveragePenalty };
 
   // Factor 2: Historical failure rate — more failures = harder
   const failureMemories = relevantMemories.filter(m => m.type === 'error');

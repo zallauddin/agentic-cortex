@@ -1,4 +1,4 @@
-# agentic-cortex v7.0.0 — The 5-Layer Agent Brain + Test-Time Reasoning
+# agentic-cortex v7.1.0 — The 5-Layer Agent Brain + Test-Time Reasoning
 
 Persistent, self-improving memory **and orchestration** for AI coding agents (Codebuff, Claude Code, Cursor, Codex, OpenCode). Implements the full **5-Layer Graph Engineering** framework: Prompt Engineering → Context Engineering → Harness Engineering → Loop Engineering → Graph Engineering. Install & forget — auto-injects context via git hooks, infers what you're working on, detects when improvement stalls, coordinates multi-agent teams, and prevents the same mistakes from repeating across projects.
 
