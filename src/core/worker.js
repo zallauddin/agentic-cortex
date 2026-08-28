@@ -64,6 +64,22 @@ const WORKER_FRAMEWORKS = {
     command: 'cursor-agent',
     buildArgs: (prompt) => ['run', prompt],
   },
+  // Cortex (the deterministic os/code-quality agent). Its worker bin is a
+  // subprocess that boots the real cortex machinery (memory consult → FSM →
+  // codemod → verify → learn) for each swarm persona role, so a swarm task
+  // executes as a separate cortex agent process rather than an in-process
+  // reasoning engine.
+  //
+  // Requires the cortex `bin` on PATH (e.g. `npm link` in cortex-os-agent).
+  // If not linked, pass an explicit { command: 'node', args: [workerPath, …] }
+  // via opts.worker — swarm-commander.jss does exactly that so no global link
+  // is required.
+  cortex: {
+    id: 'cortex',
+    name: 'Cortex (deterministic agent)',
+    command: 'cortex',
+    buildArgs: (prompt) => ['worker', '-p', prompt, '--json'],
+  },
 };
 
 const DEFAULT_TIMEOUT_MS = 120000;

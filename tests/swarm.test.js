@@ -551,6 +551,29 @@ describe('Swarm: persistent job queue', () => {
     assert.equal(res.job.completed_tasks, 1);
   });
 
+  it('runJob forwards worker-mode so a durable job spawns a real worker process', async () => {
+    const project = tmpProject();
+    const db = createTestDb();
+    savedMemories.length = 0;
+    setApi(makeFakeApi(), async (m) => { savedMemories.push(m); return { id: 1 }; });
+    decomposeGoal(db, 'shipping feature', { project, pipeline: [
+      { role: 'coder', action: 'implement', dependsOn: [], description: 'Implement' },
+    ] });
+    const job = createJob(db, 'shipping feature', { project });
+
+    const res = await runJob(db, job.id, {
+      workerMode: 'process',
+      worker: { command: process.execPath, args: [FIXTURE, 'job-worker-marker.txt', 'ok'], timeoutMs: 10000 },
+    });
+
+    assert.equal(res.job.status, 'completed');
+    assert.equal(res.job.completed_tasks, 1);
+    assert.ok(fs.existsSync(path.join(project, 'job-worker-marker.txt')),
+      'durable job forwarded worker config and spawned a real worker process');
+    const row = getGoalTasks(db, 'shipping feature', { project })[0];
+    assert.match(row.result_summary, /FAKE WORKER OK/);
+  });
+
   it('a canceled job is not re-runnable and stays terminal', async () => {
     const { db } = await setup(undefined, singleStepPipeline);
     const job = createJob(db, 'shipping feature', { project: 'proj' });

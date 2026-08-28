@@ -1394,6 +1394,12 @@ async function runJob(db, jobId, opts = {}) {
       retryPolicy: opts.retryPolicy,
       waitRetries: opts.waitRetries,
       maxWaitMs: opts.maxWaitMs,
+      // Forward worker-mode so a durable job can spawn real agent processes
+      // (e.g. cortex) for the persona roles, exactly like a direct executePipeline.
+      workerMode: opts.workerMode,
+      workerRoles: opts.workerRoles,
+      worker: opts.worker,
+      permissionMode: opts.permissionMode,
       jobId,
     });
     meta = out.meta;
