@@ -180,12 +180,13 @@ describe('cross-machine git-sync of the __global__ vault', () => {
 
     assert.equal(sec.type, 'learning');
     assert.equal(sec.content, 'Always use parameterized queries to prevent SQL injection.');
-    assert.deepEqual(JSON.parse(sec.tags), ['security', 'sql']);
+    // Germinated seeds carry the 'seed' tag so the lifecycle can decay/expire them.
+    assert.deepEqual([...JSON.parse(sec.tags)].sort(), ['security', 'seed', 'sql']);
     assert.equal(sec.project_scope, 'global');
     assert.equal(sec.project_path, '__global__');
 
     assert.equal(lint.type, 'decision');
-    assert.deepEqual(JSON.parse(lint.tags), ['tooling']);
+    assert.deepEqual([...JSON.parse(lint.tags)].sort(), ['seed', 'tooling']);
     assert.deepEqual(JSON.parse(lint.steps), ['install eslint', 'add config']);
     assert.equal(lint.project_scope, 'global');
 

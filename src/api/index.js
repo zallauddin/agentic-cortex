@@ -557,7 +557,7 @@ async function search(query, opts) {
   // boosted, ones injected into failures are demoted. Best-effort; a
   // weighting failure never breaks a search.
   try {
-    results = core.search.applyOutcomeWeights(db, results, { project: opts.project });
+    results = core.search.applyOutcomeWeights(db, results, { project: opts.project, minRuns: opts.minRuns });
   } catch { /* best-effort */ }
 
   // Restore the requested limit (rerank returns all candidates; outcome
@@ -732,7 +732,11 @@ async function embedAll(opts) {
 
 /** Detect conflicting observations (async) */
 async function checkConflicts(opts) {
-  return core.conflict.checkConflicts(_getDB(), opts || {});
+  const o = opts || {};
+  if (o.clearCache) {
+    try { core.conflict.clearConflictCache(); } catch { /* best-effort */ }
+  }
+  return core.conflict.checkConflicts(_getDB(), o);
 }
 
 // ─── Reflection / Consolidation ──────────────────────────────────────
@@ -1965,9 +1969,12 @@ async function init() {
 
 /** Close the database connection and release pipeline resources */
 function close() {
-  if (_apiDb) {
-    _apiDb.close();
-    _apiDb = null;
+  const dbToClose = _apiDb;
+  _apiDb = null;
+  if (dbToClose) {
+    try { dbToClose.close(); } catch (err) {
+      console.warn('[agentic-cortex] DB close failed: ' + (err && err.message ? err.message : err));
+    }
   }
   try {
     core.embedding.disposePipelines();
@@ -2788,10 +2795,25 @@ function autoPromoteGlobal(db, project) {
     console.error('[agentic-cortex] Auto-promoted %d memories to machine-wide global vault (from %d candidates, conf≥%d, util≥%d)', promoted, candidates.length, confThreshold, utilThreshold);
 
     // ── Push newly promoted global observations to team memory repo ──
+    // Seeds pass through the privacy gate first: hard-blocked content and
+    // over-redacted seeds never leave the machine (fail-closed).
     if (process.env.AGENTIC_CORTEX_MEMORY_REPO && promotedIds.length > 0) {
       try {
         const { syncPush } = require('../sync/git-sync');
-        syncPush(db, promotedIds);
+        const sanitizer = require('../core/seed-sanitizer');
+        const exportable = [];
+        const blocked = [];
+        for (const id of promotedIds) {
+          const obs = db.prepare('SELECT * FROM observations WHERE id = ? AND is_active = 1').get(id);
+          if (!obs) continue;
+          const screen = sanitizer.screenSeed(obs);
+          if (screen.allowed) exportable.push(id);
+          else blocked.push({ id, reason: screen.reason });
+        }
+        if (exportable.length > 0) syncPush(db, exportable);
+        if (blocked.length > 0) {
+          console.warn('[agentic-cortex] Seed gate: %d/%d promoted memories kept local (%s)', blocked.length, promotedIds.length, blocked.map(b => '#' + b.id).join(', '));
+        }
       } catch (err) {
         console.warn('[agentic-cortex] Git sync push failed (non-fatal):', err.message);
       }
@@ -4393,6 +4415,8 @@ module.exports = {
   writeManifestFile: (opts) => core.manifest.writeManifestFile(opts || {}),
   discoverFrameworks: (opts) => core.manifest.discoverFrameworks(opts || {}),
   composeWithFramework: (frameworkOrId, opts) => core.manifest.composeWithFramework(frameworkOrId, opts || {}),
+  // ── v8.1.0: Hard wireup — write AC into every detected agent's config ──
+  wireupAll: (opts) => core.wireup.wireupAll(opts || {}),
   // ── v8.0.0: Evidence-theoretic conflict resolution (Dempster-Shafer) ──
   resolveConflict: (opts) => core.resolution.resolveConflict(_getDB(), opts),
   resolvePair: async (opts) => {

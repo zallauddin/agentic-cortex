@@ -72,12 +72,13 @@ const DEFAULT_SKILL_CONFIDENCE_THRESHOLD = 80;
  * @param {number} limit
  * @returns {Array<Object>} Observations with parsed embeddings
  */
-function getEmbeddedObservations(db, project, limit = 200) {
+function getEmbeddedObservations(db, project, limit = 200, confidenceFloor = 0) {
   const rows = db.prepare(
     'SELECT id, type, title, content, confidence, provenance, embedding, created_at ' +
     'FROM observations WHERE project_path = ? AND is_active = 1 AND embedding IS NOT NULL ' +
+    (confidenceFloor > 0 ? 'AND confidence >= ? ' : '') +
     'ORDER BY created_at DESC LIMIT ?'
-  ).all(project, limit);
+  ).all(confidenceFloor > 0 ? [project, confidenceFloor, limit] : [project, limit]);
 
   return rows.map(r => ({
     ...r,
@@ -118,6 +119,65 @@ function findSimilarClusters(observations, threshold = DEFAULT_CONSOLIDATE_THRES
     }
   }
 
+  return clusters;
+}
+
+/**
+ * Semantic cache for clustering results.
+ * Cached by project + embedding-set-hash + threshold + confidenceFloor.
+ * @type {Map<string, Array<Array<Object>>>}
+ */
+const _clusterCache = new Map();
+
+/**
+ * Compute a hash of the embedded observation set for clustering cache keys.
+ * Uses the same approach as conflict._embeddingSetHash.
+ *
+ * @param {Array<Object>} observations - Embedded observations with id + embedding
+ * @returns {string} Hex hash
+ */
+function _clusterSetHash(observations) {
+  if (observations.length === 0) return '';
+  const parts = observations
+    .filter(o => o.embedding && Array.isArray(o.embedding))
+    .map(o => {
+      const dims = o.embedding.slice(0, 8).map(v => v.toFixed(4)).join(',');
+      return o.id + ':' + dims + ':' + o.embedding.length;
+    });
+  parts.sort();
+  const payload = parts.join('|');
+  let hash = 0;
+  for (let i = 0; i < payload.length; i++) {
+    hash = ((hash * 31) + payload.charCodeAt(i)) >>> 0;
+  }
+  return (hash >>> 0).toString(16);
+}
+
+/**
+ * Clear the cluster cache (call when observations change).
+ */
+function clearClusterCache() {
+  _clusterCache.clear();
+}
+
+/**
+ * Find clusters with semantic caching. If the same observation set + threshold
+ * + confidenceFloor has been clustered before, return the cached result.
+ *
+ * @param {Array<Object>} observations - Embedded observations
+ * @param {number} threshold - Cosine similarity threshold
+ * @param {string} project - Project path (for cache key)
+ * @param {number} confidenceFloor - Confidence floor used for filtering
+ * @returns {Array<Array<Object>>} Clusters
+ */
+function findSimilarClustersCached(observations, threshold, project, confidenceFloor) {
+  const hash = _clusterSetHash(observations);
+  const key = project + '|' + threshold + '|' + confidenceFloor + '|' + hash;
+  const cached = _clusterCache.get(key);
+  if (cached) return cached;
+
+  const clusters = findSimilarClusters(observations, threshold);
+  _clusterCache.set(key, clusters);
   return clusters;
 }
 
@@ -194,13 +254,16 @@ async function consolidateMemories(db, opts = {}) {
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
   const threshold = opts.threshold ?? DEFAULT_CONSOLIDATE_THRESHOLD;
   const dryRun = opts.dryRun ?? false;
+  const confidenceFloor = opts.confidenceFloor != null ? opts.confidenceFloor : 0;
 
-  const observations = getEmbeddedObservations(db, project);
+  const observations = getEmbeddedObservations(db, project, 200, confidenceFloor);
   if (observations.length < 2) {
     return { clusters: 0, merged: 0, archived: 0, dryRun };
   }
 
-  const clusters = findSimilarClusters(observations, threshold);
+  // Use cached clustering when available — same observation set + threshold
+  // + confidenceFloor produces the same clusters, no need to recompute.
+  const clusters = findSimilarClustersCached(observations, threshold, project, confidenceFloor);
   if (clusters.length === 0) {
     return { clusters: 0, merged: 0, archived: 0, dryRun };
   }
@@ -830,6 +893,9 @@ module.exports = {
   getPrinciples,
   reflect,
   findSimilarClusters,
+  findSimilarClustersCached,
+  clearClusterCache,
+  _clusterSetHash,
   pickCanonical,
   generateConsolidatedSummary,
   getEmbeddedObservations,

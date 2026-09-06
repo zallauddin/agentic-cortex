@@ -248,13 +248,17 @@ const TOOLS = [
   },
   {
     name: 'memory_conflicts',
-    description: 'Detect semantically similar but potentially contradictory observations.',
+    description: 'Detect semantically similar but potentially contradictory observations. Utopia-aligned: supports semantic cache, confidence floor, LLM batching, and keep-both/open outcome.',
     inputSchema: {
       type: 'object',
       properties: {
         project: { type: 'string', description: 'Filter by project path' },
         limit: { type: 'integer', description: 'Max conflict pairs', default: 10 },
-        autoResolve: { type: 'boolean', description: 'Attempt automatic resolution', default: false },
+        autoResolve: { type: 'boolean', description: 'Attempt automatic DS resolution', default: false },
+        confidenceFloor: { type: 'integer', description: 'Minimum confidence to include an observation (default 30; 0 = no filter)' },
+        batchSize: { type: 'integer', description: 'Pairs per LLM batch prompt (default 5)' },
+        threshold: { type: 'number', description: 'Cosine similarity threshold (default 0.65)' },
+        clearCache: { type: 'boolean', description: 'Clear the semantic cache before detecting' },
       },
     },
   },
@@ -829,14 +833,27 @@ const TOOLS = [
   },
   {
     name: 'memory_compose',
-    description: '🔗 COMPOSE — Return the exact wiring to compose agentic-cortex with a discovered agent framework: which MCP config to write, which memory/reasoning/audit/orchestration tools to expose. Input: framework id (claude-code, cursor, opencode, generic-mcp) or a discovered framework object.',
+    description: '🔗 COMPOSE — Return the exact wiring to compose agentic-cortex with a discovered agent framework: which MCP config to write, which memory/reasoning/audit/orchestration tools to expose. Input: framework id (claude-code, cursor, opencode, freebuff, gemini-cli, codex, windsurf, zed, goose, …) or a discovered framework object.',
     inputSchema: {
       type: 'object',
       properties: {
-        framework: { type: 'string', description: 'Framework id (claude-code, cursor, opencode, generic-mcp)' },
+        framework: { type: 'string', description: 'Framework id — see memory_discover' },
         project: { type: 'string', description: 'Project path' },
       },
       required: ['framework'],
+    },
+  },
+  {
+    name: 'memory_wireup',
+    description: '🔌 WIREUP — Hard-wire agentic-cortex into every AI coding agent detected on this machine/project (Claude Code, Cursor, OpenCode, Freebuff, Gemini CLI, Copilot, Windsurf, Zed, Roo, Cline, Goose, Codex, …). Merges the AC MCP server into each agent\'s JSON config and injects the bootstrap/auto-save instruction section into their instruction files. Idempotent. Set dryRun=true to preview.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path (default cwd)' },
+        dryRun: { type: 'boolean', description: 'Report what would change without writing' },
+        only: { type: 'array', items: { type: 'string' }, description: 'Restrict to these framework ids' },
+        skip: { type: 'array', items: { type: 'string' }, description: 'Skip these framework ids' },
+      },
     },
   },
   {
@@ -2178,6 +2195,9 @@ async function callTool(name, args) {
 
     case 'memory_compose':
       return api.composeWithFramework(args.framework, { project: args.project });
+
+    case 'memory_wireup':
+      return api.wireupAll({ project: args.project, dryRun: args.dryRun, only: args.only, skip: args.skip });
 
     case 'memory_send':
       return api.sendMessage(args);

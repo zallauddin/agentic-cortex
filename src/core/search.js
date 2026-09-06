@@ -227,7 +227,11 @@ function hybridSearch(db, query, queryVec, opts) {
 
   if (candidateIds.length === 0) return [];
 
-  // Phase 3: Score each candidate with cosine similarity
+  // Phase 3: Score each candidate. Keyword-only mode (queryVec = null) is the
+  // DEFAULT (memory-safe: no embedding model), so FTS hits must survive —
+  // they get a neutral semantic_score of 0 and rank by FTS rank alone.
+  // Previously cosineSimilarity(null, vec) threw per-row and silently
+  // discarded every result, breaking all memory-grounded reasoning paths.
   const scores = [];
   const placeholders = candidateIds.map(() => '?').join(',');
   const rows = db.prepare(
@@ -239,10 +243,12 @@ function hybridSearch(db, query, queryVec, opts) {
   for (const row of rows) {
     try {
       const vec = JSON.parse(row.embedding);
-      const sim = cosineSimilarity(queryVec, vec);
+      const sim = queryVec ? cosineSimilarity(queryVec, vec) : 0;
       scores.push({ ...row, semantic_score: sim });
     } catch {
-      // Skip rows with unparseable embeddings
+      // Skip rows with unparseable embeddings (still reachable via ftsMap below)
+      if (queryVec) continue;
+      scores.push({ ...row, semantic_score: 0 });
     }
   }
 

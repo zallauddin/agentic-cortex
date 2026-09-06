@@ -29,8 +29,11 @@ const os = require('os');
 const MANIFEST_SCHEMA_VERSION = '1.0.0';
 
 // ─── Known agent framework detectors ────────────────────────────────
-// Each detector: { id, name, kind, files: [project-relative config paths], env: [env var names] }
-// Returns { id, name, kind, configPaths: [abs], env: {...}, registeredMcp: [...] }
+// Each detector: { id, name, kind, files: [project-relative config paths],
+// homeFiles: [home-relative evidence paths], env: [env var names],
+// commands: [executable names to look for on PATH],
+// mcpFiles: [project-relative MCP config paths], mcpKey, mcpKind }
+// Returns { id, name, kind, configPaths: [abs], env: {...}, commands: [...], registeredMcp: [...] }
 
 const KNOWN_FRAMEWORKS = [
   {
@@ -38,7 +41,9 @@ const KNOWN_FRAMEWORKS = [
     name: 'Claude Code',
     kind: 'coding-agent',
     files: ['.mcp.json', '.claude/CLAUDE.md'],
-    env: ['CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SKIP_BUNDLE_DOWNLOAD'],
+    homeFiles: ['.claude.json', '.claude/CLAUDE.md'],
+    env: ['CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SKIP_BUNDLE_DOWNLOAD', 'CLAUDECODE'],
+    commands: ['claude'],
     mcpFiles: ['.mcp.json', '.mcp.jsonc'],
     mcpKey: 'mcpServers',
   },
@@ -47,7 +52,9 @@ const KNOWN_FRAMEWORKS = [
     name: 'Cursor',
     kind: 'coding-agent',
     files: ['.cursor/mcp.json', '.cursor/rules/agentic-cortex.mdc'],
+    homeFiles: ['.cursor/mcp.json'],
     env: [],
+    commands: ['cursor-agent', 'cursor'],
     mcpFiles: ['.cursor/mcp.json'],
     mcpKey: 'mcpServers',
   },
@@ -56,20 +63,250 @@ const KNOWN_FRAMEWORKS = [
     name: 'OpenCode',
     kind: 'coding-agent',
     files: ['opencode.json', '.opencode/agentic-cortex.md'],
-    env: [],
+    homeFiles: ['.config/opencode/opencode.json'],
+    env: ['OPENCODE_CONFIG'],
+    commands: ['opencode'],
     mcpFiles: ['opencode.json'],
     mcpKey: 'mcp',
+  },
+  {
+    id: 'freebuff',
+    name: 'Freebuff',
+    kind: 'coding-agent',
+    files: ['.freebuff'],
+    homeFiles: ['.freebuff'],
+    env: ['CODEBUFF_SESSION', 'FREEBUFF_HOME'],
+    commands: ['freebuff'],
+    mcpFiles: ['.freebuff/mcp.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'gemini-cli',
+    name: 'Gemini CLI',
+    kind: 'coding-agent',
+    files: ['.gemini/settings.json'],
+    homeFiles: ['.gemini/settings.json'],
+    env: ['GEMINI_API_KEY'],
+    commands: ['gemini'],
+    mcpFiles: ['.gemini/settings.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'codex',
+    name: 'OpenAI Codex CLI',
+    kind: 'coding-agent',
+    files: ['.codex/config.toml'],
+    homeFiles: ['.codex/config.toml'],
+    env: ['CODEX_HOME'],
+    commands: ['codex'],
+    mcpFiles: ['.codex/config.toml'],
+    mcpKey: 'mcp_servers', // TOML — never JSON-merged; wiring is advisory
+  },
+  {
+    id: 'copilot-cli',
+    name: 'GitHub Copilot CLI',
+    kind: 'coding-agent',
+    files: ['.copilot/mcp-config.json'],
+    homeFiles: ['.copilot/mcp-config.json'],
+    env: ['GITHUB_COPILOT_CLI'],
+    commands: ['copilot'],
+    mcpFiles: ['.copilot/mcp-config.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'vscode-copilot',
+    name: 'VS Code (Copilot agent mode)',
+    kind: 'editor-agent',
+    files: ['.vscode/mcp.json'],
+    homeFiles: [],
+    env: [],
+    commands: ['code'],
+    mcpFiles: ['.vscode/mcp.json'],
+    mcpKey: 'servers',
+  },
+  {
+    id: 'windsurf',
+    name: 'Windsurf',
+    kind: 'editor-agent',
+    files: ['.windsurf/mcp_config.json'],
+    homeFiles: ['.codeium/windsurf/mcp_config.json'],
+    env: [],
+    commands: ['windsurf'],
+    mcpFiles: ['.windsurf/mcp_config.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'roo-code',
+    name: 'Roo Code',
+    kind: 'editor-agent',
+    files: ['.roo/mcp.json', '.roo/rules/agentic-cortex.md'],
+    homeFiles: [],
+    env: [],
+    commands: [],
+    mcpFiles: ['.roo/mcp.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'cline',
+    name: 'Cline',
+    kind: 'editor-agent',
+    files: ['.cline'],
+    homeFiles: [],
+    env: [],
+    commands: [],
+    mcpFiles: ['.clinerules'],
+    mcpKey: null, // Cline MCP settings live in VS Code globalState — advisory only
+  },
+  {
+    id: 'continue',
+    name: 'Continue',
+    kind: 'editor-agent',
+    files: ['.continue/config.yaml', '.continue/config.json'],
+    homeFiles: ['.continue/config.yaml'],
+    env: [],
+    commands: ['cn'],
+    mcpFiles: ['.continue/config.yaml'],
+    mcpKey: null, // YAML — advisory
+  },
+  {
+    id: 'zed',
+    name: 'Zed',
+    kind: 'editor-agent',
+    files: ['.zed/settings.json'],
+    homeFiles: ['.config/zed/settings.json'],
+    env: [],
+    commands: ['zed'],
+    mcpFiles: ['.zed/settings.json'],
+    mcpKey: 'context_servers',
+  },
+  {
+    id: 'goose',
+    name: 'Goose (Block)',
+    kind: 'coding-agent',
+    files: ['.goose/config.yaml'],
+    homeFiles: ['.config/goose/config.yaml'],
+    env: ['GOOSE_MODE'],
+    commands: ['goose'],
+    mcpFiles: ['.goose/config.yaml'],
+    mcpKey: null, // YAML — advisory
+  },
+  {
+    id: 'qwen-code',
+    name: 'Qwen Code',
+    kind: 'coding-agent',
+    files: ['.qwen/settings.json'],
+    homeFiles: ['.qwen/settings.json'],
+    env: ['QWEN_API_KEY'],
+    commands: ['qwen'],
+    mcpFiles: ['.qwen/settings.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'amazon-q',
+    name: 'Amazon Q Developer',
+    kind: 'coding-agent',
+    files: ['.amazonq'],
+    homeFiles: ['.aws/amazonq'],
+    env: [],
+    commands: ['q'],
+    mcpFiles: ['.amazonq/mcp.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'amp',
+    name: 'Amp (Sourcegraph)',
+    kind: 'coding-agent',
+    files: ['.amp/settings.json'],
+    homeFiles: ['.config/amp/settings.json'],
+    env: [],
+    commands: ['amp'],
+    mcpFiles: ['.amp/settings.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'crush',
+    name: 'Crush (Charm)',
+    kind: 'coding-agent',
+    files: ['.crush/crush.json'],
+    homeFiles: ['.config/crush/crush.json'],
+    env: [],
+    commands: ['crush'],
+    mcpFiles: ['.crush/crush.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'trae',
+    name: 'Trae',
+    kind: 'editor-agent',
+    files: ['.trae/mcp.json'],
+    homeFiles: [],
+    env: [],
+    commands: [],
+    mcpFiles: ['.trae/mcp.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'kilo-code',
+    name: 'Kilo Code',
+    kind: 'editor-agent',
+    files: ['.kilocode'],
+    homeFiles: [],
+    env: [],
+    commands: [],
+    mcpFiles: ['.kilocode/mcp.json'],
+    mcpKey: 'mcpServers',
+  },
+  {
+    id: 'aider',
+    name: 'Aider',
+    kind: 'coding-agent',
+    files: ['.aider.conf.yml', '.aider*'],
+    homeFiles: [],
+    env: ['AIDER_MODEL'],
+    commands: ['aider'],
+    mcpFiles: [],
+    mcpKey: null, // no native MCP — compose via a generic MCP proxy
   },
   {
     id: 'generic-mcp',
     name: 'Generic MCP client',
     kind: 'mcp-client',
     files: [],
+    homeFiles: [],
     env: [],
+    commands: [],
     mcpFiles: [],
     mcpKey: null,
   },
 ];
+
+/**
+ * Check whether any of the given executables exist on PATH.
+ * Pure fs existence checks — never spawns a shell.
+ * @param {string[]} names
+ * @returns {string[]} found executable names
+ */
+function _commandsOnPath(names) {
+  if (!names || names.length === 0) return [];
+  const pathEnv = process.env.PATH || process.env.Path || '';
+  const dirs = pathEnv.split(path.delimiter).filter(Boolean);
+  const exts = process.platform === 'win32'
+    ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';')
+    : [''];
+  const found = [];
+  for (const name of names) {
+    outer: for (const dir of dirs) {
+      for (const ext of exts) {
+        try {
+          fs.accessSync(path.join(dir, name + ext), fs.constants.X_OK);
+          found.push(name);
+          break outer;
+        } catch { /* not here */ }
+      }
+    }
+  }
+  return found;
+}
 
 /**
  * Resolve a project-relative path list to absolute paths that exist.
@@ -144,9 +381,11 @@ function discoverFrameworks(opts = {}) {
   const out = [];
 
   for (const fw of KNOWN_FRAMEWORKS) {
+    if (fw.id === 'generic-mcp') continue; // generic-mcp is a composition target, not a detectable install
     const projectPaths = _existingPaths(project, fw.files);
-    const homePaths = _existingPaths(home, fw.files.map(f => f.replace(/^\./, '.')));
+    const homePaths = _existingPaths(home, fw.homeFiles || []);
     const env = _collectEnv(fw.env);
+    const commands = _commandsOnPath(fw.commands);
 
     const mcpServers = [];
     for (const rel of fw.mcpFiles) {
@@ -154,7 +393,7 @@ function discoverFrameworks(opts = {}) {
       if (abs) mcpServers.push(..._readRegisteredMcp(abs, fw.mcpKey));
     }
 
-    if (projectPaths.length === 0 && homePaths.length === 0 && Object.keys(env).length === 0 && mcpServers.length === 0) {
+    if (projectPaths.length === 0 && homePaths.length === 0 && Object.keys(env).length === 0 && commands.length === 0 && mcpServers.length === 0) {
       continue;
     }
 
@@ -167,6 +406,7 @@ function discoverFrameworks(opts = {}) {
         projectConfig: projectPaths,
         userConfig: homePaths,
         env,
+        commands,
         registeredMcp: mcpServers,
       },
     });
@@ -237,6 +477,9 @@ const CAPABILITIES = [
   { id: 'integration.git-hooks', version: '1', description: 'Auto context refresh on checkout/merge/pull/commit', exposedVia: ['cli', 'node'] },
   { id: 'integration.webhooks', version: '1', description: 'Hook actions POST to Slack/PagerDuty/CI', exposedVia: ['mcp', 'cli', 'node'] },
   { id: 'integration.discovery-files', version: '1', description: 'Auto-creates AGENTS.md, .claude/CLAUDE.md, .cursor/rules, .opencode', exposedVia: ['cli'] },
+  { id: 'integration.agent-wireup', version: '2', description: 'Hard wireup: detection + MCP config merge + instruction injection for 20+ popular AI coding agents (Claude Code, Cursor, OpenCode, Freebuff, Gemini CLI, Codex, Copilot CLI, VS Code, Windsurf, Roo, Cline, Continue, Zed, Goose, Qwen, Amazon Q, Amp, Crush, Trae, Kilo, aider, generic MCP)', exposedVia: ['mcp', 'cli', 'node'] },
+  { id: 'integration.seed-sanitizer', version: '1', description: 'Privacy gate on all exported knowledge: hard-blocks credential classes, redacts secrets/identity paths, strips provenance. Fail-closed.', exposedVia: ['node'] },
+  { id: 'integration.seed-lifecycle', version: '1', description: 'Distributed seeds with bounded lifespan: pseudonymous envelope, per-type TTL, trust decay, germination confidence cap, local corroboration graduation', exposedVia: ['node'] },
 ];
 
 // ─── Manifest builder ───────────────────────────────────────────────
@@ -340,7 +583,171 @@ function writeManifestFile(opts = {}) {
   }
 }
 
-// ─── Composition mapping ────────────────────────────────────────────
+// ─── Composition mapping (data-driven) ──────────────────────────────
+
+/**
+ * Per-framework wiring recipes. Every entry is declarative so wireup.js can
+ * hard-apply it without per-framework logic:
+ *
+ *   mcp — { file, key, config } — JSON MCP registration; AC merges itself
+ *         under `key`. null for YAML/TOML frameworks (advisory wiring only).
+ *   strategy — human/LLM-readable one-liner of how AC plugs in.
+ *   native — true when the agent reads AC's MCP registration natively.
+ *
+ * Command shape conventions per tool:
+ *   - mcpServers (Claude/Cursor/Windsurf/Trae/…): { type: 'stdio', command, args: [] }
+ *   - VS Code servers: { type: 'stdio', command }
+ *   - OpenCode mcp: { type: 'local', command: [cmd], enabled: true }
+ *   - Zed context_servers: { source: 'custom', command, args: [] }
+ */
+const COMPOSITION_RECIPES = {
+  'claude-code': {
+    strategy: 'register AC as an MCP stdio server in .mcp.json; instructions injected into .claude/CLAUDE.md',
+    native: true,
+    mcp: { file: '.mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['.claude/CLAUDE.md', 'AGENTS.md'],
+  },
+  'cursor': {
+    strategy: 'register AC as an MCP stdio server in .cursor/mcp.json; alwaysApply rule in .cursor/rules',
+    native: true,
+    mcp: { file: '.cursor/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['.cursor/rules/agentic-cortex.mdc', 'AGENTS.md'],
+  },
+  'opencode': {
+    strategy: 'register AC as an OpenCode MCP addon in opencode.json; instructions in AGENTS.md (wired into instructions array)',
+    native: true,
+    mcp: { file: 'opencode.json', key: 'mcp', config: { type: 'local', command: ['agentic-cortex-mcp'], enabled: true } },
+    instructionFiles: ['AGENTS.md'],
+    extra: { ensureInstructions: { file: 'opencode.json', entry: 'AGENTS.md' } },
+  },
+  'freebuff': {
+    strategy: 'register AC as an MCP stdio server in .freebuff/mcp.json; instructions injected into AGENTS.md',
+    native: true,
+    mcp: { file: '.freebuff/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['AGENTS.md'],
+  },
+  'gemini-cli': {
+    strategy: 'register AC under mcpServers in .gemini/settings.json; instructions injected into GEMINI.md',
+    native: true,
+    mcp: { file: '.gemini/settings.json', key: 'mcpServers', config: { command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['GEMINI.md'],
+  },
+  'codex': {
+    strategy: 'Codex reads MCP servers from ~/.codex/config.toml (TOML, [mcp_servers.agentic-cortex]); AC prints the exact TOML stanza — TOML is never auto-merged to avoid corrupting user config',
+    native: true,
+    mcp: null,
+    tomlStanza: '[mcp_servers.agentic-cortex]\ncommand = "agentic-cortex-mcp"\nargs = []\n',
+    instructionFiles: ['AGENTS.md'],
+  },
+  'copilot-cli': {
+    strategy: 'register AC under mcpServers in .copilot/mcp-config.json (project) or ~/.copilot/mcp-config.json (global)',
+    native: true,
+    mcp: { file: '.copilot/mcp-config.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['AGENTS.md'],
+  },
+  'vscode-copilot': {
+    strategy: 'register AC under servers in .vscode/mcp.json (Copilot agent mode); instructions via .github/copilot-instructions.md',
+    native: true,
+    mcp: { file: '.vscode/mcp.json', key: 'servers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['.github/copilot-instructions.md'],
+  },
+  'windsurf': {
+    strategy: 'register AC under mcpServers in .windsurf/mcp_config.json (or ~/.codeium/windsurf/mcp_config.json for global)',
+    native: true,
+    mcp: { file: '.windsurf/mcp_config.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['.windsurf/rules/agentic-cortex.md', 'AGENTS.md'],
+  },
+  'roo-code': {
+    strategy: 'register AC under mcpServers in .roo/mcp.json; rules file in .roo/rules',
+    native: true,
+    mcp: { file: '.roo/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['.roo/rules/agentic-cortex.md'],
+  },
+  'cline': {
+    strategy: 'Cline MCP servers live in VS Code globalState (configured via its UI); AC provides the copy-paste JSON and instructions via .clinerules',
+    native: false,
+    mcp: null,
+    manualMcpConfig: { mcpServers: { 'agentic-cortex': { type: 'stdio', command: 'agentic-cortex-mcp', args: [], disabled: false } } },
+    instructionFiles: ['.clinerules/agentic-cortex.md'],
+  },
+  'continue': {
+    strategy: 'Continue uses YAML config (.continue/config.yaml, mcpServers block); AC prints the YAML block — YAML is never auto-merged',
+    native: true,
+    mcp: null,
+    yamlBlock: 'mcpServers:\n  - name: agentic-cortex\n    command: agentic-cortex-mcp\n    args: []\n',
+    instructionFiles: ['.continue/rules/agentic-cortex.md'],
+  },
+  'zed': {
+    strategy: 'register AC under context_servers in .zed/settings.json (or Zed global settings)',
+    native: true,
+    mcp: { file: '.zed/settings.json', key: 'context_servers', config: { source: 'custom', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['.zed/rules/agentic-cortex.md', 'AGENTS.md'],
+  },
+  'goose': {
+    strategy: 'Goose uses YAML extensions config (~/.config/goose/config.yaml or .goose/config.yaml); AC prints the extensions block — YAML is never auto-merged',
+    native: true,
+    mcp: null,
+    yamlBlock: 'extensions:\n  agentic-cortex:\n    cmd: agentic-cortex-mcp\n    args: []\n    enabled: true\n    type: stdio\n',
+    instructionFiles: ['AGENTS.md'],
+  },
+  'qwen-code': {
+    strategy: 'register AC under mcpServers in .qwen/settings.json; instructions injected into QWEN.md',
+    native: true,
+    mcp: { file: '.qwen/settings.json', key: 'mcpServers', config: { command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['QWEN.md'],
+  },
+  'amazon-q': {
+    strategy: 'register AC under mcpServers in .amazonq/mcp.json (agent files in .amazonq/cli-agents/); instructions via AmazonQ.md',
+    native: true,
+    mcp: { file: '.amazonq/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [], timeout: 30000 } },
+    instructionFiles: ['AmazonQ.md'],
+  },
+  'amp': {
+    strategy: 'register AC under mcpServers in .amp/settings.json (project) or ~/.config/amp/settings.json (global)',
+    native: true,
+    mcp: { file: '.amp/settings.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['AGENTS.md'],
+  },
+  'crush': {
+    strategy: 'register AC under mcpServers in .crush/crush.json (project) or ~/.config/crush/crush.json (global)',
+    native: true,
+    mcp: { file: '.crush/crush.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['AGENTS.md'],
+  },
+  'trae': {
+    strategy: 'register AC under mcpServers in .trae/mcp.json',
+    native: true,
+    mcp: { file: '.trae/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['.trae/rules/agentic-cortex.md'],
+  },
+  'kilo-code': {
+    strategy: 'register AC under mcpServers in .kilocode/mcp.json; rules file in .kilocode/rules',
+    native: true,
+    mcp: { file: '.kilocode/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    instructionFiles: ['.kilocode/rules/agentic-cortex.md'],
+  },
+  'aider': {
+    strategy: 'Aider has no native MCP support — compose via a generic MCP bridge (e.g. mcp-server-docs or an in-repo conventions file); AC instructions go to CONVENTIONS.md which aider reads with --read',
+    native: false,
+    mcp: null,
+    instructionFiles: ['CONVENTIONS.md'],
+  },
+  'generic-mcp': {
+    strategy: 'register AC as an MCP stdio server in any MCP client config',
+    native: true,
+    mcp: null,
+    manualMcpConfig: { mcpServers: { 'agentic-cortex': { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } } },
+    instructionFiles: [],
+  },
+};
+
+/** Tool groups exposed to every wired agent. */
+const WIRE_TOOL_SETS = {
+  memoryTools: ['memory_bootstrap', 'memory_save', 'memory_search', 'memory_search_all', 'memory_code_symbols', 'memory_code_context'],
+  reasoningTools: ['memory_tree_search', 'memory_reason_all', 'memory_verify_code', 'memory_self_consistency'],
+  auditTools: ['memory_resolve_conflict', 'memory_resolution_history'],
+  orchestrationTools: ['memory_fsm', 'memory_workflow', 'memory_swarm_decompose', 'memory_swarm_execute_pipeline'],
+};
 
 /**
  * Given a discovered framework, return the exact wiring AC needs to compose
@@ -359,70 +766,40 @@ function composeWithFramework(frameworkOrId, opts = {}) {
     ? KNOWN_FRAMEWORKS.find(f => f.id === frameworkOrId)
     : frameworkOrId;
 
-  if (!fw) {
+  if (!fw || !COMPOSITION_RECIPES[fw.id]) {
     return {
       ok: false,
       error: 'Unknown framework. Discover with: agentic-cortex discover',
-      known: KNOWN_FRAMEWORKS.map(f => f.id),
+      known: Object.keys(COMPOSITION_RECIPES),
     };
   }
 
-  const id = fw.id;
+  const recipe = COMPOSITION_RECIPES[fw.id];
   const plan = {
     ok: true,
     framework: { id: fw.id, name: fw.name, kind: fw.kind },
-    strategy: null,
-    wiring: {},
+    strategy: recipe.strategy,
+    native: recipe.native,
+    wiring: {
+      ...WIRE_TOOL_SETS,
+    },
   };
 
-  switch (id) {
-    case 'claude-code':
-      plan.strategy = 'register AC as an MCP stdio server in .mcp.json; CLAUDE.md already discovered via setup';
-      plan.wiring = {
-        mcpFile: path.join(project, '.mcp.json'),
-        mcpConfig: { mcpServers: { 'agentic-cortex': { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } } },
-        memoryTools: ['memory_bootstrap', 'memory_save', 'memory_search', 'memory_code_symbols', 'memory_code_context'],
-        reasoningTools: ['memory_tree_search', 'memory_reason_all', 'memory_verify_code', 'memory_self_consistency'],
-        auditTools: ['memory_resolve_conflict', 'memory_resolution_history'],
-        orchestrationTools: ['memory_fsm', 'memory_workflow', 'memory_swarm_decompose', 'memory_swarm_execute_pipeline'],
-      };
-      break;
-
-    case 'cursor':
-      plan.strategy = 'register AC as an MCP stdio server in .cursor/mcp.json; cursor rule file already discovered via setup';
-      plan.wiring = {
-        mcpFile: path.join(project, '.cursor/mcp.json'),
-        mcpConfig: { mcpServers: { 'agentic-cortex': { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } } },
-        memoryTools: ['memory_bootstrap', 'memory_save', 'memory_search'],
-        reasoningTools: ['memory_tree_search', 'memory_reason_all'],
-        auditTools: ['memory_resolve_conflict'],
-        orchestrationTools: ['memory_workflow', 'memory_swarm_decompose'],
-      };
-      break;
-
-    case 'opencode':
-      plan.strategy = 'register AC as an OpenCode MCP addon in opencode.json';
-      plan.wiring = {
-        mcpFile: path.join(project, 'opencode.json'),
-        mcpConfig: { mcp: { 'agentic-cortex': { type: 'local', command: ['agentic-cortex-mcp'], enabled: true } } },
-        memoryTools: ['memory_bootstrap', 'memory_save', 'memory_search'],
-        reasoningTools: ['memory_tree_search', 'memory_reason_all'],
-        auditTools: ['memory_resolve_conflict'],
-        orchestrationTools: ['memory_workflow', 'memory_swarm_decompose'],
-      };
-      break;
-
-    case 'generic-mcp':
-    default:
-      plan.strategy = 'register AC as an MCP stdio server in any MCP client config';
-      plan.wiring = {
-        mcpConfig: { mcpServers: { 'agentic-cortex': { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } } },
-        memoryTools: ['memory_bootstrap', 'memory_save', 'memory_search'],
-        reasoningTools: ['memory_tree_search', 'memory_reason_all'],
-        auditTools: ['memory_resolve_conflict'],
-        orchestrationTools: ['memory_workflow'],
-      };
-      break;
+  if (recipe.mcp) {
+    plan.wiring.mcpFile = path.join(project, recipe.mcp.file);
+    plan.wiring.mcpKey = recipe.mcp.key;
+    plan.wiring.mcpConfig = { [recipe.mcp.key]: { 'agentic-cortex': recipe.mcp.config } };
+  } else {
+    plan.wiring.mcpFile = null;
+    if (recipe.tomlStanza) plan.wiring.tomlStanza = recipe.tomlStanza;
+    if (recipe.yamlBlock) plan.wiring.yamlBlock = recipe.yamlBlock;
+    if (recipe.manualMcpConfig) plan.wiring.manualMcpConfig = recipe.manualMcpConfig;
+  }
+  if (recipe.instructionFiles && recipe.instructionFiles.length > 0) {
+    plan.wiring.instructionFiles = recipe.instructionFiles.map(f => path.join(project, f));
+  }
+  if (recipe.extra && recipe.extra.ensureInstructions) {
+    plan.wiring.ensureInstructions = recipe.extra.ensureInstructions;
   }
 
   return plan;
@@ -434,6 +811,8 @@ module.exports = {
   MANIFEST_SCHEMA_VERSION,
   CAPABILITIES,
   KNOWN_FRAMEWORKS,
+  COMPOSITION_RECIPES,
+  WIRE_TOOL_SETS,
   getManifest,
   writeManifestFile,
   discoverFrameworks,

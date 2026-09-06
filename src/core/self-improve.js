@@ -34,7 +34,8 @@
 'use strict';
 
 const { callLLM } = require('./session');
-const { checkConflicts } = require('./conflict');
+const conflict = require('./conflict');
+const { checkConflicts } = conflict;
 const { addRelation } = require('./relations');
 const hooks = require('./hooks');
 const recovery = require('./recovery');
@@ -238,80 +239,120 @@ async function learnFromError(db, errorObs) {
 
 /**
  * Run conflict detection on a project and auto-resolve contradictions.
- * Uses LLM to determine which observation is correct, adjusts confidence,
- * and creates a learning from the resolution.
+ *
+ * Utopia-aligned: delegates to the conflict module's batched, cached,
+ * outcome-classified detection + Dempster-Shafer resolution engine.
+ * No more single-LLM-per-pair bypass.
+ *
+ * Uses the conflict module's new knobs:
+ *   - confidenceFloor: skip low-confidence noise
+ *   - batchSize: batch LLM contradiction verification
+ *   - threshold: tunable similarity threshold
+ *   - autoResolve: run DS resolution on genuine contradictions
  *
  * @param {import('better-sqlite3').Database} db
  * @param {Object} opts
  * @param {string} [opts.project] - Project path
  * @param {number} [opts.limit=5] - Max conflicts to resolve
- * @returns {Promise<{resolved: number, conflictsFound: number}>}
+ * @param {number} [opts.confidenceFloor] - Minimum confidence for detection (default: conflict.DEFAULT_CONFIDENCE_FLOOR)
+ * @param {number} [opts.batchSize] - Pairs per LLM batch (default: conflict.DEFAULT_BATCH_SIZE)
+ * @param {number} [opts.threshold] - Similarity threshold (default: conflict.DEFAULT_SIMILARITY_THRESHOLD)
+ * @returns {Promise<{resolved: number, conflictsFound: number, open: number, inconclusive: number, consolidate: number}>}
  */
 async function autoResolveConflicts(db, opts = {}) {
   const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
   const limit = opts.limit || 5;
+  const confidenceFloor = opts.confidenceFloor != null ? opts.confidenceFloor : conflict.DEFAULT_CONFIDENCE_FLOOR;
+  const batchSize = opts.batchSize != null ? opts.batchSize : conflict.DEFAULT_BATCH_SIZE;
+  const threshold = opts.threshold != null ? opts.threshold : conflict.DEFAULT_SIMILARITY_THRESHOLD;
 
   let conflictResult;
   try {
-    conflictResult = await checkConflicts(db, { project, limit, autoResolve: true });
+    // Use the new conflict module: cached detection, batched LLM verification,
+    // DS resolution, and outcome classification (open/consolidate/resolved/undecidable).
+    conflictResult = await checkConflicts(db, {
+      project,
+      limit,
+      autoResolve: true,
+      confidenceFloor,
+      batchSize,
+      threshold,
+    });
   } catch (e) {
     console.warn('[self-improve] Conflict detection failed:', e.message);
-    return { resolved: 0, conflictsFound: 0 };
+    return { resolved: 0, conflictsFound: 0, open: 0, inconclusive: 0, consolidate: 0 };
   }
 
   const conflicts = conflictResult.conflicts || [];
   let resolved = 0;
+  let open = 0;
+  let inconclusive = 0;
+  let consolidate = 0;
 
   for (const c of conflicts) {
-    if (!c.llm_contradiction) continue;
-
-    try {
-      // Ask LLM which version is correct
-      const tpl = _getPrompts().buildMessages('resolve-conflict', {
-        observationA: c.a.preview || c.a.content?.slice(0, 300) || '',
-        observationB: c.b.preview || c.b.content?.slice(0, 300) || '',
-      });
-      const result = await callLLM(
-        tpl ? tpl.messages : [
-          { role: 'system', content: 'You resolve knowledge conflicts. Respond ONLY with valid JSON.' },
-          { role: 'user', content: `A: "${c.a.preview || ''}" B: "${c.b.preview || ''}". Which is correct? JSON: {correct, reasoning, resolution}` },
-        ],
-        tpl ? tpl.defaults : { temperature: 0.1, maxTokens: 600, timeout: 30000 },
-      );
-
-      const decision = JSON.parse(result || '{}');
-
-      if (decision.correct === 'A') {
-        // A is correct, downgrade B
-        db.prepare('UPDATE observations SET confidence = MAX(confidence / 2, 10) WHERE id = ?')
-          .run(c.b.id);
-        resolved++;
-      } else if (decision.correct === 'B') {
-        // B is correct, downgrade A
-        db.prepare('UPDATE observations SET confidence = MAX(confidence / 2, 10) WHERE id = ?')
-          .run(c.a.id);
-        resolved++;
+    // Count outcomes for observability
+    if (c.outcome === 'open') { open++; continue; } // keep both — don't force a winner
+    if (c.outcome === 'inconclusive') { inconclusive++; continue; } // LLM unavailable — skip
+    if (c.outcome === 'consolidate') {
+      // Same topic, different details — candidate for consolidation.
+      // The resolution module already handled this if autoResolve ran.
+      // If no resolution was created (e.g. LLM said not a contradiction),
+      // the pair is flagged for the next reflection cycle.
+      consolidate++;
+      continue;
+    }
+    if (c.outcome === 'resolved' || c.outcome === 'undecidable') {
+      // DS resolution already ran and persisted the resolution record,
+      // archived the loser, and boosted the winner's confidence.
+      // No need to re-adjudicate with a separate LLM call — that's the Utopia
+      // improvement over the fresh-uncached winner-takes-LLM baseline.
+      if (c.outcome === 'resolved') resolved++;
+      continue;
+    }
+    // Legacy path: llm_contradiction=true but no outcome set (pre-Utopia conflicts)
+    if (c.llm_contradiction) {
+      try {
+        const resolution = require('./resolution');
+        const fullA = db.prepare('SELECT * FROM observations WHERE id = ?').get(c.a.id);
+        const fullB = db.prepare('SELECT * FROM observations WHERE id = ?').get(c.b.id);
+        if (fullA && fullB) {
+          const corr = resolution.computeCorroboration(db, project);
+          const res = await resolution.resolveConflict(db, {
+            project,
+            a: fullA,
+            b: fullB,
+            corroboration: corr,
+            resolutionType: 'adjudicated',
+          });
+          if (res.status === 'resolved') {
+            resolved++;
+            // Emit a learning from the resolution (if save fn available)
+            if (_saveFn && res.reason) {
+              await _saveFn({
+                project,
+                type: 'learning',
+                title: 'Conflict resolved via evidence adjudication: ' + (res.reason || 'Knowledge reconciliation').slice(0, 60),
+                content: res.reason + '\n\nWinner: ' + (fullA.title || fullA.id) + ' (combined belief: ' + res.combinedBelief + ', conflict coefficient k: ' + res.conflictCoefficient + ')',
+                tags: ['conflict-resolution', 'auto-correction', 'evidence-adjudicated'],
+                confidence: Math.round(res.combinedBelief * 100),
+                importance: 7,
+                provenance: 'inferred',
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[self-improve] DS resolution failed for conflict #' + c.a.id + ':', e.message);
       }
-
-      // Save the resolution as a learning
-      if (_saveFn && decision.resolution) {
-        await _saveFn({
-          project,
-          type: 'learning',
-          title: 'Conflict resolved: ' + (decision.reasoning || 'Knowledge reconciliation').slice(0, 60),
-          content: decision.resolution,
-          tags: ['conflict-resolution', 'auto-correction'],
-          confidence: 85,
-          importance: 7,
-          provenance: 'inferred',
-        });
-      }
-    } catch (e) {
-      console.warn('[self-improve] Conflict resolution failed:', e.message);
     }
   }
 
-  return { resolved, conflictsFound: conflicts.length };
+  if (resolved > 0 || open > 0 || inconclusive > 0 || consolidate > 0) {
+    console.warn('[self-improve] Conflict check: %d resolved, %d open (keep-both), %d inconclusive, %d consolidate, %d total candidates',
+      resolved, open, inconclusive, consolidate, conflicts.length);
+  }
+
+  return { resolved, conflictsFound: conflicts.length, open, inconclusive, consolidate };
 }
 
 // ─── 3. Learning Verification ────────────────────────────────────────
@@ -483,12 +524,13 @@ function initHooks(saveFn) {
     ).all(obs.id);
 
     for (const action of linkedActions) {
-      // Find the intent that led to this action
+      // Find the intent that led to this action.
+      // Accept intents typed 'action' (legacy) OR 'goal' (semantic intent).
       const intent = db.prepare(
         `SELECT i.id, i.title, i.content, i.confidence
          FROM observations i
          JOIN memory_relations r ON r.source_id = i.id
-         WHERE r.target_id = ? AND r.relation_type = 'achieves' AND i.type = 'action'`
+         WHERE r.target_id = ? AND r.relation_type = 'achieves' AND i.type IN ('action', 'goal')`
       ).get(action.id);
 
       if (!intent) continue;
@@ -531,7 +573,7 @@ function initHooks(saveFn) {
           actionContent: action.content,
           outcomeId: obs.id,
           outcomeContent: outcomeText,
-          verdict: result.toUpperCase(),
+          verdict: result === 'success' ? 'SUCCESS' : result === 'failure' ? 'FAILURE' : 'NEUTRAL',
           confidenceDelta,
         });
       } catch { /* best-effort */ }
@@ -588,7 +630,8 @@ function initHooks(saveFn) {
       try {
         const result = await detectPlateau(db, { project: obs.project_path });
         if (result.plateau) {
-          console.warn('[self-improve] 🛑 Improvement plateau — see evaluation log for details');
+          console.warn(`[self-improve] ⚠️ Plateau detected for ${obs.project_path}: %.1f%% → %.1f%% (Δ%+.1f%%) over ${Math.round(result.windowSpanDays)} days (${result.totalEvalCount} evals)`,
+            result.previousRate * 100, result.currentRate * 100, result.improvementPct * 100);
         }
       } catch { /* best-effort */ }
     }
@@ -672,8 +715,22 @@ async function spawnExperiment(db, opts = {}) {
     );
     experiment = JSON.parse(result || '{}');
     // If LLM returned empty or invalid, use fallback
-    if (!experiment || !experiment.hypothesis) {
+    // If LLM returned empty or invalid, use fallback.    // NOTE: if LLM returned valid JSON but none of the expected fields,
+    // we still consider it usable if it has at least one structural field.
+    // The fallback covers cases where ALL fields are missing.
+    if (!experiment || (!experiment.hypothesis && !experiment.title && !experiment.variable_changed && !experiment.fixed_metric && !experiment.before_state && !experiment.expected_after)) {
       experiment = null;
+    }
+    // If experiment still null but we got a valid JSON response, use whatever
+    // fields were present as the experiment content.
+    if (!experiment && result && typeof result === 'object') {
+      experiment = {
+        hypothesis: result.hypothesis || result.title || 'Investigate recurring ' + errorTag,
+        variable_changed: result.variable_changed || result.variable || 'approach',
+        fixed_metric: result.fixed_metric || result.metric || 'error resolution',
+        before_state: result.before_state || result.before || recentErrors[0]?.content?.slice(0, 200) || 'Recurring error',
+        expected_after: result.expected_after || result.expected || 'Error no longer occurs',
+      };
     }
   } catch {
     experiment = null;
@@ -1149,7 +1206,7 @@ async function detectPlateau(db, opts = {}) {
   if (!force) {
     const lastCheck = _lastPlateauCheck.get(project) || 0;
     if (Date.now() - lastCheck < PLATEAU_CHECK_INTERVAL_MS) {
-      return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null };
+      return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null, currentRate: null, previousRate: null, improvementPct: null };
     }
   }
   _lastPlateauCheck.set(project, Date.now());
@@ -1165,7 +1222,7 @@ async function detectPlateau(db, opts = {}) {
   ).get(project, windowStart).c;
 
   if (currentTotal < PLATEAU_MIN_EVALS) {
-    return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null };
+    return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null, currentRate: null, previousRate: null, improvementPct: null };
   }
 
   const currentSuccess = db.prepare(
@@ -1191,7 +1248,7 @@ async function detectPlateau(db, opts = {}) {
   const isPlateau = improvement <= PLATEAU_MAX_IMPROVEMENT_PCT;
 
   if (!isPlateau) {
-    return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null };
+    return { plateau: false, plateauDetected: false, diagnosis: null, strategy: null, currentRate, previousRate: prevRate, improvementPct: improvement, windowSpanDays: windowDays, totalEvalCount: currentTotal };
   }
 
   // Plateau detected — get recent verdicts for analysis
@@ -1246,7 +1303,17 @@ async function detectPlateau(db, opts = {}) {
     } catch { /* best-effort */ }
   }
 
-  return { plateau: true, plateauDetected: true, diagnosis, strategy };
+  return {
+    plateau: true,
+    plateauDetected: true,
+    diagnosis,
+    strategy,
+    currentRate,
+    previousRate: prevRate,
+    improvementPct: improvement,
+    windowSpanDays: windowDays,
+    totalEvalCount: currentTotal,
+  };
 }
 
 // Prune plateau check cache periodically (called from Hook 4)
@@ -1278,4 +1345,16 @@ module.exports = {
   setSaveFunction,
   resetState,
   _prunePlateauCache,
+
+  // Reasoning submodules + plateau constants — re-exported so consumers
+  // (integration tests, MCP tools, swarm dispatch) can reach them through
+  // one module. prm uses a lazy require internally, so no cycle risk here.
+  get treeSearch() { return require('./tree-search'); },
+  get prm() { return require('./prm'); },
+  get reflexionLoop() { return require('./reflexion-loop'); },
+  _keywordClassify,
+  PLATEAU_WINDOW_DAYS,
+  PLATEAU_MIN_EVALS,
+  PLATEAU_MAX_IMPROVEMENT_PCT,
+  checkPlateau: detectPlateau,
 };

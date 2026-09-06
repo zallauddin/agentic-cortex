@@ -123,7 +123,8 @@ describe('manifest — agent capability manifest + framework auto-discovery', ()
       for (const f of found) {
         assert.ok(
           f.evidence.projectConfig.length > 0 || f.evidence.userConfig.length > 0 ||
-          Object.keys(f.evidence.env).length > 0 || f.evidence.registeredMcp.length > 0,
+          Object.keys(f.evidence.env).length > 0 || f.evidence.registeredMcp.length > 0 ||
+          (f.evidence.commands || []).length > 0,
           f.id + ' has evidence'
         );
       }

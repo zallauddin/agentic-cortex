@@ -48,4 +48,7 @@ module.exports = {
   compactor: require('./compactor'),
   resolution: require('./resolution'),
   manifest: require('./manifest'),
+  wireup: require('./wireup'),
+  seedSanitizer: require('./seed-sanitizer'),
+  seedLifecycle: require('./seed-lifecycle'),
 };

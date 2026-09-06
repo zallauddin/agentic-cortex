@@ -1,4 +1,4 @@
-# agentic-cortex v7.1.0 — The 5-Layer Agent Brain + Test-Time Reasoning
+# agentic-cortex v7.2.0 — The 5-Layer Agent Brain + Test-Time Reasoning
 
 Persistent, self-improving memory **and orchestration** for AI coding agents and developer tools. Implements the full **5-Layer Graph Engineering** framework: Prompt Engineering → Context Engineering → Harness Engineering → Loop Engineering → Graph Engineering. Install & forget — auto-injects context via git hooks, infers what you're working on, detects when improvement stalls, coordinates multi-agent teams, and prevents the same mistakes from repeating across projects.
 
@@ -18,7 +18,7 @@ Persistent, self-improving memory **and orchestration** for AI coding agents and
 - **Session context compactor** — map-reduce compression of observations or transcripts into a "state so far" summary (~95% smaller) that replaces raw conversation history — attacks the biggest token cost: per-turn history re-sending.
 - **Evidence-theoretic conflict resolution (Dempster-Shafer)** — contradictory observations are no longer superseded silently. Each side gets a *belief mass* (confidence + corroboration + usage); the statistical channel is fused with LLM adjudication via Dempster's rule. Adjudication is a **two-shot debate**: first the LLM builds the strongest case for *each* side (adversarial argument generation, preventing judge anchoring), then judges with both cases on the record — the full deliberation is persisted for auditability. The resolution records the conflict coefficient k, the combined belief, and the *deciding evidence*; the winner's boost is agreement-weighted (a knife-edge k≈1 resolution gets almost none). Bootstrap injects recent resolutions as `<settled_debates>` so agents see why a debate was settled instead of re-opening it — and flags **weak resolutions** (high conflict coefficient k, statistical near-tie, or a winner that never clearly out-massed the loser) with a `severity="weak_resolution"` warning so agents treat the topic as an OPEN QUESTION, not settled precedent. Human/agent-guided resolution via `agentic-cortex resolve --winner ID --loser ID --reason ...`.
 - **Agent-optimized knowledge.md** — XML-structured, 4× token reduction vs markdown. Built for LLM consumption, not human skimming.
-- **110 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
+- **110+ MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
 - **Agent capability manifest (schema v1)** — machine-readable JSON (`manifest` / `discover` CLI, `memory_manifest` / `memory_discover` / `memory_compose` MCP tools) declaring 40+ capabilities with versions and interfaces for feature-detection, auto-discovering compatible agent frameworks and generic MCP clients via their config files / env vars / registered MCP servers, and returning the exact wiring to compose with each — which MCP config to write and which memory/reasoning/audit/orchestration tools to expose.
 - **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error.
 - **Hybrid search** — FTS5 keyword + BGE semantic embeddings (768-dim) + cross-encoder reranking. Falls back gracefully when embeddings unavailable.
@@ -226,7 +226,7 @@ agentic-cortex code-index search "token budget calc" --semantic
 agentic-cortex-mcp
 ```
 
-**57 tools** over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
+**124 tools** over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
 
 ### Graph Engineering Tools
 
@@ -260,7 +260,28 @@ of two forms:
    | Claude Code | `.mcp.json` (project) or `claude_desktop_config.json` (global) |
    | Cursor | `.cursor/mcp.json` |
    | OpenCode | `opencode.json` → `mcpServers` |
+   | Freebuff | `.freebuff/mcp.json` |
+   | Gemini CLI | `.gemini/settings.json` → `mcpServers` |
+   | OpenAI Codex CLI | `~/.codex/config.toml` → `[mcp_servers.*]` (TOML stanza printed by `wireup`) |
+   | GitHub Copilot CLI | `.copilot/mcp-config.json` |
+   | VS Code (Copilot agent mode) | `.vscode/mcp.json` → `servers` |
+   | Windsurf | `.windsurf/mcp_config.json` |
+   | Roo Code | `.roo/mcp.json` |
+   | Zed | `.zed/settings.json` → `context_servers` |
+   | Cline / Kilo Code | VS Code extension settings (manual paste — `wireup` prints the JSON) |
+   | Continue / Goose | YAML config (block printed by `wireup`, never auto-merged) |
+   | Amazon Q | `.amazonq/mcp.json` |
+   | Amp / Crush / Trae / Qwen Code | `.amp/settings.json` / `.crush/crush.json` / `.trae/mcp.json` / `.qwen/settings.json` |
+   | Aider | No native MCP — instructions via `CONVENTIONS.md` (`--read`) |
    | Any MCP client | `{ "mcpServers": { "agentic-cortex": { "type": "stdio", "command": "agentic-cortex-mcp", "args": [] } } }` |
+
+   **One command wires them all:** `agentic-cortex wireup` detects which agents
+   are present (config files, home-dir configs, env vars, PATH executables),
+   merges the AC MCP registration into every JSON config it finds (preserving
+   sibling servers), and injects a version-stamped instruction section telling
+   each agent that AC owns memory, sessions, and machine-wide knowledge. YAML
+   and TOML configs are never auto-merged — `wireup` prints the exact stanza
+   instead. Idempotent; preview with `--dry-run`.
 
 2. **Node library (in-process).** For agents that embed AC directly (e.g. a
    custom orchestrator or the `cortex-swarm` persona swarm):
@@ -273,6 +294,18 @@ of two forms:
 `AGENTIC_CORTEX_DB`). There is no database server to point at; each machine runs
 its own brain. Cross-machine sharing uses the optional git memory repo
 (`agentic-cortex setup` + `AGENTIC_CORTEX_MEMORY_REPO`), not a live server.
+
+### Distributed learning: seeds, not dumps
+
+Knowledge gathers locally on each machine and travels only as small,
+self-contained **seeds** — and every seed has a bounded lifespan:
+
+1. **Gather** — every wired agent writes into the one local vault. Nothing leaves.
+2. **Distill** — reflection + crystallization compress raw observations into battle-tested learnings.
+3. **Screen** — the seed sanitizer hard-blocks credential-class content (private keys, JWTs, tokens, passwords) and redacts secrets, connection strings, emails, user paths, and IPs before anything can leave. Over-redacted or machine-specific content is kept local. Fail-closed: if the gate errors, nothing is exported.
+4. **Seed** — passing seeds are wrapped in a lifecycle envelope (pseudonymous machine id — no hostname/username/serial — plus a per-type TTL) and pushed as markdown to the git memory repo. Identity, session IDs, and project paths never travel.
+5. **Germinate** — other machines import seeds into a quarantined advisory state: confidence capped at 60 (proven on another machine, not this one), decaying with age, tagged `seed`.
+6. **Graduate or expire** — when a local agent re-proves a seed (same failure, `feedback helpful`, corroborated save), its confidence climbs and at 85 it graduates to a full local memory. Un-corroborated seeds age out and are dropped at import once expired. Local evidence always outranks seed trust.
 
 **Discover yourself:** call the `memory_provider` MCP tool for the provider
 manifest (name, version, memory/relation types, multi-agent mailbox, workflows,

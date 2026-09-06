@@ -29,7 +29,10 @@
 
 const prm = require('./prm');
 const adaptiveBudget = require('./adaptive-budget');
-const { callLLM } = require('./session');
+// Lazy resolution: tests (and hot-reload paths) patch session.callLLM at
+// runtime; a destructured binding would freeze the original and silently
+// bypass every mock/override.
+function _callLLM() { return require('./session').callLLM; }
 const replExecutor = require('./repl-executor');
 const budgetForcing = require('./budget-forcing');
 
@@ -155,7 +158,7 @@ Respond ONLY with valid JSON: {"branches": [{"content": "step text", "type": "re
   ];
 
   try {
-    const result = await callLLM(messages, {
+    const result = await _callLLM()(messages, {
       temperature: 0.7, // Higher temperature for diversity
       maxTokens: Math.min(budget, 2000),
       timeout: 30000,
@@ -209,7 +212,7 @@ Respond ONLY with valid JSON: {"reached": true/false, "confidence": 0.0-1.0, "re
   ];
 
   try {
-    const result = await callLLM(messages, {
+    const result = await _callLLM()(messages, {
       temperature: 0,
       maxTokens: 150,
       timeout: 10000,
@@ -316,16 +319,24 @@ async function _expandAndVerifyNode({ trace, node, chain, branches, problem, pro
         childNode.isPruned = true;
         trace.branchesPruned++;
 
-        if (_saveFn && verification.score < 0.2) {
-          _saveFn({
-            project,
-            type: 'error',
-            title: `Reasoning path pruned: ${branch.content.slice(0, 60)}`,
-            content: `Step "${branch.content}" was pruned by PRM (score: ${verification.score}). Reason: ${verification.reason}`,
-            tags: ['tree-search', 'prm-pruned', 'auto-capture'],
-            importance: 4,
-            provenance: 'inferred',
-          }).catch(() => {});
+        // Capture deeply-pruned branches. A deterministic hard-fail scores
+        // exactly 0.2, so the boundary is inclusive (<= 0.2) — otherwise the
+        // most clear-cut failures (unverified assumptions, bare conclusions)
+        // never become lessons.
+        if (_saveFn && verification.score <= 0.2) {
+          // Awaited: the capture is part of the learning contract — callers
+          // that inspect memory right after search() must see the lesson.
+          try {
+            await _saveFn({
+              project,
+              type: 'error',
+              title: `Reasoning path pruned: ${branch.content.slice(0, 60)}`,
+              content: `Step "${branch.content}" was pruned by PRM (score: ${verification.score}). Reason: ${verification.reason}`,
+              tags: ['tree-search', 'prm-pruned', 'auto-capture'],
+              importance: 4,
+              provenance: 'inferred',
+            });
+          } catch { /* capture is best-effort */ }
         }
 
         trace.allNodes.push(childNode);

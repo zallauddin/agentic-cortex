@@ -17,6 +17,8 @@ const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 const { decodeMarkdown, encodeObservation, generateFilename } = require('./markdown-codec');
+const sanitizer = require('../core/seed-sanitizer');
+const lifecycle = require('../core/seed-lifecycle');
 
 // Debounce state: max one pull per 5 minutes
 let _lastPullTime = 0;
@@ -194,16 +196,33 @@ function syncPull(db, repoUrl) {
           updatedCount++;
         }
       } else {
-        // New observation — insert into __global__ scope
+        // New observation — GERMINATION: a seed from another machine is
+        // advisory knowledge, not proven knowledge. It lands with a capped
+        // confidence, a 'seed' tag (so the lifecycle can decay/expire it),
+        // and the exporter's pseudonymous origin — never a real identity.
         const now = new Date().toISOString();
+        const seedTags = [...new Set([...(observation.tags || []), 'seed'])];
+        const germinationConfidence = lifecycle.germinationConfidence({
+          createdAt: observation.created_at || now,
+          confidence: observation.confidence,
+          expiresAt: observation.expires_at || null,
+        });
+
+        if (germinationConfidence <= 0) {
+          // Expired seed — do not import; the lesson should be re-proven
+          // locally, not carried forward on stale trust.
+          continue;
+        }
+
         db.prepare(
           'INSERT INTO observations (id, project_path, project_scope, type, title, content, tags, importance, confidence, provenance, agent_id, session_id, steps, triggers, preconditions, postconditions, created_at, synced_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
         ).run(
           observation.id, '__global__', 'global',
           observation.type, observation.title, observation.content,
-          JSON.stringify(observation.tags), observation.importance,
-          observation.confidence, observation.provenance,
-          observation.agent_id, observation.session_id,
+          JSON.stringify(seedTags), observation.importance,
+          germinationConfidence, 'germinated',
+          observation.agent_id || null, // pseudonymous origin (m_xxxx) or null
+          null, // session_id is machine-local — never travels
           observation.steps ? JSON.stringify(observation.steps) : null,
           observation.triggers ? JSON.stringify(observation.triggers) : null,
           observation.preconditions ? JSON.stringify(observation.preconditions) : null,
@@ -307,25 +326,52 @@ function syncPush(db, promotedIds, repoUrl) {
   if (toPush.length === 0) return { pushed: 0, commit: null, reason: 'no observations to push' };
 
   // ── Export each observation as a .md file ──
+  // Privacy gate (defense in depth): every candidate is screened and
+  // sanitized again here even if the caller already did it. Fail-closed.
   let filesWritten = 0;
+  let gateBlocked = 0;
   for (const obs of toPush) {
     try {
-      // Get relations for this observation
+      const screen = sanitizer.screenSeed(obs);
+      if (!screen.allowed) {
+        gateBlocked++;
+        console.warn('[agentic-cortex] Seed gate blocked export of obs #' + obs.id + ': ' + screen.reason);
+        continue;
+      }
+      const sanitized = sanitizer.sanitizeSeed(obs);
+      if (!sanitized.ok) {
+        gateBlocked++;
+        console.warn('[agentic-cortex] Seed gate blocked export of obs #' + obs.id + ': ' + sanitized.reason);
+        continue;
+      }
+
+      // Wrap in a lifecycle envelope (pseudonymous origin, TTL, generation).
+      // The envelope travels in frontmatter so germinating machines can
+      // enforce expiry/decay locally without trusting the exporter.
+      const envelope = lifecycle.createEnvelope(sanitized.seed);
       const relations = db.prepare(
         'SELECT r.relation_type as relation_type, r.target_id as target_id, o.title as target_title FROM memory_relations r LEFT JOIN observations o ON o.id = r.target_id WHERE r.source_id = ?'
       ).all(obs.id);
 
-      const md = encodeObservation(obs, relations);
+      // Reuse the codec for the body but inject the seed envelope fields.
+      const md = encodeObservation(
+        { ...obs, title: sanitized.seed.title, content: sanitized.seed.content,
+          tags: JSON.stringify(envelope.tags), provenance: 'seeded',
+          agent_id: envelope.origin, session_id: null,
+          created_at: envelope.createdAt },
+        relations
+      );
       const filename = generateFilename(obs);
       const filePath = path.join(globalDir, filename);
       fs.writeFileSync(filePath, md, 'utf-8');
       filesWritten++;
     } catch (err) {
-      console.warn('[agentic-cortex] Failed to export obs #' + obs.id + ': ' + (err.message || '').slice(0, 100));
+      gateBlocked++;
+      console.warn('[agentic-cortex] Seed gate internal error for obs #' + obs.id + ' (fail-closed): ' + (err.message || ''));
     }
   }
 
-  if (filesWritten === 0) return { pushed: 0, commit: null, reason: 'no files written' };
+  if (filesWritten === 0) return { pushed: 0, commit: null, reason: gateBlocked > 0 ? 'all candidates blocked by seed gate (' + gateBlocked + ')' : 'no files written' };
 
   // ── Commit and push ──
   try {

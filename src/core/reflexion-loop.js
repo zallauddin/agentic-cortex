@@ -77,10 +77,13 @@ Respond ONLY with valid JSON:
     });
 
     const parsed = JSON.parse(result || '{}');
+    // Empty/unavailable LLM fields fall back to the deterministic critique —
+    // a null LLM response parses as {} and would otherwise yield an empty
+    // avoidPattern, leaving the reflexion without an actionable lesson.
     return {
-      critique: parsed.critique || 'Failed reasoning path',
-      avoidPattern: parsed.avoidPattern || '',
-      suggestAlternative: parsed.suggestAlternative || '',
+      critique: parsed.critique || `Approach failed: ${verificationError}`,
+      avoidPattern: parsed.avoidPattern || strategy || 'Repeat failed reasoning path',
+      suggestAlternative: parsed.suggestAlternative || 'Try a different approach',
     };
   } catch {
     return {
@@ -240,7 +243,9 @@ function filterBranches(sessionId, branches) {
   return branches.map(branch => {
     const content = (branch.content || '').toLowerCase();
     const matchesAvoid = avoidPatterns.some(pattern => {
-      const words = pattern.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      // Split on whitespace AND hyphens so 'fixed-delay' matches content
+      // that spells the same strategy as 'fixed 1-second delay'.
+      const words = pattern.toLowerCase().split(/\s+/).flatMap(w => w.split('-')).filter(w => w.length > 3);
       const matchCount = words.filter(w => content.includes(w)).length;
       return matchCount >= Math.ceil(words.length * 0.5);
     });

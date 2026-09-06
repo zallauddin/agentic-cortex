@@ -225,6 +225,34 @@ function createDiscoveryFiles(projectDir) {
     console.error('[agentic-cortex]   opencode.json config skipped: ' + err.message);
   }
 
+  // ── Additional agents wired by default (best-effort, JSON configs only).
+  // Non-JSON configs (Codex TOML, Continue/Goose YAML) are intentionally NOT
+  // auto-merged — run `agentic-cortex wireup` to get the exact stanza. ──
+  const EXTRA_MCP_CONFIGS = [
+    { agent: 'Gemini CLI', file: '.gemini/settings.json', key: 'mcpServers', config: { command: 'agentic-cortex-mcp', args: [] } },
+    { agent: 'Windsurf', file: '.windsurf/mcp_config.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    { agent: 'VS Code (Copilot agent mode)', file: '.vscode/mcp.json', key: 'servers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    { agent: 'Roo Code', file: '.roo/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    { agent: 'Zed', file: '.zed/settings.json', key: 'context_servers', config: { source: 'custom', command: 'agentic-cortex-mcp', args: [] } },
+    { agent: 'Trae', file: '.trae/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+    { agent: 'Freebuff', file: '.freebuff/mcp.json', key: 'mcpServers', config: { type: 'stdio', command: 'agentic-cortex-mcp', args: [] } },
+  ];
+  for (const extra of EXTRA_MCP_CONFIGS) {
+    try {
+      const filePath = path.join(projectDir, extra.file);
+      // Only write when the agent shows evidence of being used here — do not
+      // litter projects with configs for tools the user does not run.
+      const agentDir = path.dirname(filePath);
+      if (!fs.existsSync(agentDir) && !fs.existsSync(path.join(projectDir, path.basename(agentDir)))) continue;
+      if (writeMCPConfig(extra.file, extra.key, extra.config)) {
+        created.push(extra.file);
+        console.error('[agentic-cortex]   configured MCP server in ' + extra.file + ' for ' + extra.agent);
+      }
+    } catch (err) {
+      console.error('[agentic-cortex]   ' + extra.file + ' config skipped: ' + err.message);
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   // Discovery Files (LLM instructions)
   // ═══════════════════════════════════════════════════════════════════

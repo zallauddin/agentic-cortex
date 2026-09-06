@@ -562,6 +562,10 @@ commands.conflicts = {
       if (args[i] === '--project') opts.project = args[++i];
       if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
       if (args[i] === '--auto-resolve') opts.autoResolve = true;
+      if (args[i] === '--confidence-floor') opts.confidenceFloor = parseInt(args[++i], 10);
+      if (args[i] === '--batch-size') opts.batchSize = parseInt(args[++i], 10);
+      if (args[i] === '--threshold') opts.threshold = parseFloat(args[++i]);
+      if (args[i] === '--clear-cache') opts.clearCache = true;
     }
     return opts;
   },
@@ -2181,6 +2185,55 @@ commands.discover = {
   }
 };
 
+commands.wireup = {
+  desc: 'Hard-wire agentic-cortex into every detected AI coding agent (MCP config merge + instruction injection)',
+  args: ['[--json]', '[--dry-run]', '[--only ID,...]', '[--skip ID,...]', '[--project PATH]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--json') opts.json = true;
+      if (args[i] === '--dry-run') opts.dryRun = true;
+      if (args[i] === '--only') opts.only = (args[++i] || '').split(',').filter(Boolean);
+      if (args[i] === '--skip') opts.skip = (args[++i] || '').split(',').filter(Boolean);
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const { wireupAll } = require('./src/api');
+    const result = wireupAll({
+      project: opts.project,
+      only: opts.only,
+      skip: opts.skip,
+      dryRun: opts.dryRun,
+    });
+
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    const verb = opts.dryRun ? 'Would wire' : 'Wired';
+    console.log((opts.dryRun ? 'DRY RUN — ' : '') + verb + ' agentic-cortex into ' + result.wired.length + ' agent framework(s):\n');
+    for (const w of result.wired) {
+      console.log('  ' + w.name + ' (' + w.id + ')');
+      if (w.mcp) console.log('    MCP: ' + w.mcp);
+      for (const ins of w.instructions) console.log('    instructions: ' + ins.action + ' → ' + ins.file);
+      for (const note of w.notes) console.log('    note: ' + note);
+    }
+    for (const s of result.stanza) {
+      console.log('\n  ' + s.name + ' (' + s.id + ') uses a non-JSON config — paste this into its config file:\n');
+      console.log(s.block.trimEnd().split('\n').map(l => '    ' + l).join('\n'));
+    }
+    if (result.failed.length > 0) {
+      console.log('\nFailed (' + result.failed.length + '):');
+      for (const f of result.failed) console.log('  ' + f.id + ': ' + f.error);
+    }
+    console.log('\nAC now owns memory, sessions, and machine-wide knowledge for every wired agent.');
+    console.log('Agents call memory_bootstrap at session start — no per-agent integration questions needed.');
+  }
+};
+
 commands.inject = {
   desc: 'Inject session memories + codebase graph into knowledge.md',
   args: ['[--project PATH]'],
@@ -2234,6 +2287,7 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
   }
   console.log('\nMCP Server:');
   console.log('  agentic-cortex-mcp              Start the MCP server (43 tools for memory, session, reflection, etc.)');
+  console.log('  agentic-cortex wireup           Hard-wire AC into every detected AI coding agent (MCP + instructions)');
   console.log('  agentic-cortex mcp-config       Generate MCP config files for OpenCode, Claude Code, Cursor');
   console.log('');
   console.log('MCP Tools (call via MCP protocol):');

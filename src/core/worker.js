@@ -64,6 +64,48 @@ const WORKER_FRAMEWORKS = {
     command: 'cursor-agent',
     buildArgs: (prompt) => ['run', prompt],
   },
+  'gemini-cli': {
+    id: 'gemini-cli',
+    name: 'Gemini CLI',
+    command: 'gemini',
+    buildArgs: (prompt) => ['-p', prompt, '--yolo'],
+  },
+  codex: {
+    id: 'codex',
+    name: 'OpenAI Codex CLI',
+    command: 'codex',
+    buildArgs: (prompt) => ['exec', '--full-auto', prompt],
+  },
+  'copilot-cli': {
+    id: 'copilot-cli',
+    name: 'GitHub Copilot CLI',
+    command: 'copilot',
+    buildArgs: (prompt) => ['--prompt', prompt, '--allow-all-tools'],
+  },
+  'amazon-q': {
+    id: 'amazon-q',
+    name: 'Amazon Q Developer',
+    command: 'q',
+    buildArgs: (prompt) => ['chat', '--no-interactive', prompt],
+  },
+  goose: {
+    id: 'goose',
+    name: 'Goose (Block)',
+    command: 'goose',
+    buildArgs: (prompt) => ['run', '--text', prompt],
+  },
+  amp: {
+    id: 'amp',
+    name: 'Amp (Sourcegraph)',
+    command: 'amp',
+    buildArgs: (prompt) => ['--dangerously-allow-all', prompt],
+  },
+  crush: {
+    id: 'crush',
+    name: 'Crush (Charm)',
+    command: 'crush',
+    buildArgs: (prompt) => ['run', prompt],
+  },
   // Cortex (the deterministic os/code-quality agent). Its worker bin is a
   // subprocess that boots the real cortex machinery (memory consult → FSM →
   // codemod → verify → learn) for each swarm persona role, so a swarm task

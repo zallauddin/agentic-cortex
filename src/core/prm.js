@@ -20,7 +20,9 @@
 
 'use strict';
 
-const { callLLM } = require('./session');
+// Lazy resolution so runtime patches of session.callLLM (tests, overrides)
+// are honored — a destructured binding would freeze the original.
+function _callLLM() { return require('./session').callLLM; }
 
 // Lazy-loaded dependencies
 let _prompts = null;
@@ -58,6 +60,8 @@ function verifyDeterministic(stepContent, stepType) {
       reason: 'Asserts equality with undefined/null/NaN' },
     { pattern: /(?:assume|assuming)\s+(?:this|that)\s+(?:is|works|correct)/i,
       reason: 'Contains unverified assumption' },
+    { pattern: /\b(?:assume|assuming)\b[^.!?]{0,40}?\b(?:works?|correct|fine|safe)\b/i,
+      reason: 'Contains unverified assumption (assumed success)' },
   ];
 
   for (const { pattern, reason } of failurePatterns) {
@@ -145,7 +149,7 @@ Respond ONLY with valid JSON: {"score": 0.0-1.0, "valid": true/false, "reason": 
   }
 
   try {
-    const result = await callLLM(messages, {
+    const result = await _callLLM()(messages, {
       temperature: 0,
       maxTokens: 200,
       timeout: 15000,
@@ -273,7 +277,8 @@ async function verifyAgainstMemory(stepContent, project, opts = {}) {
       if (mem.id != null && seenIds.has(mem.id)) continue;
       if (mem.id != null) seenIds.add(mem.id);
       consideredTypes.add(mem.type || 'unknown');
-      const memText = ((mem.title || '') + ' ' + (mem.content || '')).toLowerCase();
+      // hybridSearch returns a truncated `preview` (no `content`) — use both.
+      const memText = ((mem.title || '') + ' ' + (mem.content || '') + ' ' + (mem.preview || '')).toLowerCase();
       const memWords = new Set(memText.split(/\s+/).filter(w => w.length > 3));
       const overlap = [...keywords].filter(w => memWords.has(w)).length;
       const overlapRatio = overlap / Math.max(keywords.size, 1);
@@ -372,7 +377,7 @@ Respond ONLY with valid JSON: {"score": 0.0-1.0, "valid": true/false, "reason": 
   ];
 
   try {
-    const result = await callLLM(messages, { temperature: 0, maxTokens: 150, timeout: 10000 });
+    const result = await _callLLM()(messages, { temperature: 0, maxTokens: 150, timeout: 10000 });
     const parsed = JSON.parse(result || '{}');
     const score = typeof parsed.score === 'number' ? Math.max(0, Math.min(1, parsed.score)) : 0.5;
     const response = { valid: score >= 0.5, score, tier: 'outcome', reason: parsed.reason || 'ORM evaluated' };
