@@ -1,4 +1,4 @@
-# agentic-cortex v7.2.0 — The 5-Layer Agent Brain + Test-Time Reasoning
+# agentic-cortex v7.3.0 — The 5-Layer Agent Brain + Test-Time Reasoning
 
 Persistent, self-improving memory **and orchestration** for AI coding agents and developer tools. Implements the full **5-Layer Graph Engineering** framework: Prompt Engineering → Context Engineering → Harness Engineering → Loop Engineering → Graph Engineering. Install & forget — auto-injects context via git hooks, infers what you're working on, detects when improvement stalls, coordinates multi-agent teams, and prevents the same mistakes from repeating across projects.
 
@@ -81,6 +81,8 @@ npm install -g @xenova/transformers
 ```
 
 ## Quick Start
+
+New here? Start with **[QUICKSTART.md](QUICKSTART.md)** — wire into your agent in two minutes. Deep dive: **[ARCHITECTURE.md](ARCHITECTURE.md)**. Contributing: **[CONTRIBUTING.md](CONTRIBUTING.md)**. Runnable demos: `node examples/offline-demo.js` (fully offline memory loop) and `node examples/mcp-demo.js` (speaks real MCP JSON-RPC like your agent does).
 
 ```bash
 cd your-project
@@ -331,6 +333,27 @@ recovery, and usage instructions).
 | `AGENTIC_CORTEX_SESSION` | — | Current session ID |
 | `AGENTIC_CORTEX_PORT` | 37777 | HTTP server port |
 | `LLAMA_CPP_BASE_URL` | http://127.0.0.1:8081 | LLM for summaries/QA |
+| `AGENTIC_CORTEX_LLM_PROVIDER` | openai | `openai` \| `xenova` \| `off` — model provider (see `src/core/llm-adapter.js`) |
+| `AGENTIC_CORTEX_LLM_BASE_URL` | LLAMA_CPP_BASE_URL | Any OpenAI-compatible endpoint (llama.cpp, LM Studio, Ollama, vLLM, OpenRouter, OpenAI) |
+| `AGENTIC_CORTEX_LLM_MODEL` | server default | Model name |
+| `AGENTIC_CORTEX_LLM_API_KEY` | — | Bearer token for hosted providers |
+| `AGENTIC_CORTEX_LLM_LOCAL_MODEL` | Xenova/LaMini-Flan-T5-77M | Local model for the xenova provider |
+| `AGENTIC_CORTEX_LOG` | pretty | `pretty` \| `json` structured logs |
+| `AGENTIC_CORTEX_LOG_LEVEL` | info | `debug` \| `info` \| `warn` \| `error` |
+
+## Reproducible environments & observability
+
+```bash
+docker compose up --build      # Dockerfile + compose, vault persisted in a named volume
+docker compose run --rm demo   # offline demo against the shared vault
+```
+
+VS Code users: open the repo and "Reopen in Container" (`.devcontainer/`).
+
+When serving (`agentic-cortex serve`):
+- `GET /health` — vault stats + LLM provider status + uptime (JSON)
+- `GET /metrics` — Prometheus gauges (`?format=json` also supported)
+- `AGENTIC_CORTEX_LOG=json` — one JSON object per log line, shipper-ready
 
 ## Architecture: The 5-Layer Graph Engineering Brain
 

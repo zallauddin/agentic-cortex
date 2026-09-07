@@ -1,0 +1,36 @@
+# agentic-cortex — local stack for development and offline evaluation.
+#
+#   docker compose up --build          # dashboard API on http://127.0.0.1:37777
+#   docker compose run --rm cortex node cli.js stats
+#
+# The SQLite vault persists in the named volume `cortex-data` across restarts.
+
+services:
+  cortex:
+    build: .
+    image: agentic-cortex:local
+    container_name: agentic-cortex
+    ports:
+      - "37777:37777"
+    volumes:
+      - cortex-data:/data
+    environment:
+      # Point AC at a local llama.cpp server (OpenAI-compatible) if you have one:
+      #   docker compose run --rm cortex node cli.js llm-status
+      - LLAMA_CPP_BASE_URL=${LLAMA_CPP_BASE_URL:-http://host.docker.internal:8081}
+      - AGENTIC_CORTEX_LLM_PROVIDER=${AGENTIC_CORTEX_LLM_PROVIDER:-openai}
+      - AGENTIC_CORTEX_LLM_MODEL=${AGENTIC_CORTEX_LLM_MODEL:-local}
+      - AGENTIC_CORTEX_LOG=${AGENTIC_CORTEX_LOG:-pretty}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # One-shot: run the offline demo against the shared vault volume.
+  demo:
+    image: agentic-cortex:local
+    profiles: ["demo"]
+    volumes:
+      - cortex-data:/data
+    command: ["node", "examples/offline-demo.js"]
+
+volumes:
+  cortex-data:

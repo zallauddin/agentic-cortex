@@ -337,6 +337,11 @@ commands.serve = {
       }
       const url = new URL(req.url, 'http://localhost:' + opts.port);
       const p = url.pathname;
+      const t0 = Date.now();
+      res.on('finish', () => {
+        const log = require('./src/core/log');
+        log.info('http_request', { method: req.method, path: p, status: res.statusCode, ms: Date.now() - t0 });
+      });
       const json = (d, s) => {
         res.writeHead(s || 200, {
           'Content-Type': 'application/json',
@@ -386,7 +391,36 @@ commands.serve = {
       });
       try {
         if (p === '/health') {
-          return json(api.health());
+          // Roadmap item 5: /health now includes LLM provider status + uptime.
+          const out = { ...api.health(), uptime_s: Math.round(process.uptime()) };
+          try {
+            const adapter = require('./src/core/llm-adapter');
+            out.llm = await adapter.llmStatus();
+          } catch (err) {
+            out.llm = { configured: false, available: false, error: err.message };
+          }
+          return json(out);
+        }
+        if (p === '/metrics') {
+          // Prometheus text format (default) or JSON with ?format=json.
+          const db2 = db;
+          const cnt = (sql) => { try { return db2.prepare(sql).get().c; } catch { return null; } };
+          const dbSize = (() => { try { return fs.statSync(require('./src/core/db').getDbPath()).size; } catch { return null; } })();
+          const metrics = {
+            uptime_seconds: Math.round(process.uptime()),
+            observations_total: cnt('SELECT COUNT(*) as c FROM observations'),
+            observations_active: cnt('SELECT COUNT(*) as c FROM observations WHERE is_active = 1'),
+            observations_embedded: cnt('SELECT COUNT(*) as c FROM observations WHERE embedding IS NOT NULL'),
+            sessions_total: cnt('SELECT COUNT(*) as c FROM sessions'),
+            conflicts_open: cnt("SELECT COUNT(*) as c FROM conflicts WHERE status = 'open'"),
+            db_size_bytes: dbSize,
+            process_rss_bytes: process.memoryUsage().rss,
+          };
+          if (url.searchParams.get('format') === 'json') return json(metrics);
+          const lines = Object.entries(metrics).map(([k, v]) =>
+            '# TYPE ac_' + k + ' gauge\nac_' + k + ' ' + (v ?? 0));
+          res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
+          return res.end(lines.join('\n') + '\n');
         }
         if (p === '/search') {
           const q = url.searchParams.get('q');
@@ -1910,6 +1944,22 @@ commands['eval-log'] = {
   }
 };
 
+// ─── LLM provider status (adapter API) ───────────────────────────────────
+
+commands['llm-status'] = {
+  desc: 'Show configured model provider (openai/xenova/off) and availability',
+  parse() { return {}; },
+  async run() {
+    const adapter = require('./src/core/llm-adapter');
+    const status = await adapter.llmStatus();
+    console.log(JSON.stringify(status, null, 2));
+    if (!status.available) {
+      console.error('');
+      console.error('Provider is unavailable — AC will use deterministic/template fallbacks.');
+    }
+  },
+};
+
 // ─── Cortex UI: 5-Layer Dashboard (served over HTTP) ──────────
 
 commands['cortex-ui'] = {
@@ -2299,6 +2349,12 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
   console.log('  AGENTIC_CORTEX_SESSION    Current session ID');
   console.log('  AGENTIC_CORTEX_PORT       HTTP server port (default: 37777)');
   console.log('  LLAMA_CPP_BASE_URL    llama.cpp server URL (default: http://127.0.0.1:8081)');
+  console.log('  AGENTIC_CORTEX_LLM_PROVIDER  openai | xenova | off (default: openai)');
+  console.log('  AGENTIC_CORTEX_LLM_BASE_URL  OpenAI-compatible base URL (overrides LLAMA_CPP_BASE_URL)');
+  console.log('  AGENTIC_CORTEX_LLM_MODEL     Model name sent to the provider');
+  console.log('  AGENTIC_CORTEX_LLM_API_KEY   Bearer token for hosted providers');
+  console.log('  AGENTIC_CORTEX_LLM_LOCAL_MODEL  Local model for xenova provider (default: Xenova/LaMini-Flan-T5-77M)');
+  console.log('  AGENTIC_CORTEX_LOG       Log format: pretty | json (default: pretty)');
   process.exit(0);
 }
 

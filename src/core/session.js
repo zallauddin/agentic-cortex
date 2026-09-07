@@ -11,7 +11,7 @@
 'use strict';
 
 const path = require('path');
-const { LLAMA_URL } = require('./constants');
+const { callProvider } = require('./llm-adapter');
 
 /**
  * Start a new memory session for a project.
@@ -74,8 +74,11 @@ function listSessions(db, opts) {
 }
 
 /**
- * Call the LLM (llama.cpp) for text generation.
- * Returns null if llama.cpp is unreachable (caller should use template fallback).
+ * Call the configured LLM provider (see core/llm-adapter.js) for text generation.
+ * Returns null if the provider is unreachable (caller should use template fallback).
+ *
+ * Provider selection: AGENTIC_CORTEX_LLM_PROVIDER = openai | xenova | off.
+ * Default 'openai' targets llama.cpp at LLAMA_CPP_BASE_URL (unchanged behavior).
  *
  * @param {Array<{role: string, content: string}>} messages - Chat messages
  * @param {Object} [opts={}] - LLM options
@@ -85,48 +88,7 @@ function listSessions(db, opts) {
  * @returns {Promise<string|null>} Generated text, or null if LLM is unavailable
  */
 async function callLLM(messages, opts = {}) {
-  const body = {
-    messages,
-    temperature: opts.temperature ?? 0.3,
-    max_tokens: opts.maxTokens ?? 2000,
-    stream: false,
-  };
-
-  try {
-    const res = await fetch(LLAMA_URL + '/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(opts.timeout ?? 300000),
-    });
-
-    if (!res.ok) {
-      throw new Error('LLM error ' + res.status + ': ' + (await res.text()));
-    }
-
-    const data = await res.json();
-    let content = data.choices?.[0]?.message?.content || '';
-
-    // Qwen 3.5 thinking models put output in reasoning_content when
-    // max_tokens is exhausted on thinking tokens, leaving content empty.
-    if (!content) {
-      const rc = data.choices?.[0]?.message?.reasoning_content;
-      if (typeof rc === 'string' && rc.length > 0) {
-        content = rc;
-      }
-    }
-
-    return content;
-  } catch (err) {
-    if (
-      err.code === 'ECONNREFUSED' ||
-      err.message?.includes('ECONNREFUSED') ||
-      err.message?.includes('fetch failed')
-    ) {
-      return null; // Signal LLM unavailable — caller handles fallback
-    }
-    throw err;
-  }
+  return callProvider(messages, opts);
 }
 
 /**

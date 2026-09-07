@@ -1,0 +1,31 @@
+{
+  "name": "agentic-cortex dev container",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "editorconfig.editorconfig"
+      ]
+    }
+  },
+  "forwardPorts": [37777],
+  "portsAttributes": {
+    "37777": {
+      "label": "agentic-cortex HTTP API / dashboard",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "npm ci --include=optional && node cli.js --help",
+  "remoteEnv": {
+    "AGENTIC_CORTEX_DB": "${containerWorkspaceFolder}/agentic-cortex.db",
+    "AGENTIC_CORTEX_LOG": "pretty"
+  },
+  "containerEnv": {
+    "NODE_ENV": "development"
+  }
+}
