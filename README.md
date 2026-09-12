@@ -1,4 +1,4 @@
-# agentic-cortex v7.3.0 — The 5-Layer Agent Brain + Test-Time Reasoning
+# agentic-cortex v7.4.0 — The 5-Layer Agent Brain + Test-Time Reasoning
 
 Persistent, self-improving memory **and orchestration** for AI coding agents and developer tools. Implements the full **5-Layer Graph Engineering** framework: Prompt Engineering → Context Engineering → Harness Engineering → Loop Engineering → Graph Engineering. Install & forget — auto-injects context via git hooks, infers what you're working on, detects when improvement stalls, coordinates multi-agent teams, and prevents the same mistakes from repeating across projects.
 
@@ -31,6 +31,13 @@ Persistent, self-improving memory **and orchestration** for AI coding agents and
 - **Declarative rule engine** — priority-based condition→action rules that fire on events. Built-in rules for error escalation, auto-crystallization, and context capture.
 - **Webhook support** — hook actions can POST to external HTTP endpoints with template interpolation and configurable retries. Bridge agentic-cortex to Slack, PagerDuty, CI pipelines, or any HTTP service.
 - **Save-time deduplication** — cosine similarity ≥ 0.97 reinforces existing memories instead of creating duplicates.
+- **Temporal forgetting (supermemory-inspired)** — temporary facts get bounded lifespans: `save --expires ISO` / `--ttl-days N`, or automatic detection of dates and relative spans in content ("exam tomorrow" dies on its date, not via slow decay). An expiry sweep runs in every maintenance cycle; expired memories drop out of all retrieval.
+- **Supersession** — "Deploy is Monday" now supersedes "Deploy is Friday": newer statement-like facts (fact/decision/preference/context/learning) with near-identical titles mark the old one `superseded_by` and record a `supersedes` relation for lineage. Old fact stays in the vault for audit but never surfaces again. Fuzzy contradictions still go through the Dempster-Shafer debate pipeline.
+- **One-call profile (`profile`)** — supermemory-style project/agent profile: `static` (stable facts/decisions/preferences ranked by confidence × corroboration × layer) + `dynamic` (open goals, commitments, last-7-days activity) + optional combined search, all in a single fast deterministic call. MCP: `memory_profile`. **Also auto-injected at session start**: bootstrap emits a `<project_profile>` block (with `<stable_knowledge>` and `<current_activity>` sections) so agents get the profile without an extra round trip — opt out with `includeProfile: false`.
+- **Unified search (`hybrid`)** — memories AND code symbols in one query (AC's answer to supermemory's hybrid RAG+memory): returns `{ memories, code }` with source tags. MCP: `memory_search_hybrid`.
+- **Provider adapter + recall@k suite** — MemoryBench-compatible surface (`addMemories`/`searchMemories`/`getProfile`/`reset`) so external harnesses can benchmark AC head-to-head against supermemory, Mem0, and Zep, plus a built-in deterministic recall@k suite (`benchmark recall`) covering single-hop, multi-hop, temporal, and knowledge-update categories. Memory quality claims are now measurable, not just asserted. **Verified end-to-end against [supermemoryai/memorybench](https://github.com/supermemoryai/memorybench)** (the real harness: registered provider, ingest→index→search through its orchestrator) — see the [granularity-controlled comparison](MEMORYBENCH.md): at matched session-level units, AC beats MemoryBench's filesystem baseline on LoCoMo recall@10 (63.0% vs 54.2%), with multi-hop at 80% vs 30.8%. The supermemory cloud row is one keyed run away (`scripts/supermemory-smoke.js` validates, then the v3 runner adds it with sampling + caching).
+- **Profile project-scoping fix (v7.4.0)** — `profile()` and the auto-injected `<project_profile>` block now filter strictly by `project_path`; previously they could surface memories from any project on the machine, crowding out the project's own facts from the top-N. Regression-tested.
+- **Temporal forgetting + supersession test suite (v7.4.0)** — `src/core/forgetting.js` (TTL/expiry detection) and `src/bench/provider-adapter.js` gain dedicated suites (`tests/forgetting.test.js`, 32 tests) with per-run isolated databases.
 - **Freshness scoring** — 0-100 score combining access recency, confidence, and utility. Auto-archives stale memories.
 - **Auto-maintenance scheduler** — runs freshness updates and archival every ~50 saves, minimum 6 hours between full cycles.
 - **Tiered memory crystallization** — raw observations compress upward through layers: raw (1) → synthesis (2) → principle (3). Principles are always-injected, load-bearing knowledge.
@@ -144,6 +151,26 @@ agentic-cortex machine-search "Windows path normalization"
 
 # Manually promote
 agentic-cortex promote-global 42
+```
+
+### Temporal Forgetting, Profile & Unified Search (supermemory-inspired)
+
+```bash
+# Temporary facts with bounded lifespans
+agentic-cortex save "Exam" "User has an exam tomorrow"   # expiry auto-detected
+agentic-cortex save "Trial" "API trial key active" --ttl-days 7
+
+# Sweep expired memories (also runs automatically in maintenance)
+agentic-cortex expire [--dry-run]
+
+# One-call profile: static facts + dynamic activity (optional combined query)
+agentic-cortex profile [--q "deploy schedule"] [--agent ID]
+
+# Unified search: memories + code symbols in one query
+agentic-cortex hybrid "token budget calculation" [--no-code] [--rerank]
+
+# Benchmark recall@k (deterministic, no dataset needed)
+agentic-cortex benchmark recall
 ```
 
 ### Code Index & Context Compaction (v7)

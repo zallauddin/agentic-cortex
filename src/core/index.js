@@ -51,4 +51,5 @@ module.exports = {
   wireup: require('./wireup'),
   seedSanitizer: require('./seed-sanitizer'),
   seedLifecycle: require('./seed-lifecycle'),
+  forgetting: require('./forgetting'),
 };

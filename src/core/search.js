@@ -39,6 +39,19 @@ function buildWhereClause(opts) {
   const conditions = ['o.is_active = 1'];
   const params = [];
 
+  // Temporal forgetting (Phase 15): expired memories (past expires_at) and
+  // explicitly superseded memories are excluded from every retrieval path.
+  // `includeExpired` opts back in (audit/analysis use). is_active=0 already
+  // covers expired memories swept by expireDueMemories; the SQL-time check
+  // catches anything not yet swept between maintenance runs.
+  if (!opts.includeExpired) {
+    conditions.push("(o.expires_at IS NULL OR o.expires_at > ?)");
+    params.push(new Date().toISOString());
+  }
+  if (!opts.includeSuperseded) {
+    conditions.push('o.superseded_by IS NULL');
+  }
+
   if (opts.project) {
     conditions.push('o.project_path = ?');
     params.push(opts.project);
@@ -408,6 +421,152 @@ function applyOutcomeWeights(db, results, opts = {}) {
  * @returns {Array<Object>} results with outcome_weight/outcome_runs attached
  */
 /**
+ * Temporal-query detection (Phase 15): deterministic regex, no LLM. Matches
+ * questions that ask about time or the CURRENT state of the world — the two
+ * cases where recency/supersession metadata should influence ranking.
+ * Word-bounded to avoid substring false positives (e.g. "whenever").
+ *
+ * @param {string} query
+ * @returns {boolean}
+ */
+const TEMPORAL_QUERY_RE = /\b(when|what day|what time|what year|how long|how recent|since when|until when|as of|latest|newest|current|currently|now|today|tomorrow|yesterday|this week|last week|this month|last month|this year|last year|these days|recently|deadline|schedule|scheduled|expire|expires|expired|moved|changed|switched|updated|upgrade|upgraded|migrate|migrated)\b/i;
+
+function isTemporalQuery(query) {
+  return TEMPORAL_QUERY_RE.test(String(query || ''));
+}
+
+/**
+ * Parse a SQLite datetime ('YYYY-MM-DD HH:MM:SS', UTC) or ISO string to ms.
+ * Returns NaN when unparseable.
+ *
+ * @param {string} s
+ * @returns {number}
+ */
+function _parseSQLiteDate(s) {
+  if (!s) return NaN;
+  const str = String(s);
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(str)) return Date.parse(str);
+  return Date.parse(str.replace(' ', 'T') + 'Z');
+}
+
+/**
+ * Temporal ranking boost (Phase 15): when the QUERY asks about time or the
+ * current state of the world, use the temporal-lifecycle metadata created by
+ * the forgetting/supersession subsystem to lift the *latest truth* above
+ * stale-but-matching distractors:
+ *
+ *   - CHAMPION: the memory is the living winner of a supersession chain
+ *     (another row's superseded_by points at it) — it IS the current fact.
+ *   - TIME-BOUND: the memory carries a future expires_at — a bounded-time
+ *     fact that is still valid, exactly what temporal questions probe for.
+ *   - RECENCY: 1/(1 + ageDays) from created_at — newer evidence ranks a
+ *     little higher for "where does X live now" style questions.
+ *
+ * Deterministic (no LLM), metadata-only, and self-limiting: the boost adds
+ * at most `delta` (default 0.15) of the [0,1] relevance score, so it nudges
+ * ordering among already-relevant candidates — it never rescues an
+ * irrelevant memory past a relevant one. Non-temporal queries are returned
+ * unchanged (only annotated with temporal_boost: 0).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} query
+ * @param {Array<Object>} results — search results (id + numeric score or FTS rank)
+ * @param {Object} [opts] — { delta? (default 0.15), enabled? (default true) }
+ * @returns {Array<Object>} results with temporal_boost attached, re-sorted when active
+ */
+function applyTemporalBoost(db, query, results, opts = {}) {
+  if (!Array.isArray(results) || results.length === 0) return results || [];
+  if (opts.enabled === false || !isTemporalQuery(query)) {
+    return results.map(r => ({ ...r, temporal_boost: 0 }));
+  }
+  const delta = opts.delta == null ? 0.15 : Math.max(0, Math.min(0.5, opts.delta));
+  const now = Date.now();
+
+  // Pull temporal metadata for exactly the candidate ids (single query each
+  // for facts and champion pointers — no N+1).
+  const meta = new Map();
+  const ids = results.map(r => r.id).filter(id => id != null);
+  if (db && ids.length > 0) {
+    const ph = ids.map(() => '?').join(',');
+    try {
+      for (const row of db.prepare(`SELECT id, expires_at, created_at FROM observations WHERE id IN (${ph})`).all(...ids)) {
+        meta.set(row.id, row);
+      }
+    } catch { /* metadata unavailable — recency from result rows only */ }
+    try {
+      const champs = new Set(
+        db.prepare(`SELECT DISTINCT superseded_by FROM observations WHERE is_active = 0 AND superseded_by IN (${ph})`).all(...ids).map(r => r.superseded_by)
+      );
+      for (const [id, m] of meta) m.isChampion = champs.has(id);
+    } catch { /* champion signal unavailable */ }
+  }
+
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  const boosted = results.map(r => {
+    const m = meta.get(r.id) || {};
+
+    // RECENCY — 1 today → 0.5 after a day → 0.17 after a month.
+    let recency = 0;
+    const createdMs = _parseSQLiteDate(m.created_at);
+    if (!Number.isNaN(createdMs)) {
+      const ageDays = Math.max(0, (now - createdMs) / 86400000);
+      recency = 1 / (1 + ageDays);
+    }
+
+    const boost = clamp01(
+      0.6 * recency +
+      (m.isChampion ? 0.25 : 0) +
+      (m.expires_at && Date.parse(m.expires_at) > now ? 0.15 : 0)
+    );
+
+    const out = { ...r, temporal_boost: Math.round(boost * 1000) / 1000 };
+    if (boost > 0) {
+      if (typeof r.rerank_score === 'number') {
+        out.rerank_score = Math.round(clamp01(r.rerank_score + boost * delta) * 1000) / 1000;
+      } else if (typeof r.combined_score === 'number') {
+        out.combined_score = Math.round(clamp01(r.combined_score + boost * delta) * 1000) / 1000;
+      }
+    }
+    // Keyword-only path: results carry a raw FTS5 rank (NEGATIVE; more
+    // negative = better bm25 match). Convert to a positive "bigger is
+    // better" score for every row — including boost 0 — so the re-sort
+    // preserves the baseline FTS ordering and the boost only nudges it.
+    // RANK_SCALE bounds the nudge to <1 rank position (delta ≤ 0.5).
+    if (typeof r.rank === 'number') {
+      const RANK_SCALE = 5;
+      out.temporal_rank_score = Math.abs(r.rank) + boost * delta * RANK_SCALE;
+    }
+    return out;
+  });
+
+  // Re-sort only when the boost can change ordering. Hybrid/reranked results
+  // sort by their adjusted numeric score; keyword-only results by the
+  // converted temporal_rank_score (falls back to existing order).
+  const hasNumeric = boosted.some(r => typeof r.rerank_score === 'number' || typeof r.combined_score === 'number');
+  const hasRankScore = boosted.some(r => typeof r.temporal_rank_score === 'number');
+  if (hasNumeric) {
+    boosted.sort((a, b) => {
+      const sa = typeof a.rerank_score === 'number' ? a.rerank_score : (typeof a.combined_score === 'number' ? a.combined_score : null);
+      const sb = typeof b.rerank_score === 'number' ? b.rerank_score : (typeof b.combined_score === 'number' ? b.combined_score : null);
+      if (sa != null && sb != null) return sb - sa;
+      if (sa != null) return -1;
+      if (sb != null) return 1;
+      return 0;
+    });
+  } else if (hasRankScore) {
+    boosted.sort((a, b) => {
+      const sa = typeof a.temporal_rank_score === 'number' ? a.temporal_rank_score : null;
+      const sb = typeof b.temporal_rank_score === 'number' ? b.temporal_rank_score : null;
+      if (sa != null && sb != null) return sb - sa;
+      if (sa != null) return -1;
+      if (sb != null) return 1;
+      return 0;
+    });
+  }
+  return boosted;
+}
+
+/**
  * Diversify retrieval so one dominant cluster cannot hide dissenting or
  * orthogonal evidence. Maximal marginal relevance is deterministic and works
  * with keyword-only results by using token overlap as a similarity proxy.
@@ -511,4 +670,6 @@ module.exports = {
   semanticSearch,
   hybridSearch,
   rerankResults,
+  isTemporalQuery,
+  applyTemporalBoost,
 };

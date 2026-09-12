@@ -54,7 +54,7 @@ const _projectQueues = new Map();
  */
 function _enqueueToolCall(toolName, toolArgs) {
   // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_offline_execute', 'memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_swarm_replan_goal', 'memory_swarm_retry_now', 'memory_swarm_job_create', 'memory_swarm_job_run', 'memory_swarm_job_cancel', 'memory_swarm_plan_import', 'memory_swarm_plan_run', 'memory_swarm_plan_sync', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run']);
+  const stateModifyingTools = new Set(['memory_offline_execute', 'memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_swarm_replan_goal', 'memory_swarm_retry_now', 'memory_swarm_job_create', 'memory_swarm_job_run', 'memory_swarm_job_cancel', 'memory_swarm_plan_import', 'memory_swarm_plan_run', 'memory_swarm_plan_sync', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run', 'memory_expire']);
   if (!stateModifyingTools.has(toolName)) {
     return callTool(toolName, toolArgs);
   }
@@ -563,6 +563,50 @@ const TOOLS = [
         minConfidence: { type: 'integer', description: 'Minimum confidence filter' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'memory_profile',
+    description: '👤 ONE-CALL PROFILE — supermemory-style: returns the distilled profile of a project/agent as static (stable facts, decisions, preferences) + dynamic (recent activity, open goals) in a single fast call. Optionally combine with a query to also get searchResults in the same round trip. Inject directly into your system prompt.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path (defaults to current)' },
+        agentId: { type: 'string', description: 'Scope the profile to one agent (multi-agent namespace)' },
+        q: { type: 'string', description: 'Optional query — also returns searchResults in the same call' },
+        limit: { type: 'integer', description: 'Max entries per section (default 12)' },
+      },
+    },
+  },
+  {
+    name: 'memory_search_hybrid',
+    description: '🧬 UNIFIED SEARCH — memories AND code symbols in ONE query. Returns { memories, code } where memories are vault memories (hybrid FTS5+semantic) and code are matching functions/classes from the code index. The supermemory-style single-surface retrieval: knowledge base + code grounding together.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        project: { type: 'string', description: 'Project path (defaults to current)' },
+        limit: { type: 'integer', description: 'Max memories (default 10)' },
+        codeLimit: { type: 'integer', description: 'Max code symbols (default 5)' },
+        code: { type: 'boolean', description: 'Include code index results (default true)', default: true },
+        rerank: { type: 'boolean', description: 'Apply cross-encoder reranking to memories', default: false },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'memory_expire',
+    description: '⏳ TEMPORAL FORGETTING — expire memories whose lifespan (expires_at) has elapsed. Temporary facts ("I have an exam tomorrow") die on their date instead of lingering. Runs automatically in maintenance; call directly to sweep now. Also supersede an old memory with a new one (pass oldId + newId).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['sweep', 'supersede'], description: 'sweep = expire due memories; supersede = mark old memory replaced by new (default sweep)' },
+        project: { type: 'string', description: 'Project path' },
+        dryRun: { type: 'boolean', description: 'List what would expire without expiring', default: false },
+        oldId: { type: 'integer', description: 'supersede: the memory being replaced' },
+        newId: { type: 'integer', description: 'supersede: the memory replacing it' },
+        reason: { type: 'string', description: 'supersede: why the old memory is replaced' },
+      },
     },
   },
   {
@@ -1984,6 +2028,20 @@ async function callTool(name, args) {
 
     case 'memory_search_all':
       return api.searchAllProjects(args.query, args);
+
+    case 'memory_profile':
+      return api.profile(args);
+
+    case 'memory_search_hybrid':
+      return api.unifiedSearch(args.query, args);
+
+    case 'memory_expire': {
+      if (args.action === 'supersede') {
+        if (!args.oldId || !args.newId) throw new Error('supersede requires oldId and newId');
+        return api.supersede(args.oldId, args.newId, { reason: args.reason });
+      }
+      return api.expireMemories({ project: args.project, dryRun: args.dryRun });
+    }
 
     case 'memory_ingest_transcript':
       return api.ingestTranscript(args.text, args);

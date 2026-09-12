@@ -303,10 +303,55 @@ async function save(opts) {
   // #1 Save-time deduplication: check for highly similar existing observations.
   // Skipped when opts.skipDedup is set — queue/snapshot entries must persist as
   // distinct rows even when semantically identical (e.g. pending approval actions).
+  // The same similarity pass also drives SEMANTIC SUPERSESSION: reworded
+  // updates of the same statement-like fact (similarity in the band below
+  // dedup) supersede the older memory instead of coexisting with it.
+  const SEMANTIC_SUPERSEDE_TYPES = core.forgetting.SUPERSEDEABLE_TYPES;
   let dedupResult = null;
+  let semanticSupersedeResult = null;
+  let staleResurrection = null;
   if (embedding && !opts.skipDedup) {
     try {
       const vec = JSON.parse(embedding);
+
+      // Pass 1 — lineage guard: how strongly does this save match memories
+      // that were ALREADY superseded? Cosine similarity has no direction, so
+      // a restatement of an outdated fact ("deploy is Friday" again, after
+      // it was updated to Monday) can look like an update of the current
+      // truth. The rule: if the save's best match is against a DEAD
+      // (superseded) memory at least as strong as anything alive, it is a
+      // restatement — it will lose to that lineage's champion.
+      let bestDead = null;
+      // Band floor is env-tunable: embedding geometries vary (real BGE vs
+      // test mocks). AGENTIC_CORTEX_SUPERSEDE_FLOOR raises it; production
+      // default 0.80 is calibrated for BGE-base (unrelated pairs ~0.43-0.53).
+      const SUP_FLOOR = Math.max(0.80, parseFloat(process.env.AGENTIC_CORTEX_SUPERSEDE_FLOOR) || 0.80);
+      const deadLineage = db.prepare(
+        'SELECT id, superseded_by, embedding FROM observations WHERE project_path = ? AND is_active = 0 AND superseded_by IS NOT NULL AND embedding IS NOT NULL ORDER BY created_at DESC LIMIT 50'
+      ).all(project);
+      for (const drow of deadLineage) {
+        try {
+          const dsim = core.embedding.cosineSimilarity(vec, JSON.parse(drow.embedding));
+          if (dsim >= SUP_FLOOR && (!bestDead || dsim > bestDead.sim)) {
+            // Follow the supersession chain to the living champion
+            let champId = drow.superseded_by;
+            for (let hops = 0; hops < 10; hops++) {
+              const champ = db.prepare('SELECT id, is_active, superseded_by FROM observations WHERE id = ?').get(champId);
+              if (!champ) { champId = null; break; }
+              if (champ.is_active === 1) break;
+              if (!champ.superseded_by) { champId = null; break; }
+              champId = champ.superseded_by;
+            }
+            if (champId) bestDead = { deadId: drow.id, championId: champId, sim: dsim };
+          }
+        } catch { /* skip unparseable embeddings */ }
+      }
+
+      // Pass 2 — active memories: dedup (≥0.97 reinforces) + semantic
+      // supersession band [0.80, 0.97) for statement-like types. Band is
+      // suppressed when the lineage guard already classified this save as a
+      // stale restatement.
+      let bestActiveBand = null;
       const existing = db.prepare(
         'SELECT id, type, title, content, tags, confidence, embedding FROM observations WHERE project_path = ? AND is_active = 1 AND embedding IS NOT NULL ORDER BY created_at DESC LIMIT 50'
       ).all(project);
@@ -327,7 +372,36 @@ async function save(opts) {
             dedupResult = { id: e.id, status: 'reinforced', type: e.type, confidence: Math.min(e.confidence + 5, 100), project, agent_id: agentId, embedded: true, similarity: Math.round(sim * 1000) / 1000 };
             break;
           }
+
+          // Semantic supersession band: reworded same-fact updates. Only for
+          // statement-like types — reworded errors/observations are NEW
+          // evidence, not updates. Band calibrated on BGE-base: same-topic
+          // updates score 0.83–0.97, unrelated pairs 0.43–0.53, so 0.80
+          // catches heavy rewording with a wide margin. Strongest match wins.
+          if (
+            !opts.skipSupersede &&
+            !bestDead &&
+            SEMANTIC_SUPERSEDE_TYPES.has(type) &&
+            SEMANTIC_SUPERSEDE_TYPES.has(e.type) &&
+            sim >= SUP_FLOOR && sim < 0.97 &&
+            (!bestActiveBand || sim > bestActiveBand.sim)
+          ) {
+            bestActiveBand = { id: e.id, sim };
+          }
         } catch { /* skip unparseable embeddings */ }
+      }
+
+      // Lineage arbitration: a save whose strongest overlap is with the dead
+      // branch of a supersession chain is a restatement of outdated info —
+      // it loses to the living champion instead of superseding it.
+      if (bestDead && (!bestActiveBand || bestDead.sim >= bestActiveBand.sim)) {
+        staleResurrection = {
+          championId: bestDead.championId,
+          deadId: bestDead.deadId,
+          similarity: Math.round(bestDead.sim * 1000) / 1000,
+        };
+      } else if (bestActiveBand) {
+        semanticSupersedeResult = { id: bestActiveBand.id, similarity: Math.round(bestActiveBand.sim * 1000) / 1000 };
       }
     } catch { /* embedding parse failed — skip dedup */ }
   }
@@ -346,12 +420,79 @@ async function save(opts) {
   // Cross-project scope (local vs global for knowledge transfer)
   const projectScope = opts.project_scope || 'local';
 
+  // Temporal forgetting: attach an expiry when the save implies one —
+  // explicit expiresAt/ttlDays opts, or a date/relative-span detected in the
+  // content ("I have an exam tomorrow" must die, not linger). Deterministic,
+  // LLM-free, best-effort.
+  let expiresAt = null;
+  try {
+    expiresAt = core.forgetting.extractExpiry(
+      [opts.title, opts.content].filter(Boolean).join('. '),
+      { expiresAt: opts.expiresAt, ttlDays: opts.ttlDays }
+    );
+  } catch { /* expiry detection is never fatal */ }
+
   const r = db.prepare(
-    'INSERT INTO observations (session_id, project_path, agent_id, type, title, content, tags, importance, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, project_scope, layer) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(session, project, agentId, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, projectScope, opts.layer || 1);
+    'INSERT INTO observations (session_id, project_path, agent_id, type, title, content, tags, importance, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, project_scope, layer, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(session, project, agentId, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, projectScope, opts.layer || 1, expiresAt);
 
   const savedId = Number(r.lastInsertRowid);
-  const saved = { id: savedId, status: 'saved', type, confidence, provenance, project, agent_id: agentId, embedded: !!embedding };
+  const saved = { id: savedId, status: 'saved', type, confidence, provenance, project, agent_id: agentId, embedded: !!embedding, expires_at: expiresAt };
+
+  // Supersession: if an older memory of the same statement-like type in this
+  // project is an update of the same fact, the new save replaces it
+  // ("deploy is Friday" → "deploy is Monday" must not surface both).
+  // Two detectors, strongest-first:
+  //   1. SEMANTIC — cosine similarity in [0.85, 0.97) from the dedup pass
+  //      above (catches reworded contradictions: "rate limit is 100 rpm" vs
+  //      "we now allow 500 requests per minute").
+  //   2. TITLE — deterministic Jaccard title match (works without embeddings).
+  // Fuzzy contradiction handling beyond this stays with the debate pipeline.
+  // Skipped when opts.skipSupersede is set (bench ingestion, bulk import) or
+  // when the lineage guard classified this save as a stale restatement —
+  // otherwise the title match could kill the living champion.
+  if (!opts.skipSupersede && !staleResurrection) {
+    try {
+      let supersededId = null;
+      let supersededSim = null;
+      let supersededHow = null;
+      if (semanticSupersedeResult) {
+        supersededId = semanticSupersedeResult.id;
+        supersededSim = semanticSupersedeResult.similarity;
+        supersededHow = 'semantic';
+      } else {
+        const target = core.forgetting.findSupersededTarget(db, {
+          id: savedId, type, title: opts.title, content: opts.content, project_path: project,
+        });
+        if (target.supersededId) {
+          supersededId = target.supersededId;
+          supersededSim = target.similarity;
+          supersededHow = 'title';
+        }
+      }
+      if (supersededId) {
+        core.forgetting.supersede(db, supersededId, savedId, {
+          reason: 'auto (' + supersededHow + '): newer save updates the same fact',
+        });
+        saved.superseded = supersededId;
+        saved.superseded_similarity = supersededSim;
+        saved.superseded_by_method = supersededHow;
+      }
+    } catch { /* supersession is best-effort */ }
+  }
+
+  // Stale-resurrection resolution: the new save restated an already-superseded
+  // fact. Mark IT superseded by the lineage champion so current truth wins.
+  if (staleResurrection) {
+    try {
+      core.forgetting.supersede(db, savedId, staleResurrection.championId, {
+        reason: 'auto (lineage): save restates a fact already superseded by #' + staleResurrection.championId,
+      });
+      saved.stale_resurrection = staleResurrection.championId;
+      saved.superseded_by = staleResurrection.championId;
+      saved.superseded_similarity = staleResurrection.similarity;
+    } catch { /* best-effort */ }
+  }
 
   // Post-save hooks
   await core.hooks.triggerHooks(db, 'post_save', { ...preSaveObs, id: savedId }, { project, session });
@@ -560,6 +701,18 @@ async function search(query, opts) {
     results = core.search.applyOutcomeWeights(db, results, { project: opts.project, minRuns: opts.minRuns });
   } catch { /* best-effort */ }
 
+  // Temporal boost (Phase 15): when the query asks about time or the current
+  // state of the world, lift memories that ARE the latest truth (supersession
+  // champions, still-valid time-bound facts, recent creations) above stale
+  // distractors. Deterministic, metadata-only, capped at opts.temporalDelta
+  // (default 0.15). Best-effort — never breaks a search.
+  try {
+    results = core.search.applyTemporalBoost(db, query, results, {
+      delta: opts.temporalDelta,
+      enabled: opts.temporalBoost,
+    });
+  } catch { /* best-effort */ }
+
   // Restore the requested limit (rerank returns all candidates; outcome
   // weights may reorder the list).
   if (opts.limit) results = results.slice(0, opts.limit);
@@ -627,7 +780,123 @@ async function semanticSearch(query, opts) {
   return core.search.semanticSearch(db, queryVec, opts);
 }
 
+/**
+ * Supermemory-style unified search: memories (FTS5 + semantic) AND code
+ * symbols (task-scoped index) in ONE query. Each result is tagged with its
+ * source so the agent can tell document-level memory from code-level fact.
+ *
+ * This is agentic-cortex's version of supermemory's `searchMode: 'hybrid'`:
+ * knowledge-base retrieval and code grounding no longer require two calls.
+ * The code-index pass is best-effort and keyword-only by default (memory
+ * safety: the embedding model is never auto-loaded).
+ *
+ * @param {string} query
+ * @param {Object} [opts] - search opts + { codeLimit?: number, code?: boolean }
+ * @returns {Promise<{ memories: Object[], code: Object[], total: number, query: string }>}
+ */
+async function unifiedSearch(query, opts) {
+  opts = opts || {};
+  const memories = await search(query, opts);
+
+  let code = [];
+  if (opts.code !== false) {
+    try {
+      const db = _getDB();
+      const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+      code = await core.codeIndex.searchSymbols(db, query, {
+        project, limit: opts.codeLimit || 5,
+      });
+    } catch { /* code index missing/uningested — memories-only is fine */ }
+  }
+
+  return {
+    query,
+    memories,
+    code: code.map(c => ({ ...c, source: 'code_index' })),
+    total: memories.length + code.length,
+  };
+}
+
 // ─── Sessions ────────────────────────────────────────────────────────
+
+/**
+ * Supermemory-style one-call profile: a distilled, always-fresh summary of
+ * everything the vault knows about a project (or an agent within it),
+ * optionally combined with search results for a query — in ONE call.
+ *
+ * Shape mirrors supermemory's client.profile():
+ *   profile.static  → stable facts/decisions/preferences (long-term)
+ *   profile.dynamic → recent activity + open goals/commitments (short-term)
+ *   profile.tokens  → approximate injected token size
+ *   searchResults   → hybrid search for the optional q
+ *
+ * Deterministic (no LLM): static facts are the highest-confidence,
+ * most-corroborated memories; dynamic is a recency-weighted activity view.
+ *
+ * @param {Object} [opts] - { project?, agentId?, q?, limit?, type?, maxTokens? }
+ * @returns {Promise<{ project: string, static: Object[], dynamic: Object[], tokens: number, generatedAt: string, searchResults?: Object[] }>}
+ */
+async function profile(opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const limit = opts.limit || 12;
+
+  // Expire anything past its lifespan first so a dead fact never lands in a profile.
+  try { expireMemories({ project }); } catch { /* best-effort */ }
+
+  const baseWhere =
+    'o.is_active = 1 AND o.superseded_by IS NULL AND (o.expires_at IS NULL OR o.expires_at > ?)' +
+    (opts.agentId ? ' AND o.agent_id = ?' : '') +
+    ' AND o.project_path = ?';
+  const baseParams = opts.agentId
+    ? [new Date().toISOString(), opts.agentId, project]
+    : [new Date().toISOString(), project];
+
+  // STATIC — stable knowledge: principles + decisions + preferences + facts,
+  // ranked by confidence × corroboration (access_count) × layer.
+  const staticTypes = ["'principle'", "'decision'", "'preference'", "'fact'"];
+  const staticRows = db.prepare(
+    'SELECT o.id, o.type, o.title, substr(o.content, 1, 240) as preview, o.confidence, o.layer, o.access_count, o.project_path, o.created_at ' +
+    'FROM observations o WHERE ' + baseWhere + ' AND o.type IN (' + staticTypes.join(',') + ') ' +
+    'ORDER BY (o.layer * 30 + o.confidence + MIN(o.access_count, 10) * 2) DESC, o.created_at DESC LIMIT ?'
+  ).all(...baseParams, limit);
+
+  // DYNAMIC — right-now context: open goals + commitments + recent events/errors/learnings.
+  const dynamicRows = db.prepare(
+    'SELECT o.id, o.type, o.title, substr(o.content, 1, 240) as preview, o.confidence, o.project_path, o.created_at ' +
+    'FROM observations o WHERE ' + baseWhere + " AND (o.type IN ('goal','commitment') OR o.created_at >= datetime('now', '-7 days')) " +
+    'ORDER BY o.created_at DESC LIMIT ?'
+  ).all(...baseParams, limit);
+
+  const result = {
+    project,
+    static: staticRows.map(r => ({
+      id: r.id, type: r.type, title: r.title, content: r.preview,
+      confidence: r.confidence, layer: r.layer, project_path: r.project_path, created_at: r.created_at,
+    })),
+    dynamic: dynamicRows.map(r => ({
+      id: r.id, type: r.type, title: r.title, content: r.preview,
+      confidence: r.confidence, project_path: r.project_path, created_at: r.created_at,
+    })),
+    tokens: 0,
+    generatedAt: new Date().toISOString(),
+  };
+
+  result.tokens = Math.ceil(
+    (JSON.stringify(result.static).length + JSON.stringify(result.dynamic).length) / 4
+  );
+
+  // Optional combined query: hybrid search in the same call (supermemory's
+  // "profile + searchResults in one round trip" pattern).
+  if (opts.q) {
+    try {
+      result.searchResults = await search(opts.q, { ...opts, limit: opts.limit || 10 });
+    } catch { result.searchResults = []; }
+  }
+
+  return result;
+}
 
 /** Start a new session */
 function startSession(opts) {
@@ -1153,6 +1422,40 @@ async function _buildBootstrapContext(db, project, workingOn, opts = {}) {
       output += '  </settled_debates>\n';
     }
   } catch { /* no resolutions yet — skip */ }
+
+  // ── Layer 2.72: One-call project profile (supermemory-inspired) ──
+  // Static stable-facts + dynamic recent-activity injected at session start,
+  // so agents get the distilled profile WITHOUT a separate memory_profile
+  // round trip. Uses the same profile() primitive as the MCP tool. Opt out
+  // with opts.includeProfile = false.
+  if (opts.includeProfile !== false) {
+    try {
+      const prof = await profile({
+        project,
+        agentId: process.env.AGENTIC_CORTEX_AGENT_ID || undefined,
+        limit: 8,
+      });
+      if (prof.static.length > 0 || prof.dynamic.length > 0) {
+        output += `  <project_profile static="${prof.static.length}" dynamic="${prof.dynamic.length}">\n`;
+        if (prof.static.length > 0) {
+          output += '    <stable_knowledge>\n';
+          for (const r of prof.static) {
+            output += `      <fact id="${r.id}" type="${_xmlEscape(r.type)}" confidence="${r.confidence}">${_xmlEscape(r.title || '')} — ${_xmlEscape(String(r.content || '').slice(0, 160))}</fact>\n`;
+          }
+          output += '    </stable_knowledge>\n';
+        }
+        if (prof.dynamic.length > 0) {
+          output += '    <current_activity>\n';
+          for (const r of prof.dynamic) {
+            output += `      <now id="${r.id}" type="${_xmlEscape(r.type)}" age_days="${Math.max(0, Math.floor((Date.now() - new Date(r.created_at + 'Z').getTime()) / 86400000))}">${_xmlEscape(r.title || '')} — ${_xmlEscape(String(r.content || '').slice(0, 160))}</now>\n`;
+          }
+          output += '    </current_activity>\n';
+        }
+        output += '  </project_profile>\n';
+        tokenEstimate += prof.tokens;
+      }
+    } catch { /* profile is best-effort — never break bootstrap */ }
+  }
 
   // ── Layer 2.75: Test-Time Reasoning Context ──
   // Injects reflexion context, estimates difficulty, suggests tree search for hard problems.
@@ -3289,6 +3592,42 @@ function computeFreshness(obs) {
  * @param {string} project
  * @returns {number} Number of observations updated
  */
+// ─── Phase 15: Temporal forgetting API ──────────────────────────────
+
+/**
+ * Expire memories whose expires_at has passed (supermemory-style bounded
+ * lifespans for temporary facts). Best-effort sweep that runs as part of
+ * every maintenance cycle; also callable directly.
+ *
+ * @param {Object} [opts] — { project?, dryRun? }
+ * @returns {{ expired: number, ids: number[], dryRun: boolean }}
+ */
+function expireMemories(opts) {
+  opts = opts || {};
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const result = core.forgetting.expireDueMemories(db, { project, dryRun: opts.dryRun });
+  if (result.expired > 0) {
+    console.warn('[agentic-cortex] Expired %d memories (lifespans elapsed): %s',
+      result.expired, result.ids.slice(0, 10).join(', ') + (result.ids.length > 10 ? '…' : ''));
+  }
+  return result;
+}
+
+/**
+ * Explicitly supersede an old memory with a new one. The old memory is kept
+ * for auditability but excluded from retrieval, and a 'supersedes' relation
+ * is recorded for lineage.
+ *
+ * @param {number} oldId
+ * @param {number} newId
+ * @param {Object} [opts] — { reason? }
+ * @returns {{ oldId: number, newId: number, superseded: boolean }}
+ */
+function supersede(oldId, newId, opts) {
+  return core.forgetting.supersede(_getDB(), oldId, newId, opts);
+}
+
 function updateFreshnessScores(db, project) {
   const observations = db.prepare(
     'SELECT id, access_count, last_accessed_at, confidence, predicted_utility, created_at FROM observations WHERE project_path = ? AND is_active = 1'
@@ -3369,16 +3708,22 @@ async function runMaintenance(opts) {
   // 2. Auto-archive stale observations
   const archiveResult = autoArchive({ project, dryRun });
 
-  // 3. Run utility decay pass via archiveSuperseded
+  // 3. Expire memories with elapsed lifespans (temporal forgetting)
+  let expiredCount = 0;
+  try {
+    expiredCount = expireMemories({ project, dryRun }).expired;
+  } catch { /* pre-Phase-15 schema or sweep failure is non-fatal */ }
+
+  // 4. Run utility decay pass via archiveSuperseded
   let decayed = 0;
   try {
     const archiveP = await archiveSuperseded({ project, dryRun, maxAgeDays });
     decayed = archiveP.decayed || 0;
   } catch {}
 
-  // 4. Log the maintenance run
+  // 5. Log the maintenance run
   if (!dryRun) {
-    const summary = JSON.stringify({ freshnessUpdated, archived: archiveResult.archived, decayed });
+    const summary = JSON.stringify({ freshnessUpdated, archived: archiveResult.archived, expired: expiredCount, decayed });
     db.prepare(
       'INSERT OR REPLACE INTO maintenance_log (project_path, task, result_summary, run_at) VALUES (?, ?, ?, datetime(\'now\'))'
     ).run(project, 'full_maintenance', summary);
@@ -3386,7 +3731,7 @@ async function runMaintenance(opts) {
 
   _lastMaintenanceChecks.set(project, Date.now());
 
-  return { freshnessUpdated, archived: archiveResult.archived, decayed, dryRun };
+  return { freshnessUpdated, archived: archiveResult.archived, expired: expiredCount, decayed, dryRun };
 }
 
 /**
@@ -4191,6 +4536,7 @@ module.exports = {
   recordAction, transferKnowledge, ingestTranscript, getUtilityStats,
   feedback, trail,
   computeFreshness, updateFreshnessScores, autoArchive,
+  expireMemories, supersede, profile, unifiedSearch,
   runMaintenance, checkAndRunMaintenance, initMaintenanceScheduler,
   analytics,
   promoteToGlobal, autoPromoteGlobal, getGlobalVault, searchAllProjects, machineAnalytics,

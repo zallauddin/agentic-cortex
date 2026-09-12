@@ -857,6 +857,16 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_compactions_session ON session_compactions(session_id);
     CREATE INDEX IF NOT EXISTS idx_compactions_project ON session_compactions(project_path);
   `);
+
+  // Phase 15: Temporal forgetting + supersession — supermemory-style fact
+  // lifecycle. `expires_at` gives temporary facts a bounded lifespan (NULL =
+  // permanent); `superseded_by` marks a memory that has been explicitly
+  // replaced by a newer one ("I moved to SF" supersedes "I live in NYC")
+  // instead of silently coexisting with it.
+  try { db.exec(`ALTER TABLE observations ADD COLUMN expires_at TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE observations ADD COLUMN superseded_by INTEGER REFERENCES observations(id)`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_expires ON observations(expires_at, is_active)`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_superseded ON observations(superseded_by, is_active)`); } catch {}
 }
 
 /**

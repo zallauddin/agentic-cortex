@@ -10,6 +10,8 @@ const {
   keywordSearch,
   semanticSearch,
   hybridSearch,
+  isTemporalQuery,
+  applyTemporalBoost,
 } = require('../src/core/search');
 
 /**
@@ -72,55 +74,57 @@ describe('sanitizeDate', () => {
 describe('buildWhereClause', () => {
   it('should return only is_active = 1 when no options given', () => {
     const { whereClause, params } = buildWhereClause({});
-    assert.equal(whereClause, 'o.is_active = 1');
-    assert.deepEqual(params, []);
+    assert.equal(whereClause, 'o.is_active = 1 AND (o.expires_at IS NULL OR o.expires_at > ?) AND o.superseded_by IS NULL');
+    // 1 param: the expiry cutoff timestamp (supersession filter has no param)
+    assert.equal(params.length, 1);
   });
 
   it('should add project filter', () => {
     const { whereClause, params } = buildWhereClause({ project: '/my-project' });
     assert.ok(whereClause.includes('o.project_path = ?'));
-    assert.deepEqual(params, ['/my-project']);
+    assert.ok(params.includes('/my-project'));
   });
 
   it('should add type filter', () => {
     const { whereClause, params } = buildWhereClause({ type: 'decision' });
     assert.ok(whereClause.includes('o.type = ?'));
-    assert.deepEqual(params, ['decision']);
+    assert.ok(params.includes('decision'));
   });
 
   it('should add minConfidence filter when > 0', () => {
     const { whereClause, params } = buildWhereClause({ minConfidence: 80 });
     assert.ok(whereClause.includes('o.confidence >= ?'));
-    assert.deepEqual(params, [80]);
+    assert.ok(params.includes(80));
   });
 
   it('should NOT add minConfidence filter when 0', () => {
     const { whereClause, params } = buildWhereClause({ minConfidence: 0 });
-    assert.ok(!whereClause.includes('confidence'));
-    assert.deepEqual(params, []);
+    assert.ok(!whereClause.includes('o.confidence >= ?'));
+    assert.ok(!params.includes(0));
   });
 
   it('should NOT add minConfidence filter when not provided', () => {
     const { params } = buildWhereClause({});
-    assert.equal(params.length, 0);
+    // Only param is the expiry cutoff from the temporal-forgetting filter
+    assert.equal(params.length, 1);
   });
 
   it('should add changedSince filter with time appended', () => {
     const { whereClause, params } = buildWhereClause({ changedSince: '2024-01-01' });
     assert.ok(whereClause.includes('o.created_at >= ?'));
-    assert.deepEqual(params, ['2024-01-01 00:00:00']);
+    assert.ok(params.includes('2024-01-01 00:00:00'));
   });
 
   it('should add asOf filter with time appended', () => {
     const { whereClause, params } = buildWhereClause({ asOf: '2024-12-31' });
     assert.ok(whereClause.includes('o.created_at <= ?'));
-    assert.deepEqual(params, ['2024-12-31 23:59:59']);
+    assert.ok(params.includes('2024-12-31 23:59:59'));
   });
 
   it('should add agentId filter', () => {
     const { whereClause, params } = buildWhereClause({ agentId: 'agent-1' });
     assert.ok(whereClause.includes('o.agent_id = ?'));
-    assert.deepEqual(params, ['agent-1']);
+    assert.ok(params.includes('agent-1'));
   });
 
   it('should combine multiple filters', () => {
@@ -135,7 +139,21 @@ describe('buildWhereClause', () => {
     assert.ok(whereClause.includes('o.confidence >= ?'));
     assert.ok(whereClause.includes('o.agent_id = ?'));
     assert.ok(whereClause.includes('o.is_active = 1'));
-    assert.equal(params.length, 4);
+    // 4 filter params + 1 expiry cutoff
+    assert.equal(params.length, 5);
+  });
+
+  it('should exclude expired memories by default (temporal forgetting)', () => {
+    const { whereClause } = buildWhereClause({});
+    assert.ok(whereClause.includes('o.expires_at IS NULL OR o.expires_at > ?'));
+    assert.ok(whereClause.includes('o.superseded_by IS NULL'));
+  });
+
+  it('should include expired memories when includeExpired is set', () => {
+    const { whereClause, params } = buildWhereClause({ includeExpired: true, includeSuperseded: true });
+    assert.ok(!whereClause.includes('expires_at'));
+    assert.ok(!whereClause.includes('superseded_by'));
+    assert.equal(params.length, 0);
   });
 });
 
@@ -378,5 +396,121 @@ describe('is_active filtering', () => {
 
     const results = keywordSearch(db, { query: 'project' });
     assert.ok(results.length > 0, 'Other active observations should still be found');
+  });
+});
+
+// ─── Temporal ranking boost (Phase 15) ─────────────────────────────
+
+describe('isTemporalQuery', () => {
+  it('detects temporal and current-state questions', () => {
+    for (const q of ['when is the deploy window', 'where does Jordan live now',
+      'what day is the release', 'which database do we use currently',
+      'how long does the build take', 'deploys moved to Monday', 'when is the deadline?']) {
+      assert.ok(isTemporalQuery(q), `should detect: ${q}`);
+    }
+  });
+
+  it('ignores non-temporal queries and substring false positives', () => {
+    for (const q of ['jordan residence', 'use TypeScript for the frontend',
+      'whenever you deploy run the smoke tests']) {
+      assert.ok(!isTemporalQuery(q), `should NOT detect: ${q}`);
+    }
+  });
+});
+
+describe('applyTemporalBoost', () => {
+  let db;
+  beforeEach(() => {
+    db = createTestDb();
+  });
+
+  function seedChain() {
+    // Old fact (superseded) -> champion (current truth), plus a distractor.
+    const now = new Date();
+    const iso = d => d.toISOString().replace('T', ' ').slice(0, 19);
+    const old = db.prepare(
+      'INSERT INTO observations (project_path, type, title, content, confidence, provenance, created_at, is_active, superseded_by) VALUES (?,?,?,?,?,?,?,?,?)'
+    );
+    old.run('/p', 'fact', 'Residence old', 'Jordan lives in Chicago', 100, 'observed', iso(new Date(now - 40 * 86400000)), 0, null);
+    const oldId = db.prepare("SELECT id FROM observations WHERE title = 'Residence old'").get().id;
+    db.prepare(
+      'INSERT INTO observations (project_path, type, title, content, confidence, provenance, created_at, is_active) VALUES (?,?,?,?,?,?,?,?)'
+    ).run('/p', 'fact', 'Residence new', 'Jordan lives in Austin', 100, 'observed', iso(new Date(now - 1 * 86400000)), 1);
+    const newId = db.prepare("SELECT id FROM observations WHERE title = 'Residence new'").get().id;
+    db.prepare('UPDATE observations SET superseded_by = ? WHERE id = ?').run(newId, oldId);
+    // Distractor: old, matches topic, not a champion
+    db.prepare(
+      'INSERT INTO observations (project_path, type, title, content, confidence, provenance, created_at, is_active) VALUES (?,?,?,?,?,?,?,?)'
+    ).run('/p', 'observation', 'Travel note', 'Jordan once visited Chicago and Austin', 80, 'observed', iso(new Date(now - 30 * 86400000)), 1);
+    return { oldId, newId };
+  }
+
+  it('is a no-op for non-temporal queries (only annotates)', () => {
+    const { newId } = seedChain();
+    const results = [
+      { id: newId, title: 'Residence new', combined_score: 0.5 },
+    ];
+    const out = applyTemporalBoost(db, 'jordan residence', results);
+    assert.equal(out[0].temporal_boost, 0);
+    assert.equal(out[0].combined_score, 0.5, 'score untouched for non-temporal query');
+  });
+
+  it('boosts the supersession champion above a stale distractor for temporal queries', () => {
+    const { newId } = seedChain();
+    const distractorId = db.prepare("SELECT id FROM observations WHERE title = 'Travel note'").get().id;
+    // Distractor first (would win without the boost) — equal base scores.
+    const results = [
+      { id: distractorId, title: 'Travel note', combined_score: 0.50 },
+      { id: newId, title: 'Residence new', combined_score: 0.50 },
+    ];
+    const out = applyTemporalBoost(db, 'where does jordan live now', results);
+    const champ = out.find(r => r.id === newId);
+    const dist = out.find(r => r.id === distractorId);
+    assert.ok(champ.temporal_boost > dist.temporal_boost,
+      `champion boost ${champ.temporal_boost} should exceed distractor ${dist.temporal_boost}`);
+    assert.equal(out[0].id, newId, 'champion should rank first after boost');
+    // Boost is capped by delta (0.15 default): 0.50 + boost*0.15 <= 0.65
+    assert.ok(out[0].combined_score <= 0.5 + 0.151, 'boost stays within delta cap');
+  });
+
+  it('boosts memories with a future expires_at (still-valid time-bound facts)', () => {
+    const now = new Date();
+    db.prepare(
+      'INSERT INTO observations (project_path, type, title, content, confidence, provenance, created_at, is_active, expires_at) VALUES (?,?,?,?,?,?,?,?,?)'
+    ).run('/p', 'fact', 'Freeze window', 'Code freeze until Friday', 90, 'observed',
+      now.toISOString().replace('T', ' ').slice(0, 19), 1,
+      new Date(now.getTime() + 3 * 86400000).toISOString());
+    db.prepare(
+      'INSERT INTO observations (project_path, type, title, content, confidence, provenance, created_at, is_active) VALUES (?,?,?,?,?,?,?,?)'
+    ).run('/p', 'fact', 'Freeze history', 'Code freeze happened last quarter too', 90, 'observed',
+      new Date(now.getTime() - 60 * 86400000).toISOString().replace('T', ' ').slice(0, 19), 1);
+    const boundedId = db.prepare("SELECT id FROM observations WHERE title = 'Freeze window'").get().id;
+    const oldId = db.prepare("SELECT id FROM observations WHERE title = 'Freeze history'").get().id;
+    const results = [
+      { id: oldId, title: 'Freeze history', combined_score: 0.50 },
+      { id: boundedId, title: 'Freeze window', combined_score: 0.50 },
+    ];
+    const out = applyTemporalBoost(db, 'when is the code freeze', results);
+    assert.equal(out[0].id, boundedId, 'still-valid time-bound fact should rank first');
+  });
+
+  it('reorders keyword-only results via temporal_rank_score', () => {
+    const { newId } = seedChain();
+    const distractorId = db.prepare("SELECT id FROM observations WHERE title = 'Travel note'").get().id;
+    const results = [
+      { id: distractorId, title: 'Travel note', rank: -1.5 },  // slightly better FTS rank
+      { id: newId, title: 'Residence new', rank: -2.0 },       // slightly worse FTS rank
+    ];
+    const out = applyTemporalBoost(db, 'where does jordan live currently', results);
+    assert.equal(out[0].id, newId, 'champion should overcome a slightly worse FTS rank');
+    assert.ok(out[0].temporal_rank_score > out[1].temporal_rank_score);
+  });
+
+  it('respects the enabled:false opt-out and custom delta', () => {
+    const { newId } = seedChain();
+    const results = [{ id: newId, title: 'Residence new', combined_score: 0.5 }];
+    const off = applyTemporalBoost(db, 'where does jordan live now', results, { enabled: false });
+    assert.equal(off[0].temporal_boost, 0);
+    assert.equal(off[0].combined_score, 0.5);
   });
 });

@@ -1,5 +1,11 @@
 'use strict';
 
+// The mock embeddings below produce 0.87-0.96 cosine even for unrelated
+// texts (real BGE: 0.43-0.53). Raise the semantic-supersession band floor
+// above the mock's noise ceiling so unrelated test pairs survive save-time
+// supersession and remain available for conflict detection.
+process.env.AGENTIC_CORTEX_SUPERSEDE_FLOOR = '0.96';
+
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');

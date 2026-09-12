@@ -52,12 +52,14 @@ commands.save = {
       if (args[i] === '--triggers') opts.triggers = args[i + 1].split(',');
       if (args[i] === '--preconditions') opts.preconditions = args[i + 1].split(',');
       if (args[i] === '--postconditions') opts.postconditions = args[i + 1].split(',');
+      if (args[i] === '--expires') opts.expiresAt = args[i + 1];
+      if (args[i] === '--ttl-days') opts.ttlDays = parseFloat(args[i + 1]);
     }
     return opts;
   },
   async run(db, opts) {
     if (!opts.content) {
-      console.error('Usage: save <title> <content> [--type TYPE] [--tags t1,t2] [--importance N] [--confidence N] [--provenance explicit|inferred|observed] [--project PATH] [--agent-id ID] [--steps step1,step2] [--triggers t1,t2] [--preconditions c1,c2] [--postconditions c1,c2]');
+      console.error('Usage: save <title> <content> [--type TYPE] [--tags t1,t2] [--importance N] [--confidence N] [--provenance explicit|inferred|observed] [--project PATH] [--agent-id ID] [--steps step1,step2] [--triggers t1,t2] [--preconditions c1,c2] [--postconditions c1,c2] [--expires ISO] [--ttl-days N]');
       process.exit(1);
     }
     try {
@@ -1580,6 +1582,74 @@ commands.freshness = {
   }
 };
 
+// ─── Supermemory-inspired: profile, unified search, temporal forgetting ──
+
+commands.profile = {
+  desc: 'One-call project/agent profile: static facts + dynamic activity (supermemory-style)',
+  args: ['[--project PATH]', '[--agent ID]', '[--q QUERY]', '[--limit N]'],
+  parse(args) {
+    const opts = { limit: 12 };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--agent') opts.agentId = args[++i];
+      if (args[i] === '--q') opts.q = args.slice(++i).join(' '); // rest of args
+      if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    console.log(JSON.stringify(await api.profile(opts), null, 2));
+  }
+};
+
+commands.hybrid = {
+  desc: 'Unified search: memories + code symbols in one query (supermemory-style hybrid)',
+  args: ['<query>', '[--project PATH]', '[--limit N]', '[--code-limit N]', '[--no-code]', '[--rerank]'],
+  parse(args) {
+    const opts = { code: true };
+    const pos = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      else if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+      else if (args[i] === '--code-limit') opts.codeLimit = parseInt(args[++i], 10);
+      else if (args[i] === '--no-code') opts.code = false;
+      else if (args[i] === '--rerank') opts.rerank = true;
+      else pos.push(args[i]);
+    }
+    opts.query = pos.join(' ');
+    return opts;
+  },
+  async run(db, opts) {
+    if (!opts.query) {
+      console.error('Usage: agentic-cortex hybrid "<query>" [--no-code] [--rerank]');
+      process.exit(1);
+    }
+    console.log(JSON.stringify(await api.unifiedSearch(opts.query, opts), null, 2));
+  }
+};
+
+commands.expire = {
+  desc: 'Temporal forgetting: expire memories past their lifespan; supersede old facts',
+  args: ['[--project PATH]', '[--dry-run]', '[--supersede OLD NEW]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--dry-run') opts.dryRun = true;
+      if (args[i] === '--supersede') { opts.supersede = [args[++i], args[++i]]; }
+    }
+    return opts;
+  },
+  run(db, opts) {
+    if (opts.supersede) {
+      const [oldId, newId] = opts.supersede.map(Number);
+      console.log(JSON.stringify(api.supersede(oldId, newId), null, 2));
+      return;
+    }
+    console.log(JSON.stringify(api.expireMemories(opts), null, 2));
+  }
+};
+
 // ─── #2 Maintenance: Auto-maintenance scheduler ────────────────────
 
 commands.maintenance = {
@@ -2089,25 +2159,42 @@ commands['plateau-check'] = {
 // ─── Benchmark: LoCoMo, LongMemEval, BEAM evaluation runner ───
 
 commands.benchmark = {
-  desc: '📊 Run memory benchmarks (LoCoMo, LongMemEval, BEAM)',
-  args: ['<locomo>', '[--conversations 0-9]', '[--top-k 10]', '[--judge]', '[--skip-ingest]'],
+  desc: '📊 Run memory benchmarks (LoCoMo, LongMemEval, BEAM, provider recall@k)',
+  args: ['<locomo|recall>', '[--conversations 0-9]', '[--top-k 10]', '[--judge]', '[--skip-ingest]'],
   parse(args) {
     const opts = { topK: 10, judge: false, skipIngest: false };
     let bench = null;
     for (let i = 0; i < args.length; i++) {
       if (args[i] === 'locomo') bench = 'locomo';
+      else if (args[i] === 'recall') bench = 'recall';
       else if (args[i] === '--conversations') opts.conversations = args[++i].split(',').map(Number);
       else if (args[i] === '--top-k') opts.topK = parseInt(args[++i], 10);
       else if (args[i] === '--judge') opts.judge = true;
       else if (args[i] === '--skip-ingest') opts.skipIngest = true;
+      else if (args[i] === '--project') opts.project = args[++i];
     }
     return { bench, ...opts };
   },
   async run(db, opts) {
+    if (opts.bench === 'recall') {
+      // Built-in deterministic recall@k suite — no dataset download, no LLM.
+      const { runRecallBenchmark } = require('./src/bench/provider-adapter');
+      const result = await runRecallBenchmark(api, { project: opts.project, k: opts.topK });
+      console.log('═══════════════════════════════════════════');
+      console.log('  Provider Recall@K — agentic-cortex');
+      console.log('═══════════════════════════════════════════');
+      console.log(`  Overall Recall@${result.overall.hits > 0 ? opts.topK : opts.topK}:  ${result.overall.recallAtK}%  (${result.overall.hits}/${result.overall.total})`);
+      for (const [cat, s] of Object.entries(result.perCategory)) {
+        console.log(`  ${cat.padEnd(18)} ${s.recall}%  (${s.hits}/${s.total})`);
+      }
+      console.log('═══════════════════════════════════════════');
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     if (opts.bench !== 'locomo') {
-      console.error('Usage: benchmark locomo [--conversations 0-9] [--top-k 10] [--judge]');
-      console.error('  Supported benchmarks: locomo');
-      console.error('  Dataset auto-downloaded from snap-research/locomo');
+      console.error('Usage: benchmark locomo|recall [--conversations 0-9] [--top-k 10] [--judge]');
+      console.error('  Supported benchmarks: locomo, recall (built-in provider recall@k suite)');
+      console.error('  locomo dataset auto-downloaded from snap-research/locomo');
       process.exit(1);
     }
     try {
