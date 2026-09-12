@@ -48,15 +48,33 @@ const INTERNAL_ERROR = -32603;
 const _projectQueues = new Map();
 
 /**
+ * Read-only tools: never mutate state, so they don't serialize behind each
+ * other — but they DO wait for pending writes in the same project so that
+ * pipelined read-after-write sequences (save → search) observe the write.
+ */
+const stateModifyingTools = new Set(['memory_offline_execute', 'memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_swarm_replan_goal', 'memory_swarm_retry_now', 'memory_swarm_job_create', 'memory_swarm_job_run', 'memory_swarm_job_cancel', 'memory_swarm_plan_import', 'memory_swarm_plan_run', 'memory_swarm_plan_sync', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run', 'memory_expire']);
+
+/**
  * Execute a tool call with per-project serialization.
  * Ensures only one concurrent tool call per project to avoid SQLite busy
  * errors and overlapping LLM/embedding operations.
+ *
+ * Read-after-write consistency: reads (search/list/get/context/bootstrap)
+ * also wait for any PENDING writes in the same project before executing,
+ * so a search fired in parallel with a save (agents pipeline concurrent
+ * tool calls) never executes before the save has landed. Reads still run
+ * concurrently with each other — they only gate on writes, not on reads.
  */
 function _enqueueToolCall(toolName, toolArgs) {
-  // Only serialize state-modifying tool calls; reads are concurrent-safe
-  const stateModifyingTools = new Set(['memory_offline_execute', 'memory_save', 'memory_edit', 'memory_forget', 'memory_reflect', 'memory_import', 'memory_relate', 'memory_share', 'agent_session_start', 'agent_session_end', 'session_start', 'session_end', 'memory_record_action', 'memory_transfer_knowledge', 'memory_ingest_transcript', 'memory_feedback', 'memory_maintenance', 'memory_standards', 'memory_bootstrap', 'memory_promote_global', 'memory_crystallize', 'memory_experiment', 'memory_fsm', 'memory_rules', 'memory_workflow', 'memory_plateau_check', 'memory_send', 'memory_mark_read', 'memory_tree_search', 'memory_reflexion', 'memory_verify_code', 'memory_retry_check', 'memory_burst_reset', 'memory_reason_all', 'memory_swarm_decompose', 'memory_swarm_start_task', 'memory_swarm_complete_task', 'memory_swarm_fail_task', 'memory_swarm_synthesize', 'memory_swarm_execute', 'memory_swarm_execute_pipeline', 'memory_swarm_replan_goal', 'memory_swarm_retry_now', 'memory_swarm_job_create', 'memory_swarm_job_run', 'memory_swarm_job_cancel', 'memory_swarm_plan_import', 'memory_swarm_plan_run', 'memory_swarm_plan_sync', 'memory_experience_record', 'memory_experience_replay', 'memory_translation_store', 'memory_war_room_run', 'memory_expire']);
   if (!stateModifyingTools.has(toolName)) {
-    return callTool(toolName, toolArgs);
+    // Read-only tool: gate on any PENDING write in this project for
+    // read-after-write consistency (save → search in parallel must see the
+    // save), but do NOT register the read in the queue — concurrent reads
+    // stay concurrent instead of serializing behind each other.
+    const readKey = (toolArgs && toolArgs.project) || '__default__';
+    const pendingWrite = _projectQueues.get(readKey) || Promise.resolve();
+    return pendingWrite.then(() => callTool(toolName, toolArgs),
+      () => callTool(toolName, toolArgs));
   }
 
   const projectKey = toolArgs.project || '__default__';
@@ -87,6 +105,19 @@ function _enqueueToolCall(toolName, toolArgs) {
 }
 
 // ─── Tool definitions ────────────────────────────────────────────────
+
+/**
+ * Tools whose documented `project` default (AGENTIC_CORTEX_PROJECT or cwd)
+ * must be enforced server-side before dispatch. Without this, search/list
+ * read across ALL projects on the machine — a cross-project memory leak for
+ * any agent that omits the explicit `project` argument.
+ */
+const _PROJECT_SCOPED_TOOLS = new Set([
+  'memory_search', 'memory_list', 'memory_context', 'memory_profile',
+  'memory_bootstrap', 'memory_reflect', 'memory_conflicts', 'memory_expire',
+  'memory_maintenance', 'memory_search_hybrid', 'memory_daily_summary',
+  'memory_analytics', 'memory_utility_stats', 'memory_freshness',
+]);
 
 const TOOLS = [
   {
@@ -1813,6 +1844,14 @@ function _swarmWorkerOpts(args, base = {}) {
 }
 
 async function callTool(name, args) {
+  args = args || {};
+  // Documented default (see tool schemas): tools whose `project` param says
+  // "defaults to AGENTIC_CORTEX_PROJECT or cwd" must actually apply that
+  // default — otherwise a project-scoped agent session silently gets results
+  // from every project on the machine (cross-project leak).
+  if (args.project === undefined && _PROJECT_SCOPED_TOOLS.has(name)) {
+    args.project = process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  }
   switch (name) {
     case 'memory_save':
       return api.save(args);
