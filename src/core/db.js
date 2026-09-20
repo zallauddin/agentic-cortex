@@ -867,6 +867,49 @@ function ensureSchema(db) {
   try { db.exec(`ALTER TABLE observations ADD COLUMN superseded_by INTEGER REFERENCES observations(id)`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_expires ON observations(expires_at, is_active)`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_superseded ON observations(superseded_by, is_active)`); } catch {}
+
+  // Settleable commitments (YOINK-inspired). `claim_meta` holds the JSON
+  // claim envelope { claim, settles, reads, test }; `claim_status` tracks
+  // whether the bet is still open or has been graded.
+  try { db.exec(`ALTER TABLE observations ADD COLUMN claim_meta TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE observations ADD COLUMN claim_status TEXT`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_observations_claim_status ON observations(claim_status)`); } catch {}
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS claim_settlements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      observation_id INTEGER NOT NULL REFERENCES observations(id),
+      source TEXT NOT NULL,
+      reading TEXT NOT NULL,
+      test TEXT NOT NULL,
+      outcome INTEGER NOT NULL,
+      settled_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_claim_settlements_obs ON claim_settlements(observation_id);
+  `);
+
+  // Confidence calibration — immutable feedback events recording the
+  // confidence the system held AT THE MOMENT of judgment. Without this
+  // snapshot, confidence cannot be graded: the value moves after feedback,
+  // so a Brier score computed from the current value is a lie.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS feedback_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      observation_id INTEGER NOT NULL REFERENCES observations(id),
+      feedback_type TEXT NOT NULL CHECK (feedback_type IN ('helpful', 'incorrect')),
+      confidence_at INTEGER NOT NULL,
+      reason TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_feedback_events_obs ON feedback_events(observation_id);
+    CREATE INDEX IF NOT EXISTS idx_feedback_events_time ON feedback_events(created_at);
+  `);
+
+  // Tamper-evident evaluation log — each row carries a hash over the previous
+  // row's hash. Tamper-EVIDENT, not tamper-proof: whoever holds the file can
+  // rewrite it end to end, but a single retroactive edit becomes obvious.
+  try { db.exec(`ALTER TABLE evaluation_log ADD COLUMN entry_hash TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE evaluation_log ADD COLUMN prev_hash TEXT`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_eval_log_hash ON evaluation_log(entry_hash)`); } catch {}
 }
 
 /**

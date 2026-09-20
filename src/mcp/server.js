@@ -117,6 +117,7 @@ const _PROJECT_SCOPED_TOOLS = new Set([
   'memory_bootstrap', 'memory_reflect', 'memory_conflicts', 'memory_expire',
   'memory_maintenance', 'memory_search_hybrid', 'memory_daily_summary',
   'memory_analytics', 'memory_utility_stats', 'memory_freshness',
+  'memory_calibration', 'memory_dead_memories', 'memory_doctor',
 ]);
 
 const TOOLS = [
@@ -140,8 +141,73 @@ const TOOLS = [
         triggers: { type: 'array', items: { type: 'string' }, description: 'Triggers/conditions (for type=procedure or skill)' },
         preconditions: { type: 'array', items: { type: 'string' }, description: 'Preconditions (for type=procedure or skill)' },
         postconditions: { type: 'array', items: { type: 'string' }, description: 'Postconditions (for type=procedure or skill)' },
+        claim: { type: 'string', description: 'Claim about the future (settles itself). Requires settles, reads, and test — unverifiable claims are refused.' },
+        settles: { type: 'string', description: 'ISO date the claim settles (must be in the future), e.g. 2026-10-01' },
+        reads: { type: 'string', description: "Source to read at settlement: file:path.json#key.path, csv:path.csv#col@date, chain:network/method, or manual:<url>" },
+        test: { type: 'string', description: 'Grading test: gte N, lte N, gt N, lt N, eq N, between A B' },
       },
       required: ['content'],
+    },
+  },
+  {
+    name: 'memory_calibration',
+    description: 'Grade confidence against outcomes: the gap (said − right) and the Brier score, overall and per memory type. Computed from immutable feedback events recording confidence at the moment of judgment.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        machineWide: { type: 'boolean', description: 'Grade across all projects on this machine', default: false },
+      },
+    },
+  },
+  {
+    name: 'memory_settle_claims',
+    description: 'Settle due claims: read each source (file:, csv:, chain: read-only), apply the test, and write the outcome onto the memory. Unreadable sources stay open rather than settling on a guess. Settle one claim with id + value.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        id: { type: 'integer', description: 'Settle one claim by observation id (requires value)' },
+        value: { type: 'string', description: 'Reading to test against (for id, or to force all due settlements)' },
+        manualValue: { type: 'string', description: 'Value a human read at a manual: URL' },
+        rpcBase: { type: 'string', description: 'JSON-RPC endpoint for chain: sources' },
+        expectChainId: { type: 'integer', description: 'Expected chain id for chain: sources (refuses a mainnet answer settling a testnet bet)' },
+      },
+    },
+  },
+  {
+    name: 'memory_dead_memories',
+    description: 'Dead-memory audit: memories nothing links to, that link to nothing, never retrieved, never graded. The uncomfortable share of the vault that is not working.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+        minAgeDays: { type: 'integer', description: 'Minimum age in days to count as dead (default 1)', default: 1 },
+        limit: { type: 'integer', description: 'Sample size of oldest dead memories', default: 20 },
+      },
+    },
+  },
+  {
+    name: 'memory_doctor',
+    description: 'Vault health beyond stats: tamper-evident eval-log chain integrity, claim sanity, due/open claims, dead-memory share, and the calibration snapshot.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Project path' },
+      },
+    },
+  },
+  {
+    name: 'memory_rebuild',
+    description: 'Rebuild the SQLite vault from a JSON export (SQLite as a rebuildable index, not the only copy of the truth). DESTRUCTIVE: wipes memory tables first; requires confirm=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Path to the JSON export file' },
+        confirm: { type: 'boolean', description: 'Must be true — the rebuild wipes the vault before re-importing', default: false },
+        project: { type: 'string', description: 'Override project path for imported memories' },
+      },
+      required: ['from'],
     },
   },
   {
@@ -2112,6 +2178,29 @@ async function callTool(name, args) {
 
     case 'memory_analytics':
       return api.analytics(args);
+
+    // ── v7.5.0: Calibration, settleable claims, doctor, rebuild ──
+    case 'memory_calibration':
+      return api.getCalibration(args);
+
+    case 'memory_settle_claims':
+      return api.settleClaims({
+        project: args.project,
+        id: args.id,
+        value: args.value,
+        manualValue: args.manualValue,
+        rpcBase: args.rpcBase,
+        expectChainId: args.expectChainId,
+      });
+
+    case 'memory_dead_memories':
+      return api.deadMemories(args);
+
+    case 'memory_doctor':
+      return api.doctor(args);
+
+    case 'memory_rebuild':
+      return api.rebuildVault(args);
 
     case 'memory_standards': {
       const project = args.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();

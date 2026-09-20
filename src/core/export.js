@@ -32,8 +32,8 @@ function exportJSON(db, opts) {
     : db.prepare('SELECT * FROM sessions ORDER BY started_at DESC').all();
 
   const selectCols = opts.includeEmbeddings
-    ? 'id, session_id, project_path, type, title, content, tags, importance, confidence, provenance, agent_id, steps, triggers, preconditions, postconditions, is_active, embedding, created_at'
-    : 'id, session_id, project_path, type, title, content, tags, importance, confidence, provenance, agent_id, steps, triggers, preconditions, postconditions, is_active, created_at';
+    ? 'id, session_id, project_path, type, title, content, tags, importance, confidence, provenance, agent_id, steps, triggers, preconditions, postconditions, is_active, embedding, created_at, expires_at, superseded_by, layer, project_scope, access_count, predicted_utility, freshness_score, claim_meta, claim_status'
+    : 'id, session_id, project_path, type, title, content, tags, importance, confidence, provenance, agent_id, steps, triggers, preconditions, postconditions, is_active, created_at, expires_at, superseded_by, layer, project_scope, access_count, predicted_utility, freshness_score, claim_meta, claim_status';
 
   const observations = project
     ? db.prepare('SELECT ' + selectCols + ' FROM observations WHERE project_path = ? ORDER BY created_at DESC').all(project)
@@ -67,7 +67,7 @@ async function importJSON(db, data, opts) {
     const ids = [];
     for (const item of arr) {
       const r = db.prepare(
-        'INSERT INTO observations (session_id, project_path, type, title, content, tags, importance, confidence, provenance, agent_id, steps, triggers, preconditions, postconditions) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        'INSERT INTO observations (session_id, project_path, type, title, content, tags, importance, confidence, provenance, agent_id, steps, triggers, preconditions, postconditions, expires_at, superseded_by, layer, project_scope, access_count, predicted_utility, freshness_score, claim_meta, claim_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
       ).run(
         item.session_id || null,
         item.project_path || project,
@@ -82,7 +82,16 @@ async function importJSON(db, data, opts) {
         item.steps ? JSON.stringify(item.steps) : null,
         item.triggers ? JSON.stringify(item.triggers) : null,
         item.preconditions ? JSON.stringify(item.preconditions) : null,
-        item.postconditions ? JSON.stringify(item.postconditions) : null
+        item.postconditions ? JSON.stringify(item.postconditions) : null,
+        item.expires_at || null,
+        item.superseded_by || null,
+        item.layer || 1,
+        item.project_scope || 'local',
+        item.access_count || 0,
+        item.predicted_utility || 0,
+        item.freshness_score != null ? item.freshness_score : 50,
+        item.claim_meta || null,
+        item.claim_status || null
       );
       ids.push(Number(r.lastInsertRowid));
     }
@@ -413,4 +422,33 @@ function exportMarkdown(db, opts) {
   };
 }
 
-module.exports = { exportJSON, exportMarkdown, importJSON, sanitizeFilename, findRelated };
+/**
+ * Rebuild the SQLite vault from a JSON export — SQLite as a rebuildable
+ * index, not the only copy of the truth. Wipes memory tables (observations,
+ * relations, versions, feedback events, claim settlements, daily summaries)
+ * and re-imports from the export. Idempotent on a consistent export; a
+ * settlement history rebuilt from export alone loses its per-claim ledger,
+ * so settled claims keep their status but the claim_settlements rows are
+ * NOT reconstructed (their truth lives in the memory content and tags).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Array<Object>|Object} data - Observations array or { observations: [...] }
+ * @param {Object} opts - Same as importJSON ({ project? })
+ * @returns {Promise<{ wiped: Object, saved: number, ids: number[], embedded: boolean }>}
+ */
+async function rebuildFromJSON(db, data, opts) {
+  const wiped = {};
+  const run = (label, sql) => { wiped[label] = db.prepare(sql).run().changes; };
+  db.transaction(() => {
+    run('claim_settlements', 'DELETE FROM claim_settlements');
+    run('feedback_events', 'DELETE FROM feedback_events');
+    run('observation_versions', 'DELETE FROM observation_versions');
+    run('memory_relations', 'DELETE FROM memory_relations');
+    run('daily_summaries', 'DELETE FROM daily_summaries');
+    run('observations', 'DELETE FROM observations');
+  })();
+  const result = await importJSON(db, data, opts);
+  return { wiped, ...result };
+}
+
+module.exports = { exportJSON, exportMarkdown, importJSON, rebuildFromJSON, sanitizeFilename, findRelated };

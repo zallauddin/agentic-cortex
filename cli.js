@@ -15,6 +15,7 @@ const { getEmbedPipeline, computeEmbedding, cosineSimilarity, forceEmbeddingsEna
 const { sanitizeDate } = require('./src/core/search');
 const { startSession, endSession, callLLM, templateSummary, summarizeSession } = require('./src/core/session');
 const { checkConflicts } = require('./src/core/conflict');
+const claims = require('./src/core/claims');
 const api = require('./src/api');
 
 // ─── Core functions imported from src/core/ modules above ───────
@@ -54,6 +55,11 @@ commands.save = {
       if (args[i] === '--postconditions') opts.postconditions = args[i + 1].split(',');
       if (args[i] === '--expires') opts.expiresAt = args[i + 1];
       if (args[i] === '--ttl-days') opts.ttlDays = parseFloat(args[i + 1]);
+      // Settleable claim fields (YOINK-inspired): a claim with a date on it
+      if (args[i] === '--claim') opts.claim = args[i + 1];
+      if (args[i] === '--settles') opts.settles = args[i + 1];
+      if (args[i] === '--reads') opts.reads = args[i + 1];
+      if (args[i] === '--test') opts.test = args[i + 1];
     }
     return opts;
   },
@@ -1685,6 +1691,174 @@ commands.analytics = {
   run(db, opts) {
     const stats = api.analytics(opts);
     console.log(JSON.stringify(stats, null, 2));
+  }
+};
+
+// ─── Calibration: the gap + Brier (confidence graded against outcomes) ─
+
+commands.calibration = {
+  desc: 'Grade confidence against outcomes: the gap (said − right) and Brier score',
+  args: ['[--project PATH]', '[--machine]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--machine') opts.machineWide = true;
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const report = api.getCalibration(opts);
+    const r = report.record;
+    console.log('the record');
+    console.log('──────────────────────────────────────────────');
+    if (r.graded === 0) {
+      console.log('no graded feedback yet — mark memories with `feedback <id> --type helpful|incorrect`');
+      return;
+    }
+    console.log('graded  ' + r.graded);
+    console.log('said    ' + r.said + '%  average confidence, at the moment of judgment');
+    console.log('right   ' + r.right + '%  how often that confidence was earned');
+    console.log('gap     ' + (r.gap >= 0 ? '+' : '') + r.gap + ' pts  ' + (r.gap > 10 ? 'overconfident' : r.gap < -10 ? 'underconfident' : 'calibrated'));
+    console.log('brier   ' + r.brier + '   0 perfect · 0.25 a coin · 1 certain and wrong');
+    console.log('');
+    console.log('by type:');
+    for (const [type, b] of Object.entries(report.byType)) {
+      console.log('  ' + type.padEnd(12) + ' said ' + b.said + '% · right ' + b.right + '% · gap ' + (b.gap >= 0 ? '+' : '') + b.gap + ' · brier ' + b.brier);
+    }
+    console.log('');
+    console.log('(' + report.note + ')');
+  }
+};
+
+// ─── Dead memories: the share of the vault that is not working ─────
+
+commands.dead = {
+  desc: 'Memories nothing links to, that were never retrieved, never graded',
+  args: ['[--project PATH]', '[--min-age-days N]', '[--limit N]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--min-age-days') opts.minAgeDays = parseInt(args[++i], 10);
+      if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const audit = api.deadMemories(opts);
+    console.log('the vault');
+    console.log('──────────────────────────────────────────────');
+    console.log('memories  ' + audit.total);
+    console.log('alive     ' + audit.alive);
+    console.log('dead      ' + audit.dead + '  (' + audit.deadSharePct + '% of the vault)');
+    console.log('');
+    if (audit.sample.length > 0) {
+      console.log('oldest dead:');
+      for (const m of audit.sample.slice(0, 10)) {
+        console.log('  #' + m.id + '  [' + m.type + '] ' + (m.title || '').slice(0, 60) + '  (' + m.ageDays + 'd)');
+      }
+    }
+    console.log('');
+    console.log('(' + audit.note + ')');
+  }
+};
+
+// ─── Settle: grade every claim whose date has arrived ─────────────
+
+commands.settle = {
+  desc: 'Read the sources, apply the tests, settle every due claim',
+  args: ['[--project PATH]', '[--id N --value X]', '[--rpc-base URL]', '[--dry-run]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--id') opts.id = parseInt(args[++i], 10);
+      if (args[i] === '--value') opts.value = args[++i];
+      if (args[i] === '--rpc-base') opts.rpcBase = args[++i];
+      if (args[i] === '--dry-run') opts.dryRun = true;
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    if (opts.dryRun) {
+      const due = claims.dueClaims(db, { project: opts.project });
+      console.log('due claims: ' + due.length);
+      for (const row of due) {
+        const meta = claims.parseClaimMeta(row.claim_meta);
+        console.log('  #' + row.id + '  ' + (meta ? meta.claim + ' (test: ' + meta.test + ', reads: ' + meta.reads + ')' : row.claim_meta));
+      }
+      return;
+    }
+    const result = await api.settleClaims(opts);
+    console.log('due: ' + result.dueCount + ' · settled: ' + result.settled.length + ' · stayed open: ' + result.stayedOpen.length);
+    for (const s of result.settled) {
+      console.log('  ✓ #' + s.id + '  ' + s.claim);
+      console.log('      reading ' + s.reading + ' · test ' + s.test + ' → ' + (s.outcome ? 'TRUE' : 'FALSE'));
+      console.log('      read from: ' + s.source);
+    }
+    for (const o of result.stayedOpen) {
+      console.log('  · #' + o.id + ' stays open — ' + o.reason);
+    }
+  }
+};
+
+// ─── Doctor: chain integrity, claim sanity, dead share, calibration ─
+
+commands.doctor = {
+  desc: 'Vault health: eval-log chain integrity, claim sanity, dead share, calibration',
+  args: ['[--project PATH]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const report = api.doctor(opts);
+    console.log('doctor');
+    console.log('──────────────────────────────────────────────');
+    console.log('db            ' + report.health.dbPath);
+    console.log('memories      ' + report.health.observations.active + ' active / ' + report.health.observations.total);
+    const chain = report.evalLogChain;
+    if (chain) {
+      console.log('eval chain    ' + (chain.ok ? 'intact (' + chain.checked + ' hashed rows' + (chain.legacyRows ? ', ' + chain.legacyRows + ' pre-chain legacy rows skipped' : '') + ')' : 'BROKEN at row ' + chain.brokenAt + ' — ' + chain.reason));
+    } else {
+      console.log('eval chain    unavailable');
+    }
+    console.log('claims        ' + report.claims.open + ' open · ' + report.claims.due + ' due · ' + report.claims.settled + ' settled · ' + report.claims.sanityIssues + ' malformed');
+    console.log('dead          ' + report.deadMemories.dead + '/' + report.deadMemories.total + ' (' + report.deadMemories.deadSharePct + '%) — `agentic-cortex dead` for detail');
+    const r = report.calibration.record;
+    if (r.graded > 0) {
+      console.log('calibration   said ' + r.said + '% · right ' + r.right + '% · gap ' + (r.gap >= 0 ? '+' : '') + r.gap + ' pts · brier ' + r.brier);
+    } else {
+      console.log('calibration   no graded feedback yet');
+    }
+    if (!chain || !chain.ok || report.claims.sanityIssues > 0) {
+      process.exitCode = 1;
+    }
+  }
+};
+
+// ─── Rebuild: SQLite as a rebuildable index, not the only truth ────
+
+commands.rebuild = {
+  desc: 'Wipe and rebuild the vault from a JSON export (--yes required)',
+  args: ['--from <export.json>', '[--yes]', '[--project PATH]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--from') opts.from = args[++i];
+      if (args[i] === '--yes') opts.confirm = true;
+      if (args[i] === '--project') opts.project = args[++i];
+    }
+    return opts;
+  },
+  async run(db, opts) {
+    const result = await api.rebuildVault(opts);
+    console.log('wiped: ' + JSON.stringify(result.wiped));
+    console.log('rebuilt: ' + result.saved + ' memories' + (result.embedded ? ' (embedded)' : ' (keyword-only — embeddings unavailable)'));
   }
 };
 

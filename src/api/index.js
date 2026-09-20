@@ -2,6 +2,13 @@
 
 const core = require('../core');
 
+// Settleable commitments + confidence calibration (YOINK lessons, v7.5.0)
+const claims = require('../core/claims');
+const calibration = require('../core/calibration');
+const fsMod = require('fs');
+core.claims = claims;
+core.calibration = calibration;
+
 // Wire up save function for hooks and reflection to avoid circular dependencies
 core.hooks.setSaveFunction(save);
 core.reflection.setSaveFunction(save);
@@ -432,12 +439,43 @@ async function save(opts) {
     );
   } catch { /* expiry detection is never fatal */ }
 
+  // ── Settleable claims (YOINK-inspired) ──
+  // A claim about the future that settles itself: when the settle date
+  // arrives, the named source is read and the test applied. Declared claim
+  // fields are validated hard — partial or unverifiable claims are REFUSED.
+  // A claim is only worth making if somebody who was not there can check it.
+  let claimMeta = null;
+  let claimStatus = null;
+  const claimAttempted = !!(opts.claim || opts.settles || opts.reads || opts.test);
+  if (claimAttempted) {
+    const v = claims.validateClaim({
+      claim: opts.claim || opts.title,
+      settles: opts.settles,
+      reads: opts.reads,
+      test: opts.test,
+    });
+    if (!v.ok) {
+      const err = new Error('claim refused: ' + v.errors.join('; '));
+      err.code = 'CLAIM_REFUSED';
+      throw err;
+    }
+    claimMeta = JSON.stringify(v.meta);
+    claimStatus = 'open';
+  }
+
   const r = db.prepare(
-    'INSERT INTO observations (session_id, project_path, agent_id, type, title, content, tags, importance, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, project_scope, layer, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(session, project, agentId, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, projectScope, opts.layer || 1, expiresAt);
+    'INSERT INTO observations (session_id, project_path, agent_id, type, title, content, tags, importance, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, project_scope, layer, expires_at, claim_meta, claim_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(session, project, agentId, type, opts.title || null, opts.content, tags, imp, confidence, provenance, embedding, steps, triggers, preconditions, postconditions, projectScope, opts.layer || 1, expiresAt, claimMeta, claimStatus);
 
   const savedId = Number(r.lastInsertRowid);
   const saved = { id: savedId, status: 'saved', type, confidence, provenance, project, agent_id: agentId, embedded: !!embedding, expires_at: expiresAt };
+
+  // Save-time sanity gate: prediction-shaped content that was NOT declared as
+  // a claim earns a warning, not a refusal — the vault stays open, but the
+  // gap is named at the capture edge where it is cheapest to fix.
+  const sanity = claims.sanityWarnings(type, opts.title, opts.content);
+  if (sanity.length > 0) saved.warnings = sanity;
+  if (claimMeta) saved.claim = JSON.parse(claimMeta);
 
   // Supersession: if an older memory of the same statement-like type in this
   // project is an update of the same fact, the new save replaces it
@@ -2317,7 +2355,33 @@ function health() {
     sessions,
     embeddingCache: cacheStats,
     dimensionWarning,
+    evalLogChain: evalLogChainStatus(),
+    openClaims: openClaimCount(),
   };
+}
+
+/**
+ * Tamper-evident chain status over the evaluation log (best-effort).
+ * @returns {{ ok: boolean, checked: number, brokenAt: number|null, reason: string|null, legacyRows: number } | null}
+ */
+function evalLogChainStatus() {
+  try {
+    return selfImprove.verifyEvalLogChain(_getDB());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Count open (unsettled) claims.
+ * @returns {number}
+ */
+function openClaimCount() {
+  try {
+    return _getDB().prepare("SELECT COUNT(*) as c FROM observations WHERE claim_status = 'open'").get().c;
+  } catch {
+    return 0;
+  }
 }
 
 // ─── Relations (Memory Graph) ─────────────────────────────────────────
@@ -3436,6 +3500,15 @@ async function feedback(id, opts) {
     throw new Error('feedback type must be "helpful" or "incorrect"');
   }
 
+  // Immutable feedback event — records the confidence the system held AT THE
+  // MOMENT of judgment. Calibration is computed from these snapshots; grading
+  // with the current value would be a lie, because confidence moves after
+  // feedback.
+  try {
+    db.prepare('INSERT INTO feedback_events (observation_id, feedback_type, confidence_at, reason) VALUES (?,?,?,?)')
+      .run(id, type, obs.confidence, opts.reason || null);
+  } catch { /* feedback events are best-effort */ }
+
   if (type === 'helpful') {
     // Boost confidence and utility — this memory proved useful
     db.prepare('UPDATE observations SET confidence = MIN(confidence + 5, 100), predicted_utility = predicted_utility + 10 WHERE id = ?').run(id);
@@ -3721,9 +3794,15 @@ async function runMaintenance(opts) {
     decayed = archiveP.decayed || 0;
   } catch {}
 
-  // 5. Log the maintenance run
+  // 5. Settle due claims (read sources, apply tests, grade outcomes)
+  let settledClaims = 0;
+  try {
+    settledClaims = dryRun ? 0 : claims.settleDue(db, { project }).settled;
+  } catch { /* claim sweep failure is non-fatal */ }
+
+  // 6. Log the maintenance run
   if (!dryRun) {
-    const summary = JSON.stringify({ freshnessUpdated, archived: archiveResult.archived, expired: expiredCount, decayed });
+    const summary = JSON.stringify({ freshnessUpdated, archived: archiveResult.archived, expired: expiredCount, decayed, settledClaims });
     db.prepare(
       'INSERT OR REPLACE INTO maintenance_log (project_path, task, result_summary, run_at) VALUES (?, ?, ?, datetime(\'now\'))'
     ).run(project, 'full_maintenance', summary);
@@ -3731,7 +3810,7 @@ async function runMaintenance(opts) {
 
   _lastMaintenanceChecks.set(project, Date.now());
 
-  return { freshnessUpdated, archived: archiveResult.archived, expired: expiredCount, decayed, dryRun };
+  return { freshnessUpdated, archived: archiveResult.archived, expired: expiredCount, decayed, settledClaims, dryRun };
 }
 
 /**
@@ -3938,7 +4017,15 @@ function analytics(opts) {
     experiments.successRate = resolved > 0 ? Math.round((resolvedSuccess / resolved) * 10000) / 100 : 0;
   } catch { /* best-effort */ }
 
-  return { rca, conflicts, utility, feedback, freshness, evalLog, layers, experiments };
+  // ── Calibration: confidence vs outcomes (the gap, Brier) ──
+  let calib = { record: { graded: 0, said: null, right: null, gap: null, brier: null }, byType: {}, note: 'no graded feedback yet' };
+  try { calib = calibration.calibrationReport(db, { project }); } catch { /* best-effort */ }
+
+  // ── Dead memories: nothing links in, nothing links out, never retrieved ──
+  let deadMemories = { total: 0, dead: 0, alive: 0, deadSharePct: 0, sample: [], note: '' };
+  try { deadMemories = calibration.deadMemoryAudit(db, { project }); } catch { /* best-effort */ }
+
+  return { rca, conflicts, utility, feedback, freshness, evalLog, layers, experiments, calibration: calib, deadMemories };
 }
 
 // ─── Reasoning Stats (Test-Time Compute Analytics) ──────────────────
@@ -4516,6 +4603,106 @@ function applyCounterEvidence(opts) {
 
 // ─── Exports ───────────────────────────────────────────────────────────
 
+// ─── Calibration, claims, doctor, rebuild (YOINK lessons, v7.5.0) ──
+
+/**
+ * Confidence calibration report — the gap and the Brier score, computed
+ * from immutable feedback events. Per memory type and overall.
+ * @param {Object} [opts] - { project?, machineWide? }
+ */
+function getCalibration(opts) {
+  return calibration.calibrationReport(_getDB(), opts || {});
+}
+
+/**
+ * Dead-memory audit: memories nothing links to, that link to nothing, that
+ * were never retrieved, and that never got feedback. The uncomfortable
+ * number most vaults never print.
+ * @param {Object} [opts] - { project?, minAgeDays?, limit? }
+ */
+function deadMemories(opts) {
+  return calibration.deadMemoryAudit(_getDB(), opts || {});
+}
+
+/**
+ * Settle due claims: read the source, apply the test, write the outcome onto
+ * the memory. Sources that cannot answer leave the claim open rather than
+ * settling on a guess. A settled claim cannot be settled again.
+ * @param {Object} [opts] - { project?, id?, value?, manualValue?, rpcBase?, expectChainId?, now? }
+ */
+async function settleClaims(opts) {
+  opts = opts || {};
+  if (opts.id != null) {
+    // Settle one specific claim with a supplied reading
+    const settled = [claims.settleWithValue(_getDB(), opts.id, opts.value, { source: opts.source })];
+    return { settled, stayedOpen: [], dueCount: 1 };
+  }
+  return claims.settleDue(_getDB(), opts);
+}
+
+/**
+ * Verify the tamper-evident evaluation-log hash chain.
+ * @param {Object} [opts] - { project? }
+ */
+function verifyEvalChain(opts) {
+  return selfImprove.verifyEvalLogChain(_getDB(), opts && opts.project);
+}
+
+/**
+ * Rebuild the SQLite vault from a JSON export — SQLite as a rebuildable
+ * index, not the only copy of the truth. DESTRUCTIVE: wipes memory tables
+ * first. Requires opts.confirm === true.
+ * @param {Object} opts - { from: string (path to export JSON), confirm?: boolean, project? }
+ */
+async function rebuildVault(opts) {
+  opts = opts || {};
+  if (!opts.from) throw new Error('rebuild requires --from <export.json>');
+  if (opts.confirm !== true) {
+    throw new Error('rebuild wipes the vault before re-importing — pass confirm: true (--yes) to proceed');
+  }
+  const data = JSON.parse(fsMod.readFileSync(opts.from, 'utf8'));
+  return core.export.rebuildFromJSON(_getDB(), data, { project: opts.project });
+}
+
+/**
+ * Vault health beyond stats: eval-log chain integrity, claims due/open,
+ * dead-memory share, and calibration snapshot. YOINK's `doctor` for a
+ * memory vault.
+ * @param {Object} [opts] - { project? }
+ */
+function doctor(opts) {
+  opts = opts || {};
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const db = _getDB();
+
+  const chain = verifyEvalChain({ project });
+
+  const open = db.prepare("SELECT COUNT(*) as c FROM observations WHERE claim_status = 'open'").get().c;
+  const settledCount = db.prepare("SELECT COUNT(*) as c FROM observations WHERE claim_status = 'settled'").get().c;
+  const due = claims.dueClaims(db, { project }).length;
+
+  // Claim sanity: open claims with no readable source locator or no test
+  let claimSanityIssues = 0;
+  try {
+    const openRows = db.prepare("SELECT claim_meta FROM observations WHERE claim_status = 'open' AND claim_meta IS NOT NULL").all();
+    for (const row of openRows) {
+      const meta = claims.parseClaimMeta(row.claim_meta);
+      if (!meta || !claims.parseTest(meta.test) || !claims.parseSource(meta.reads || '')) claimSanityIssues++;
+    }
+  } catch { /* best-effort */ }
+
+  const dead = deadMemories({ project });
+  const calib = getCalibration({ project });
+
+  return {
+    health: health(),
+    evalLogChain: chain,
+    claims: { open, settled: settledCount, due, sanityIssues: claimSanityIssues },
+    deadMemories: { total: dead.total, dead: dead.dead, deadSharePct: dead.deadSharePct },
+    calibration: { record: calib.record, note: calib.note },
+  };
+}
+
 module.exports = {
   save, get, edit, forget, list,
   search, keywordSearch, semanticSearch,
@@ -4537,6 +4724,8 @@ module.exports = {
   feedback, trail,
   computeFreshness, updateFreshnessScores, autoArchive,
   expireMemories, supersede, profile, unifiedSearch,
+  // ── v7.5.0: Calibration, settleable claims, doctor, rebuild ──
+  getCalibration, deadMemories, settleClaims, verifyEvalChain, rebuildVault, doctor,
   runMaintenance, checkAndRunMaintenance, initMaintenanceScheduler,
   analytics,
   promoteToGlobal, autoPromoteGlobal, getGlobalVault, searchAllProjects, machineAnalytics,

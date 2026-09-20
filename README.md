@@ -18,13 +18,13 @@ Persistent, self-improving memory **and orchestration** for AI coding agents and
 - **Session context compactor** — map-reduce compression of observations or transcripts into a "state so far" summary (~95% smaller) that replaces raw conversation history — attacks the biggest token cost: per-turn history re-sending.
 - **Evidence-theoretic conflict resolution (Dempster-Shafer)** — contradictory observations are no longer superseded silently. Each side gets a *belief mass* (confidence + corroboration + usage); the statistical channel is fused with LLM adjudication via Dempster's rule. Adjudication is a **two-shot debate**: first the LLM builds the strongest case for *each* side (adversarial argument generation, preventing judge anchoring), then judges with both cases on the record — the full deliberation is persisted for auditability. The resolution records the conflict coefficient k, the combined belief, and the *deciding evidence*; the winner's boost is agreement-weighted (a knife-edge k≈1 resolution gets almost none). Bootstrap injects recent resolutions as `<settled_debates>` so agents see why a debate was settled instead of re-opening it — and flags **weak resolutions** (high conflict coefficient k, statistical near-tie, or a winner that never clearly out-massed the loser) with a `severity="weak_resolution"` warning so agents treat the topic as an OPEN QUESTION, not settled precedent. Human/agent-guided resolution via `agentic-cortex resolve --winner ID --loser ID --reason ...`.
 - **Agent-optimized knowledge.md** — XML-structured, 4× token reduction vs markdown. Built for LLM consumption, not human skimming.
-- **110+ MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
+- **138 MCP tools** — `memory_bootstrap()`, `memory_search_all()`, `memory_machine_vault()`, `memory_promote_global()`, plus a multi-agent mailbox (`memory_send`/`memory_inbox`), provider discovery (`memory_provider`), recovery (probe-gated retry), prompts, plateau detection, workflows, FSM, rules, test-time reasoning (tree search/PRM/self-consistency/budget forcing), failure classification, experience replay, translation store, burst budget, war room, deterministic reasoner (6 modes), and persona swarm orchestration. Stdio JSON-RPC.
 - **Agent capability manifest (schema v1)** — machine-readable JSON (`manifest` / `discover` CLI, `memory_manifest` / `memory_discover` / `memory_compose` MCP tools) declaring 40+ capabilities with versions and interfaces for feature-detection, auto-discovering compatible agent frameworks and generic MCP clients via their config files / env vars / registered MCP servers, and returning the exact wiring to compose with each — which MCP config to write and which memory/reasoning/audit/orchestration tools to expose.
 - **13 typed memories** — instruction, fact, decision, goal, commitment, preference, relationship, context, event, learning, observation, artifact, error.
 - **Hybrid search** — FTS5 keyword + BGE semantic embeddings (768-dim) + cross-encoder reranking. Falls back gracefully when embeddings unavailable.
 - **Confidence & provenance tracking** — every memory scores 0-100 confidence and source (explicit, inferred, observed).
 - **5-Layer Graph Engineering** — full implementation of Prompt Engineering (versioned template registry), Context Engineering (hybrid search + reranking), Harness Engineering (MCP tools + webhooks), Loop Engineering (self-improvement + plateau detection), and Graph Engineering (FSM + rules + multi-agent DAG workflows).
-- **Prompt template registry** — 10 versioned, outcome-tracked templates for every LLM call. Render templates with variable substitution via API or MCP. Centralized prompt evolution powered by eval log feedback.
+- **Prompt template registry** — 20 versioned, outcome-tracked templates for every LLM call. Render templates with variable substitution via API or MCP. Centralized prompt evolution powered by eval log feedback.
 - **Self-improving loop with meta-cognition** — error RCA generates systemic learnings. Conflict detection finds contradictions. Evidence-based confidence scoring. **Plateau detection** identifies stalled improvement and triggers breakthrough analysis.
 - **Multi-agent workflows** — DAG-based workflow executor with FSM bridge. Workflow steps can spawn sub-agents tracked in state machines. Built-in multi-agent workflows: `code-review-team`, `incident-response-squad`.
 - **FSM orchestration engine** — state machines for coding, debugging, and review workflows. Agents transition between states with guard conditions and entry/exit actions.
@@ -65,6 +65,10 @@ Persistent, self-improving memory **and orchestration** for AI coding agents and
 - **💪 Budget forcing (s1)** — enforce minimum reasoning depth by suppressing early stops and appending doubt heuristics. Force conclusion synthesis at upper token bound. Controls compute per problem independently of architectural changes.
 - **BGE embeddings** — Xenova/bge-base-en-v1.5 with in-memory LRU cache.
 - **Embedding dimension mismatch detection** — warns when stored embeddings don't match current model dimensions.
+- **Calibrated, settleable commitments (YOINK-inspired)** — confidence is graded, not just stored: `feedback` records an immutable event with the confidence held at judgment time, and `analytics`/`memory_calibration` report per-type **overconfidence gap** and **Brier score**. Structured claims (`claim` + `test` + `settle_date` + optional `read_source`) settle themselves — maintenance sweeps due ones, reads the source, and writes the outcome back into the calibration loop. Unverifiable predictions are refused at save time with a stated reason, a **dead-memory audit** surfaces never-retrieved/never-linked memories as a health metric, and `rebuild --from-export` treats the SQLite vault as a rebuildable index over the markdown/JSON export.
+- **Tamper-evident eval log** — append-only entries are hash-chained (`hash_n = sha256(entry_n | hash_{n-1})`); `doctor` verifies the chain end-to-end and names the exact line where an edit occurred. Tamper-*evident*, not tamper-proof — and regression-tested with a demonstrated full rewrite.
+- **Honest docs (`scripts/check-readme.js`)** — recomputes MCP tool count, memory types, prompt templates, and test files straight from source and fails if the README's numbers disagree (YOINK's `figures.py --check` pattern).
+- **Capability-absence testing** — the read-only/no-embed guarantees are enforced by tests that parse the source and prove the capability is absent, not just by runtime checks.
 
 ## Install
 
@@ -255,13 +259,13 @@ agentic-cortex code-index search "token budget calc" --semantic
 agentic-cortex-mcp
 ```
 
-**124 tools** over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
+**138 tools** over stdio JSON-RPC. Call `memory_bootstrap()` with no arguments to start.
 
 ### Graph Engineering Tools
 
 | Tool | Layer | Description |
 |------|-------|-------------|
-| `memory_prompts_list` | Layer 1: Prompt Engineering | List all 10 versioned prompt templates |
+| `memory_prompts_list` | Layer 1: Prompt Engineering | List all 20 versioned prompt templates |
 | `memory_prompts_render` | Layer 1: Prompt Engineering | Render a template with variable substitution |
 | `memory_plateau_check` | Layer 4: Loop Engineering | Detect stalled improvement; triggers breakthrough analysis |
 | `memory_workflow_agents` | Layer 5: Graph Engineering | List FSM-tracked sub-agents in multi-agent workflows |
@@ -340,9 +344,11 @@ self-contained **seeds** — and every seed has a bounded lifespan:
 manifest (name, version, memory/relation types, multi-agent mailbox, workflows,
 recovery, and usage instructions).
 
-## 18 Memory Types
+## 26 Memory Types
 
-`instruction` `fact` `decision` `goal` `commitment` `preference` `relationship` `context` `event` `learning` `observation` `artifact` `error` `pattern` `synthesis` `principle` `experiment` `action`
+`instruction` `fact` `decision` `goal` `commitment` `preference` `relationship` `context` `event` `learning` `observation` `artifact` `error` `success` `failure` `pattern` `synthesis` `principle` `experiment` `procedure` `skill` `action` `architecture` `bugfix` `gotcha` `codebase-graph`
+
+18 core types plus `success`/`failure`, the skill/procedural types, and legacy aliases (accepted for backwards compatibility).
 
 ### Tiered Memory Layers (AutoGTM's Compounding Brain)
 
@@ -385,7 +391,7 @@ When serving (`agentic-cortex serve`):
 ## Architecture: The 5-Layer Graph Engineering Brain
 
 ```
-Layer 1: Prompt Engineering  ──  src/core/prompts.js     (10 versioned templates)
+Layer 1: Prompt Engineering  ──  src/core/prompts.js     (20 versioned templates)
 Layer 2: Context Engineering  ──  src/core/search.js       (hybrid FTS5 + semantic)
                                   src/core/embedding.js    (BGE-base, cross-encoder)
                                   src/core/relations.js    (memory graph)

@@ -34,6 +34,7 @@
 'use strict';
 
 const { callLLM } = require('./session');
+const crypto = require('crypto');
 const conflict = require('./conflict');
 const { checkConflicts } = conflict;
 const { addRelation } = require('./relations');
@@ -803,8 +804,32 @@ async function spawnExperiment(db, opts = {}) {
  * @returns {number} The new evaluation_log row id
  */
 function writeEvalLog(db, entry) {
+  // Tamper-evident chain: hash_n = sha256(prev_hash | project | verdict | ...).
+  // Whoever holds the file can rewrite it end to end, but a single retroactive
+  // edit becomes obvious — verifyEvalLogChain names the exact row.
+  const prevRow = db.prepare(
+    'SELECT entry_hash FROM evaluation_log ORDER BY id DESC LIMIT 1'
+  ).get();
+  const prevHash = (prevRow && prevRow.entry_hash) || '';
+  const at = new Date().toISOString();
+  const body = [
+    entry.project || process.cwd(),
+    entry.intentId || '',
+    (entry.intentContent || '').slice(0, 500),
+    entry.actionId || '',
+    (entry.actionContent || '').slice(0, 500),
+    entry.outcomeId || '',
+    (entry.outcomeContent || '').slice(0, 500),
+    entry.verdict || 'UNKNOWN',
+    (entry.verdictReason || '').slice(0, 300) || '',
+    entry.confidenceDelta || 0,
+    (entry.variableChanged || '').slice(0, 200) || '',
+    at,
+  ].join('|');
+  const entryHash = crypto.createHash('sha256').update(prevHash + '|' + body).digest('hex');
+
   const r = db.prepare(
-    'INSERT INTO evaluation_log (project_path, intent_id, intent_content, action_id, action_content, outcome_id, outcome_content, llm_verdict, verdict_reason, confidence_delta, variable_changed) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+    'INSERT INTO evaluation_log (project_path, intent_id, intent_content, action_id, action_content, outcome_id, outcome_content, llm_verdict, verdict_reason, confidence_delta, variable_changed, entry_hash, prev_hash, evaluated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
   ).run(
     entry.project || process.cwd(),
     entry.intentId || null,
@@ -817,6 +842,9 @@ function writeEvalLog(db, entry) {
     (entry.verdictReason || '').slice(0, 300) || null,
     entry.confidenceDelta || 0,
     (entry.variableChanged || '').slice(0, 200) || null,
+    entryHash,
+    prevHash || null,
+    at,
   );
   const evalLogId = Number(r.lastInsertRowid);
   if (entry.injectedObservationIds && entry.injectedObservationIds.length > 0) {
@@ -827,6 +855,74 @@ function writeEvalLog(db, entry) {
     autoLinkEvalInjections(db, evalLogId, entry.project, { windowMinutes: entry.autoLinkWindowMinutes });
   }
   return evalLogId;
+}
+
+/**
+ * Canonicalize a stored evaluated_at timestamp for hashing. Handles both the
+ * SQLite datetime('now') format ("2026-09-20 12:34:56") and ISO strings.
+ * @param {string} ts
+ */
+function _canonicalTimestamp(ts) {
+  if (!ts) return '';
+  let s = ts.replace(' ', 'T');
+  if (!s.endsWith('Z')) s += 'Z';
+  return s;
+}
+
+/**
+ * Verify the tamper-evident hash chain over the evaluation log. Recomputes
+ * every linked hash and names the first row that no longer matches its
+ * recorded hash. Legacy rows written before the chain existed (entry_hash
+ * NULL) are skipped, and verification starts from the first hashed row.
+ *
+ * Tamper-evident, not tamper-proof: a full rewrite with recomputed hashes is
+ * undetectable — but that is not the edit people actually make.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} [project] - Optional project filter
+ * @returns {{ ok: boolean, checked: number, brokenAt: number|null, reason: string|null, legacyRows: number }}
+ */
+function verifyEvalLogChain(db, project) {
+  const rows = project
+    ? db.prepare('SELECT * FROM evaluation_log WHERE project_path = ? ORDER BY id ASC').all(project)
+    : db.prepare('SELECT * FROM evaluation_log ORDER BY id ASC').all();
+
+  let checked = 0;
+  let legacyRows = 0;
+  let prevHash = '';
+  let started = false;
+
+  for (const row of rows) {
+    if (!row.entry_hash) { legacyRows++; continue; }
+    if (!started) {
+      // First hashed row: accept the stored prev_hash as the chain anchor
+      // (it may point at a legacy tail from a pre-chain database).
+      started = true;
+      prevHash = row.prev_hash || '';
+    }
+    const body = [
+      row.project_path,
+      row.intent_id != null ? row.intent_id : '',
+      row.intent_content || '',
+      row.action_id != null ? row.action_id : '',
+      row.action_content || '',
+      row.outcome_id != null ? row.outcome_id : '',
+      row.outcome_content || '',
+      row.llm_verdict || 'UNKNOWN',
+      row.verdict_reason || '',
+      row.confidence_delta || 0,
+      row.variable_changed || '',
+      _canonicalTimestamp(row.evaluated_at),
+    ].join('|');
+    const expected = crypto.createHash('sha256').update(prevHash + '|' + body).digest('hex');
+    if (expected !== row.entry_hash) {
+      return { ok: false, checked, brokenAt: row.id, reason: 'entry_hash mismatch at evaluation_log row ' + row.id + ' — this row (or the one before it) was edited after the fact', legacyRows };
+    }
+    prevHash = row.entry_hash;
+    checked++;
+  }
+
+  return { ok: true, checked, brokenAt: null, reason: null, legacyRows };
 }
 
 /**
@@ -1340,6 +1436,7 @@ module.exports = {
   memoryOutcomeStats,
   getEvaluationLog,
   getEvalLogStats,
+  verifyEvalLogChain,
   detectPlateau,
   initHooks,
   setSaveFunction,
