@@ -4,6 +4,8 @@ const core = require('../core');
 
 // Settleable commitments + confidence calibration (YOINK lessons, v7.5.0)
 const claims = require('../core/claims');
+const distillCore = require('../core/distill');
+const seedsCore = require('../core/seeds');
 const calibration = require('../core/calibration');
 const fsMod = require('fs');
 core.claims = claims;
@@ -753,7 +755,102 @@ async function search(query, opts) {
 
   // Restore the requested limit (rerank returns all candidates; outcome
   // weights may reorder the list).
-  if (opts.limit) results = results.slice(0, opts.limit);
+  // Breadth control (opt-in): allow at most opts.maxPerSession results from
+  // any one conversation so a single long session cannot fill every k slot.
+  // Applied BEFORE the limit slice so capped-out candidates can be replaced
+  // by other conversations' evidence — which requires the *pool* to stay
+  // intact: passing `limit` here would truncate candidates to k and leave the
+  // transcript channel (below) only k rows to fuse against.
+  if (opts.maxPerSession) {
+    try {
+      results = core.search.capPerSession(results, {
+        per: opts.maxPerSession,
+      });
+    } catch { /* keep uncapped results */ }
+  }
+
+  // Two-channel fusion (opt-in): BM25's length normalisation buries long
+  // transcripts that hold the answer (observed ranks 58/143/187), and no
+  // reranker downstream of the candidate list can recover them. AC stores
+  // conversations at both granularities, so rank every whole-session
+  // transcript by IDF-weighted query coverage and RRF-fuse that channel with
+  // the BM25 list. Applied after the breadth cap (the cap governs fragments)
+  // and before the limit slice so fused-in transcripts can claim slots.
+  //
+  // It doubles as a recall safety net: a purely lexical channel returns
+  // NOTHING when the query's words are absent from the corpus verbatim
+  // ("relationship" vs corpus "relationships" is enough — every term scored
+  // df=0 and the whole search came back empty). Coverage is substring-based,
+  // so it degrades to "nearest conversation" instead of "no results".
+  const kLimit = opts.limit || 10;
+  const shortByLimit = results.length < kLimit;
+  if (opts.fuseTranscripts || shortByLimit) {
+    try {
+      const terms = core.search.queryTerms(query);
+      results = core.search.fuseTranscripts(db, results, {
+        project: opts.project || project,
+        terms,
+        // Never shrink a healthy candidate list; allow growth up to k when topping up.
+        limit: Math.max((results || []).length, kLimit),
+        maxTranscripts: opts.maxTranscripts,
+        minCoverage: opts.minCoverage,
+        fill: shortByLimit,
+      });
+    } catch (err) {
+      // Same reasoning as the selection policy below: silent fallback would
+      // make a broken channel look like a channel that simply never helped.
+      console.error('[search] transcript fusion failed:', err && err.message ? err.message : err);
+    }
+  }
+
+  if (opts.limit) {
+    if (opts.selectionPolicy && opts.selectionPolicy !== 'rank') {
+      // Selection policy (opt-in): decide which of the pooled candidates
+      // occupy the k slots instead of taking the first k by FTS rank.
+      // 'coverage' picks by marginal query-term gain (different hops/sessions
+      // carry different terms); 'spread' enforces a floor on how many distinct
+      // conversations are represented. Both are aimed at multi-evidence
+      // questions, where rank order re-proves the same sub-fact.
+      try {
+        const terms = core.search.queryTerms(query);
+        const policy = opts.selectionPolicy;
+        if (policy === 'spread' || policy === 'coverage+spread') {
+          results = core.search.spreadAcrossSessions(results, {
+            limit: opts.limit,
+            minDistinct: opts.minDistinctSessions,
+          });
+        }
+        if (policy === 'coverage' || policy === 'coverage+spread') {
+          results = core.search.greedyCoverageSelect(db, results, {
+            terms,
+            limit: opts.limit,
+          });
+        }
+      } catch (err) {
+        // Do NOT swallow this: a broken selection policy that silently falls
+        // back to a plain cut is indistinguishable from "the policy is inert",
+        // which costs an entire debugging cycle. Log it the way rerank does.
+        console.error('[search] selection policy failed:', err && err.message ? err.message : err);
+      }
+      if (results.length > opts.limit) results = results.slice(0, opts.limit);
+    } else {
+      results = results.slice(0, opts.limit);
+    }
+  }
+
+  // Parent-document expansion (opt-in): swap each conversation's first hit
+  // for that conversation's full transcript and drop the fragments the
+  // transcript already covers, so k slots span k conversations instead of
+  // several turns of one. Best-effort — an expansion failure never breaks a
+  // search, we just return the unexpanded results.
+  if (opts.expandSessions) {
+    try {
+      results = core.search.expandToSessions(db, results, {
+        limit: opts.limit,
+        project: opts.project || project,
+      });
+    } catch { /* keep unexpanded results */ }
+  }
 
   // Frontier 1/2: diversify evidence before exposing it. This prevents a
   // single highly-ranked memory cluster from masking dissent and records an
@@ -4703,6 +4800,105 @@ function doctor(opts) {
   };
 }
 
+/**
+ * Distill learning/error observations into the local lessons/ markdown layer
+ * (Phase 0 of lesson persistence — fully local, privacy-preserving).
+ * @param {Object} [opts] - { project?, outDir?, sinceDays?, minConfidence?, limit?, dryRun? }
+ */
+function distill(opts = {}) {
+  const path = require('path');
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const outDir = opts.outDir || path.join(project, '.cortex', 'lessons');
+  return distillCore.distillObservations(db, { ...opts, project, outDir });
+}
+
+// ── v7.5.1: Lesson seed exchange (phases 1–4) ──────────────────────────────
+
+function seedEnqueue(opts = {}) {
+  const path = require('path');
+  const db = _getDB();
+  const project = opts.project || process.env.AGENTIC_CORTEX_PROJECT || process.cwd();
+  const lessonsDir = opts.lessonsDir || path.join(project, '.cortex', 'lessons');
+  return seedsCore.enqueueLessons(db, lessonsDir, opts);
+}
+
+function seedQueue(opts = {}) {
+  return seedsCore.listReviewQueue(_getDB(), opts);
+}
+
+function seedReview(opts = {}) {
+  if (!opts.id || !opts.decision) throw new Error('seedReview requires id and decision (approved|rejected)');
+  return seedsCore.reviewSeed(_getDB(), opts.id, opts.decision, opts);
+}
+
+function seedPublish(opts = {}) {
+  if (!opts.registry) throw new Error('seedPublish requires --registry <path to repo clone>');
+  return seedsCore.publishApproved(_getDB(), opts.registry, opts.projectRoot || process.cwd(), opts);
+}
+
+function seedPull(opts = {}) {
+  if (!opts.registry) throw new Error('seedPull requires --registry <path to repo clone>');
+  let trusted = opts.trustedKeys;
+  if (!trusted && opts.trustKeysFile && fsMod.existsSync(opts.trustKeysFile)) {
+    trusted = fsMod.readFileSync(opts.trustKeysFile, 'utf8')
+      .split(/(?=-----BEGIN)/).map(s => s.trim())
+      .filter(s => s.startsWith('-----BEGIN'));
+  }
+  return seedsCore.pullSeeds(_getDB(), opts.registry, { ...opts, trustedKeys: trusted });
+}
+
+function seedGrade(opts = {}) {
+  if (!opts.id || !opts.grade) throw new Error('seedGrade requires id and grade (helpful|not_helpful)');
+  return seedsCore.gradeSeed(_getDB(), opts.id, opts.grade);
+}
+
+function seedTally(opts = {}) {
+  return seedsCore.gradeTally(_getDB(), { projectRoot: opts.projectRoot || process.cwd(), ...opts });
+}
+
+/**
+ * Federated grade sync over the registry repo's grades/ directory (phase 3b):
+ * merge all machine replicas' CRDT counters, recompute local quorum from
+ * merged state, optionally retire seeds that failed quorum.
+ * Caller runs `git pull` before / `git push` after — same as seed publish/pull.
+ */
+function seedSync(opts = {}) {
+  if (!opts.registry) throw new Error('seedSync requires --registry <path to repo clone>');
+  return seedsCore.syncGrades(_getDB(), opts.registry, opts);
+}
+
+// ── v7.5.2: Trust plane — Merkle-chained seed log (phase 3c) ──────────────
+
+function seedLogVerify(opts = {}) {
+  if (!opts.registry) throw new Error('seedLogVerify requires --registry <path to repo clone>');
+  const log = seedsCore.readSeedLog(opts.registry);
+  return { length: log.length, chainBroken: log.chainBroken, brokenAt: log.brokenAt, entries: log.entries };
+}
+
+function seedLogHead(opts = {}) {
+  if (!opts.registry) throw new Error('seedLogHead requires --registry <path to repo clone>');
+  return seedsCore.signSeedLogHead(opts.registry, opts.projectRoot || process.cwd());
+}
+
+function seedLogObserve(opts = {}) {
+  if (!opts.registry) throw new Error('seedLogObserve requires --registry <path to repo clone>');
+  const seedLog = require('../core/seed-log');
+  const headFile = require('path').join(opts.registry, 'log', 'head.json');
+  if (!fsMod.existsSync(headFile)) return { witnesses: 0, conflicts: [], reason: 'no head.json in registry' };
+  const head = JSON.parse(fsMod.readFileSync(headFile, 'utf8'));
+  let trusted = opts.trustedKeys;
+  if (!trusted && opts.trustKeysFile && fsMod.existsSync(opts.trustKeysFile)) {
+    trusted = fsMod.readFileSync(opts.trustKeysFile, 'utf8').split(/(?=-----BEGIN)/).map(s => s.trim()).filter(s => s.startsWith('-----BEGIN'));
+  }
+  return seedLog.observeHeads(opts.projectRoot || process.cwd(), [head], trusted);
+}
+
+function seedLogProof(opts = {}) {
+  if (!opts.registry || !opts.seedHash) throw new Error('seedLogProof requires --registry and --seed-hash');
+  return seedsCore.seedInclusionProof(opts.registry, opts.seedHash);
+}
+
 module.exports = {
   save, get, edit, forget, list,
   search, keywordSearch, semanticSearch,
@@ -4727,6 +4923,12 @@ module.exports = {
   // ── v7.5.0: Calibration, settleable claims, doctor, rebuild ──
   getCalibration, deadMemories, settleClaims, verifyEvalChain, rebuildVault, doctor,
   runMaintenance, checkAndRunMaintenance, initMaintenanceScheduler,
+  // ── v7.5.1: Phase-0 lesson distillation ──
+  distill,
+  // ── v7.5.1: Lesson seed exchange ──
+  seedEnqueue, seedQueue, seedReview, seedPublish, seedPull, seedGrade, seedTally, seedSync,
+  // ── v7.5.2: Trust plane ──
+  seedLogVerify, seedLogHead, seedLogObserve, seedLogProof,
   analytics,
   promoteToGlobal, autoPromoteGlobal, getGlobalVault, searchAllProjects, machineAnalytics,
   getStandardsContext: standards.getStandardsContext,

@@ -198,6 +198,23 @@ const TOOLS = [
     },
   },
   {
+    name: 'memory_seeds',
+    description: 'Lesson seed exchange: enqueue distilled lessons for human review, list the queue, publish approved seeds to a git-registry clone, pull+verify+import seeds from it, grade imported seeds, or tally grades. Privacy: only human-approved, sanitized, signed lessons ever leave the machine.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['queue', 'review', 'publish', 'pull', 'grade', 'tally'], description: 'Exchange operation' },
+        registry: { type: 'string', description: 'Path to a local clone of the seed registry repo (publish/pull)' },
+        status: { type: 'string', description: 'Queue status filter (queue)' },
+        id: { type: 'integer', description: 'Queue row id (review) or observation id (grade)' },
+        decision: { type: 'string', enum: ['approved', 'rejected'], description: 'Review decision' },
+        grade: { type: 'string', enum: ['helpful', 'not_helpful'], description: 'Seed grade' },
+        limit: { type: 'integer', description: 'Max rows' },
+      },
+      required: ['action'],
+    },
+  },
+  {
     name: 'memory_rebuild',
     description: 'Rebuild the SQLite vault from a JSON export (SQLite as a rebuildable index, not the only copy of the truth). DESTRUCTIVE: wipes memory tables first; requires confirm=true.',
     inputSchema: {
@@ -2198,6 +2215,17 @@ async function callTool(name, args) {
 
     case 'memory_doctor':
       return api.doctor(args);
+
+    case 'memory_seeds': {
+      const a = args || {};
+      if (a.action === 'queue') return api.seedQueue({ status: a.status, limit: a.limit });
+      if (a.action === 'review') return api.seedReview({ id: a.id, decision: a.decision, reviewedBy: 'mcp' });
+      if (a.action === 'publish') return api.seedPublish({ registry: a.registry });
+      if (a.action === 'pull') return api.seedPull({ registry: a.registry });
+      if (a.action === 'grade') return api.seedGrade({ id: a.id, grade: a.grade });
+      if (a.action === 'tally') return api.seedTally({});
+      throw new Error('unknown seeds action: ' + a.action);
+    }
 
     case 'memory_rebuild':
       return api.rebuildVault(args);

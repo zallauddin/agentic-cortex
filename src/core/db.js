@@ -904,6 +904,41 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_feedback_events_time ON feedback_events(created_at);
   `);
 
+  // ── Lesson seed exchange (phases 1–4) ──────────────────────────────────
+  // Queue of distilled lessons reviewed by a human for sharing. Nothing is
+  // published without an explicit approval recorded here.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS seed_review_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lesson_hash TEXT NOT NULL,
+      lesson_file TEXT,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'machine',
+      source_ids TEXT NOT NULL DEFAULT '[]',
+      sanitization_report TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','published')),
+      reviewed_at TEXT,
+      reviewed_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_seed_queue_status ON seed_review_queue(status);
+  `);
+
+  // Grades a consuming machine gives to an imported seed — the local half of
+  // quorum promotion. Pulled and aggregated as (seed_hash, grade, machine-hash)
+  // counts only; never carries content or identity.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS seed_grades (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      seed_hash TEXT NOT NULL,
+      grade TEXT NOT NULL CHECK (grade IN ('helpful','not_helpful')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_seed_grades_hash ON seed_grades(seed_hash);
+  `);
+
   // Tamper-evident evaluation log — each row carries a hash over the previous
   // row's hash. Tamper-EVIDENT, not tamper-proof: whoever holds the file can
   // rewrite it end to end, but a single retroactive edit becomes obvious.

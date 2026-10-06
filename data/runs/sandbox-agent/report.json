@@ -1,0 +1,349 @@
+{
+  "timestamp": "2026-09-12T13:38:32.870Z",
+  "version": "7.4.0",
+  "sandbox": {
+    "root": "C:\\Users\\user\\AppData\\Local\\Temp\\ac-agent-sandbox-XRFktk",
+    "db": "C:/Users/user/AppData/Local/Temp/ac-agent-sandbox-XRFktk/memory.db",
+    "projectA": "C:\\Users\\user\\AppData\\Local\\Temp\\ac-agent-sandbox-XRFktk\\project-alpha",
+    "projectB": "C:\\Users\\user\\AppData\\Local\\Temp\\ac-agent-sandbox-XRFktk\\project-beta",
+    "kept": false
+  },
+  "durationMs": 6197,
+  "summary": {
+    "total": 47,
+    "pass": 47,
+    "fail": 0,
+    "byScenario": {
+      "S1": {
+        "pass": 6,
+        "fail": 0
+      },
+      "S2": {
+        "pass": 3,
+        "fail": 0
+      },
+      "S3": {
+        "pass": 8,
+        "fail": 0
+      },
+      "S4": {
+        "pass": 4,
+        "fail": 0
+      },
+      "S5": {
+        "pass": 3,
+        "fail": 0
+      },
+      "S6": {
+        "pass": 4,
+        "fail": 0
+      },
+      "S6b": {
+        "pass": 3,
+        "fail": 0
+      },
+      "S7": {
+        "pass": 7,
+        "fail": 0
+      },
+      "S8": {
+        "pass": 3,
+        "fail": 0
+      },
+      "S9": {
+        "pass": 6,
+        "fail": 0
+      }
+    }
+  },
+  "dbStats": {
+    "observations": 108,
+    "active": 107,
+    "sessions": 6,
+    "projects": 3
+  },
+  "checks": [
+    {
+      "scenario": "S1",
+      "name": "mcp-config emits valid MCP wiring",
+      "pass": true,
+      "evidence": "ok"
+    },
+    {
+      "scenario": "S1",
+      "name": "MCP initialize handshake succeeds",
+      "pass": true,
+      "evidence": "{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{\"listChanged\":false}},\"serverInfo\":{\"name\":\"agentic-cortex\",\"version\":\"7.4.0\"}}}"
+    },
+    {
+      "scenario": "S1",
+      "name": "memory_health responds on fresh DB",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S1",
+      "name": "session startup latency reasonable (<15s incl. node boot)",
+      "pass": true,
+      "evidence": "90ms"
+    },
+    {
+      "scenario": "S1",
+      "name": "tools/list exposes a rich toolset (>=20 tools)",
+      "pass": true,
+      "evidence": "got 133: memory_save,memory_search,memory_get,memory_list,memory_edit,memory_forget,memory_context,memory_reflect,session_start,session_end"
+    },
+    {
+      "scenario": "S1",
+      "name": "memory_bootstrap present with session-start guidance",
+      "pass": true,
+      "evidence": "🔑 BOOTSTRAP — Call this FIRST at session start. Returns structured XML context with: task-relevant memories (hybrid search + cross-encoder reranking), LLM-generated actionable insights, recent sessio"
+    },
+    {
+      "scenario": "S2",
+      "name": "bootstrap on empty project succeeds without error",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S2",
+      "name": "bootstrap returns structured context (XML)",
+      "pass": true,
+      "evidence": "no markup in: \"<agentic_cortex_context project=\\\"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\\\" generated=\\\"2026-09-12T13:38:28.010"
+    },
+    {
+      "scenario": "S2",
+      "name": "cold-start bootstrap latency < 15s",
+      "pass": true,
+      "evidence": "917ms"
+    },
+    {
+      "scenario": "S3",
+      "name": "save \"Use vitest not jest\"",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S3",
+      "name": "save \"Windows path gotcha\"",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S3",
+      "name": "save \"API auth scheme\"",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S3",
+      "name": "save \"Release procedure\"",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S3",
+      "name": "save \"User prefers tabs\"",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S3",
+      "name": "search \"which test framework\" retrieves the vitest decision",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90037,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"decision\",\n    \"title\": \"Use vitest not jest\",\n    \"preview\": \"DECISION: this project uses "
+    },
+    {
+      "scenario": "S3",
+      "name": "search \"how does authentication work\" retrieves the JWT architecture note",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90039,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"architecture\",\n    \"title\": \"API auth scheme\",\n    \"preview\": \"ARCHITECTURE: auth uses shor"
+    },
+    {
+      "scenario": "S3",
+      "name": "memory_get by returned id round-trips full content (id=90040)",
+      "pass": true,
+      "evidence": "{\n  \"id\": 90040,\n  \"session_id\": null,\n  \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n  \"type\": \"p"
+    },
+    {
+      "scenario": "S4",
+      "name": "session_start returns a session id",
+      "pass": true,
+      "evidence": "{\n  \"session_id\": \"session-1789220308345-rji7\",\n  \"status\": \"started\"\n}"
+    },
+    {
+      "scenario": "S4",
+      "name": "session_end accepts summary",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S4",
+      "name": "memory_context lists the recorded session",
+      "pass": true,
+      "evidence": "\"# Agentic Cortex - Project Context\\n\\n## 🔧 Coding Standards (auto-injected — ALWAYS in effect)\\n\\nThese standards are pre-loaded and always active. You MUST apply them at every phase of development. They are not optional — they are the rules of the"
+    },
+    {
+      "scenario": "S4",
+      "name": "memory_profile returns project-scoped activity",
+      "pass": true,
+      "evidence": "{\n  \"project\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n  \"static\": [\n    {\n    "
+    },
+    {
+      "scenario": "S5",
+      "name": "bootstrap after restart injects prior-session facts",
+      "pass": true,
+      "evidence": "missing:  — text: \"<agentic_cortex_context project=\\\"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\\\" generated=\\\"2026-09-12T13:38:29.284Z\\\" task=\\\"adding a new endpoint\\\">\\n  <session_started id=\\\"session-1789220309285-396h\\\" />\\n  <team_memory_sync status=\\\"ok\\\" pulled=\\\"60\\\" new=\\\"0\\"
+    },
+    {
+      "scenario": "S5",
+      "name": "search recalls release procedure across sessions",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90040,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"procedure\",\n    \"title\": \"Release procedu"
+    },
+    {
+      "scenario": "S5",
+      "name": "search recalls preference across sessions",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90041,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"preference\",\n    \"title\": \"User prefers t"
+    },
+    {
+      "scenario": "S6",
+      "name": "project B bootstrap does NOT leak project A facts (vitest)",
+      "pass": true,
+      "evidence": "clean"
+    },
+    {
+      "scenario": "S6",
+      "name": "project B search does not return A's vitest decision",
+      "pass": true,
+      "evidence": "clean"
+    },
+    {
+      "scenario": "S6",
+      "name": "project B search finds its own pnpm decision",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90043,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-beta\",\n    \"type\": \"decision\",\n    \"title\": \"Beta uses pnpm\",\n"
+    },
+    {
+      "scenario": "S6",
+      "name": "machine-wide search finds project A facts from project B",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90037,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"decision\",\n    \"title\": \"Use vitest not j"
+    },
+    {
+      "scenario": "S6b",
+      "name": "save machine lesson in project A",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S6b",
+      "name": "promote observation to global vault",
+      "pass": true,
+      "evidence": "{\n  \"id\": 6,\n  \"status\": \"already_global\",\n  \"previousScope\": \"global\"\n}"
+    },
+    {
+      "scenario": "S6b",
+      "name": "global vault fact recallable from a DIFFERENT project",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90044,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"learning\",\n    \"title\": \"MACHINE LESSON: always pin CI node version\",\n    \"preview\": \"Lesso"
+    },
+    {
+      "scenario": "S7",
+      "name": "plant 3 critical facts in session 1",
+      "pass": true,
+      "evidence": "4 responses"
+    },
+    {
+      "scenario": "S7",
+      "name": "9 churn sessions × 3 saves all succeed (27 saves)",
+      "pass": true,
+      "evidence": "0 failures"
+    },
+    {
+      "scenario": "S7",
+      "name": "maintenance cycle runs without error",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S7",
+      "name": "critical fact 1 (migrations) retrievable after churn+maintenance",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90045,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"decision\",\n    \"title\": \"CRITICAL: db mig"
+    },
+    {
+      "scenario": "S7",
+      "name": "critical fact 2 (generated/) retrievable",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90046,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"gotcha\",\n    \"title\": \"CRITICAL: never to"
+    },
+    {
+      "scenario": "S7",
+      "name": "critical fact 3 (deploy freeze) retrievable",
+      "pass": true,
+      "evidence": "[\n  {\n    \"id\": 90047,\n    \"agent_id\": null,\n    \"project_path\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\",\n    \"type\": \"procedure\",\n    \"title\": \"CRITICAL: deplo"
+    },
+    {
+      "scenario": "S7",
+      "name": "bootstrap after 30 memories + maintenance still surfaces critical facts",
+      "pass": true,
+      "evidence": "\"<agentic_cortex_context project=\\\"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\ac-agent-sandbox-XRFktk\\\\project-alpha\\\" generated=\\\"2026-09-12T13:38:32.385Z\\\" task=\\\"planning a schema change and deploy\\\">\\n  <session_started id=\\\"session-1789220312385-i0s4\\\" />\\n  <team_memory_sync status=\\\"ok\\\" pulled=\\"
+    },
+    {
+      "scenario": "S8",
+      "name": "agent-1: 10/10 saves succeed under concurrency",
+      "pass": true,
+      "evidence": "10/10 — stderr: ic embeddings disabled (memory safety). Set AGENTIC_CORTEX_EMBEDDINGS=1 to enable, or use an explicit embedding command. Degrading to keyword search.\n"
+    },
+    {
+      "scenario": "S8",
+      "name": "agent-2: 10/10 saves succeed under concurrency",
+      "pass": true,
+      "evidence": "10/10 — stderr: ic embeddings disabled (memory safety). Set AGENTIC_CORTEX_EMBEDDINGS=1 to enable, or use an explicit embedding command. Degrading to keyword search.\n"
+    },
+    {
+      "scenario": "S8",
+      "name": "all 20 concurrent writes are durable and searchable",
+      "pass": true,
+      "evidence": "found 20 matching results; stderr: evidence decay, Learning verify, Outcome tracking, Conflict check, Experiment spawn, Plateau detect)\n[agentic-cortex-mcp] MCP server started on stdio\n"
+    },
+    {
+      "scenario": "S9",
+      "name": "empty query does not crash (graceful)",
+      "pass": true,
+      "evidence": "ok"
+    },
+    {
+      "scenario": "S9",
+      "name": "unicode/Fts-hostile query does not crash",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S9",
+      "name": "memory_edit updates content (versioned)",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S9",
+      "name": "feedback round-trips",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S9",
+      "name": "memory_forget soft-deletes",
+      "pass": true,
+      "evidence": ""
+    },
+    {
+      "scenario": "S9",
+      "name": "forgotten memory no longer returned by search",
+      "pass": true,
+      "evidence": "clean"
+    }
+  ]
+}

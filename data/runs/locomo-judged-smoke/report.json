@@ -1,0 +1,2250 @@
+{
+  "provider": "agentic-cortex",
+  "benchmark": "locomo",
+  "runId": "ac-smoke1",
+  "dataSourceRunId": "ac-smoke1",
+  "judge": "gpt-4o",
+  "answeringModel": "gpt-4o",
+  "timestamp": "2026-10-05T22:54:16.117Z",
+  "summary": {
+    "totalQuestions": 15,
+    "correctCount": 6,
+    "accuracy": 0.4
+  },
+  "latency": {
+    "ingest": {
+      "min": 4572,
+      "max": 4623,
+      "mean": 4576,
+      "median": 4572,
+      "p95": 4623,
+      "p99": 4623,
+      "stdDev": 13,
+      "count": 15
+    },
+    "indexing": {
+      "min": 0,
+      "max": 0,
+      "mean": 0,
+      "median": 0,
+      "p95": 0,
+      "p99": 0,
+      "stdDev": 0,
+      "count": 0
+    },
+    "search": {
+      "min": 79,
+      "max": 135,
+      "mean": 107,
+      "median": 108,
+      "p95": 135,
+      "p99": 135,
+      "stdDev": 16,
+      "count": 15
+    },
+    "answer": {
+      "min": 77583,
+      "max": 566183,
+      "mean": 347377,
+      "median": 404395,
+      "p95": 566183,
+      "p99": 566183,
+      "stdDev": 171463,
+      "count": 15
+    },
+    "evaluate": {
+      "min": 147160,
+      "max": 916294,
+      "mean": 585327,
+      "median": 587714,
+      "p95": 916294,
+      "p99": 916294,
+      "stdDev": 330211,
+      "count": 15
+    },
+    "total": {
+      "min": 233982,
+      "max": 1472178,
+      "mean": 937386,
+      "median": 996770,
+      "p95": 1472178,
+      "p99": 1472178,
+      "stdDev": 366127,
+      "count": 15
+    }
+  },
+  "tokens": {
+    "totalTokens": 16834,
+    "basePromptTokens": 1962,
+    "contextTokens": 14872,
+    "avgTokensPerQuestion": 1122,
+    "avgBasePromptTokens": 131,
+    "avgContextTokens": 991
+  },
+  "memscore": "40% / 107ms / 991tok",
+  "memscoreComponents": {
+    "quality": 40,
+    "latencyMs": 107,
+    "contextTokens": 991
+  },
+  "retrieval": {
+    "hitAtK": 0.4666666666666667,
+    "precisionAtK": 0.08666666666666668,
+    "recallAtK": 0.4666666666666667,
+    "f1AtK": 0.14079254079254078,
+    "mrr": 0.2966666666666667,
+    "ndcg": 0.3522124404175678,
+    "k": 10
+  },
+  "byQuestionType": {
+    "multi-hop": {
+      "total": 3,
+      "correct": 0,
+      "accuracy": 0,
+      "latency": {
+        "search": {
+          "min": 115,
+          "max": 135,
+          "mean": 126,
+          "median": 128,
+          "p95": 135,
+          "p99": 135,
+          "stdDev": 8,
+          "count": 3
+        },
+        "answer": {
+          "min": 77583,
+          "max": 551212,
+          "mean": 259325,
+          "median": 149181,
+          "p95": 551212,
+          "p99": 551212,
+          "stdDev": 208455,
+          "count": 3
+        },
+        "total": {
+          "min": 233982,
+          "max": 1472178,
+          "mean": 669086,
+          "median": 301099,
+          "p95": 1472178,
+          "p99": 1472178,
+          "stdDev": 568532,
+          "count": 3
+        }
+      },
+      "retrieval": {
+        "hitAtK": 0.3333333333333333,
+        "precisionAtK": 0.03333333333333333,
+        "recallAtK": 0.3333333333333333,
+        "f1AtK": 0.06060606060606061,
+        "mrr": 0.3333333333333333,
+        "ndcg": 0.3333333333333333,
+        "k": 10
+      }
+    },
+    "temporal": {
+      "total": 3,
+      "correct": 1,
+      "accuracy": 0.3333333333333333,
+      "latency": {
+        "search": {
+          "min": 103,
+          "max": 124,
+          "mean": 112,
+          "median": 108,
+          "p95": 124,
+          "p99": 124,
+          "stdDev": 9,
+          "count": 3
+        },
+        "answer": {
+          "min": 259677,
+          "max": 566183,
+          "mean": 365585,
+          "median": 270895,
+          "p95": 566183,
+          "p99": 566183,
+          "stdDev": 141918,
+          "count": 3
+        },
+        "total": {
+          "min": 508957,
+          "max": 1180648,
+          "mean": 816286,
+          "median": 759253,
+          "p95": 1180648,
+          "p99": 1180648,
+          "stdDev": 277166,
+          "count": 3
+        }
+      },
+      "retrieval": {
+        "hitAtK": 0.6666666666666666,
+        "precisionAtK": 0.06666666666666667,
+        "recallAtK": 0.6666666666666666,
+        "f1AtK": 0.12121212121212122,
+        "mrr": 0.15,
+        "ndcg": 0.27250978843597823,
+        "k": 10
+      }
+    },
+    "single-hop": {
+      "total": 3,
+      "correct": 0,
+      "accuracy": 0,
+      "latency": {
+        "search": {
+          "min": 111,
+          "max": 120,
+          "mean": 116,
+          "median": 117,
+          "p95": 120,
+          "p99": 120,
+          "stdDev": 4,
+          "count": 3
+        },
+        "answer": {
+          "min": 129091,
+          "max": 184079,
+          "mean": 162606,
+          "median": 174649,
+          "p95": 184079,
+          "p99": 184079,
+          "stdDev": 24010,
+          "count": 3
+        },
+        "total": {
+          "min": 1050070,
+          "max": 1105029,
+          "mean": 1083575,
+          "median": 1095626,
+          "p95": 1105029,
+          "p99": 1105029,
+          "stdDev": 24001,
+          "count": 3
+        }
+      },
+      "retrieval": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10
+      }
+    },
+    "world-knowledge": {
+      "total": 3,
+      "correct": 2,
+      "accuracy": 0.6666666666666666,
+      "latency": {
+        "search": {
+          "min": 91,
+          "max": 99,
+          "mean": 95,
+          "median": 94,
+          "p95": 99,
+          "p99": 99,
+          "stdDev": 3,
+          "count": 3
+        },
+        "answer": {
+          "min": 410885,
+          "max": 548366,
+          "mean": 492427,
+          "median": 518030,
+          "p95": 548366,
+          "p99": 548366,
+          "stdDev": 58974,
+          "count": 3
+        },
+        "total": {
+          "min": 771785,
+          "max": 939890,
+          "mean": 849638,
+          "median": 837239,
+          "p95": 939890,
+          "p99": 939890,
+          "stdDev": 69186,
+          "count": 3
+        }
+      },
+      "retrieval": {
+        "hitAtK": 1,
+        "precisionAtK": 0.2333333333333333,
+        "recallAtK": 1,
+        "f1AtK": 0.36829836829836826,
+        "mrr": 0.8333333333333334,
+        "ndcg": 0.910942873492597,
+        "k": 10
+      }
+    },
+    "adversarial": {
+      "total": 3,
+      "correct": 3,
+      "accuracy": 1,
+      "latency": {
+        "search": {
+          "min": 79,
+          "max": 89,
+          "mean": 84,
+          "median": 85,
+          "p95": 89,
+          "p99": 89,
+          "stdDev": 4,
+          "count": 3
+        },
+        "answer": {
+          "min": 404395,
+          "max": 546852,
+          "mean": 456941,
+          "median": 419576,
+          "p95": 546852,
+          "p99": 546852,
+          "stdDev": 63878,
+          "count": 3
+        },
+        "total": {
+          "min": 996770,
+          "max": 1467797,
+          "mean": 1268344,
+          "median": 1340466,
+          "p95": 1467797,
+          "p99": 1467797,
+          "stdDev": 198943,
+          "count": 3
+        }
+      },
+      "retrieval": {
+        "hitAtK": 0.3333333333333333,
+        "precisionAtK": 0.09999999999999999,
+        "recallAtK": 0.3333333333333333,
+        "f1AtK": 0.15384615384615383,
+        "mrr": 0.16666666666666666,
+        "ndcg": 0.24427620682593035,
+        "k": 10
+      }
+    }
+  },
+  "questionTypeRegistry": {
+    "single-hop": {
+      "id": "single-hop",
+      "alias": "single",
+      "description": "Single-hop fact recall"
+    },
+    "multi-hop": {
+      "id": "multi-hop",
+      "alias": "multi",
+      "description": "Multi-hop reasoning across sessions"
+    },
+    "temporal": {
+      "id": "temporal",
+      "alias": "temporal",
+      "description": "Temporal reasoning"
+    },
+    "world-knowledge": {
+      "id": "world-knowledge",
+      "alias": "world",
+      "description": "Commonsense/world knowledge"
+    },
+    "adversarial": {
+      "id": "adversarial",
+      "alias": "adversarial",
+      "description": "Adversarial (unanswerable)"
+    }
+  },
+  "evaluations": [
+    {
+      "questionId": "conv-26-q0",
+      "questionType": "multi-hop",
+      "question": "When did Caroline go to the LGBTQ support group?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "I am Qwythos, created by Empero AI. The hypothesis says 'Answer: I don't know', which does not contain the correct answer (7 May 2023). Therefore score=0.",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "7 May 2023",
+      "searchResults": [
+        {
+          "id": "46",
+          "content": "[Speaker A]: I went to a LGBTQ support group yesterday and it was so powerful.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1",
+          "content": "[Speaker A]: Hey Mel! Good to see you! How have you been?\n[Speaker B]: Hey Caroline! Good to see you! I'm swamped with the kids & work. What's up with you? Anything new?\n[Speaker A]: I went to a LGBTQ support group yesterday and it was so powerful.\n[Speaker B]: Wow, that's cool, Caroline! What happe",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3061",
+          "content": "[Speaker A]: Thanks, Melanie! It's awesome to have our own platform to be ourselves and support others' rights. Our group, 'Connected LGBTQ Activists', is made of all kinds of people investing in positive changes. We have regular meetings, plan events and campaigns, to get together and support each ",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4051",
+          "content": "[Speaker A]: That's so funny! I used to go horseback riding with my dad when I was a kid, we'd go through the fields, feeling the wind. It was so special. I've always had a love for horses!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "106",
+          "content": "[Speaker A]: The support group has made me feel accepted and given me courage to embrace myself.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3031",
+          "content": "[Speaker A]: Hey Mel! A lot's happened since we last chatted - I just joined a new LGBTQ activist group last Tues. I'm meeting so many cool people who are as passionate as I am about rights and community support. I'm giving my voice and making a real difference, plus it's fulfilling in so many ways.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3631",
+          "content": "[Speaker A]: Hey Mel! How're ya doin'? Recently, I had a not-so-great experience on a hike. I ran into a group of religious conservatives who said something that really upset me. It made me think how much work we still have to do for LGBTQ rights. It's been so helpful to have people around me who ac",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2986",
+          "content": "[Speaker A]: Hey Melanie! Just wanted to say hi!\n[Speaker B]: Hey Caroline! Good to talk to you again. What's up? Anything new since last time?\n[Speaker A]: Hey Mel! A lot's happened since we last chatted - I just joined a new LGBTQ activist group last Tues. I'm meeting so many cool people who are a",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3946",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3646",
+          "content": "[Speaker B]: Hey Caroline, sorry about the hike. It sucks when people are so closed-minded. Strong support really helps. FYI, I finished another pottery project - want to see a pic?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 135,
+      "answerDurationMs": 149181,
+      "totalDurationMs": 301099,
+      "retrievalMetrics": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10,
+        "relevantRetrieved": 0,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q1",
+      "questionType": "multi-hop",
+      "question": "When did Melanie paint a sunrise?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "The model's hypothesis 'I don't know' does not contain the correct answer (2022) nor any intermediate steps toward it.",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "2022",
+      "searchResults": [
+        {
+          "id": "212",
+          "content": "[Speaker B]: Yeah, I painted that lake sunrise last year! It's special to me.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4277",
+          "content": "[Speaker A]: Thanks, Melanie! That plate is awesome! Did you make it?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4322",
+          "content": "[Speaker B]: Wow Caroline, that looks amazing! Those colors are so vivid, it really looks like a real sunset. What gave you the idea to paint it?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4097",
+          "content": "[Speaker B]: Thanks, Caroline! Glad you like it. Yeah, I love to. It's peaceful and special. Horses have such grace! Do you like to paint too?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3662",
+          "content": "[Speaker A]: Sure thing, Melanie! Can't wait to see your pottery project.  I'm happy you found something that makes you happy. Show me when you can!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3947",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5687",
+          "content": "[Speaker A]: Wow Mel, that's stunning! Love the colors and the chilled-out sunset vibe. What made you paint it? I've been trying out abstract stuff recently. It's kinda freeing, just putting my feelings on the canvas without too much of a plan. It's like a cool form of self-expression.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "962",
+          "content": "[Speaker A]: Thanks, Melanie! This necklace is super special to me - a gift from my grandma in my home country, Sweden. She gave it to me when I was young, and it stands for love, faith and strength. It's like a reminder of my roots and all the love and support I get from my family.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2",
+          "content": "[Speaker A]: Hey Mel! Good to see you! How have you been?\n[Speaker B]: Hey Caroline! Good to see you! I'm swamped with the kids & work. What's up with you? Anything new?\n[Speaker A]: I went to a LGBTQ support group yesterday and it was so powerful.\n[Speaker B]: Wow, that's cool, Caroline! What happe",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3962",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 128,
+      "answerDurationMs": 77583,
+      "totalDurationMs": 233982,
+      "retrievalMetrics": {
+        "hitAtK": 1,
+        "precisionAtK": 0.1,
+        "recallAtK": 1,
+        "f1AtK": 0.18181818181818182,
+        "mrr": 1,
+        "ndcg": 1,
+        "k": 10,
+        "relevantRetrieved": 1,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q2",
+      "questionType": "temporal",
+      "question": "What fields would Caroline be likely to pursue in her educaton?",
+      "score": 1,
+      "label": "correct",
+      "explanation": "The model mentions counseling and psychology, which matches the ground truth.",
+      "hypothesis": "I am Qwythos, created by Empero AI. Based on the retrieved context, Caroline would likely pursue counseling (or counseling-related fields such as psychology or social work).",
+      "groundTruth": "Psychology, counseling certification",
+      "searchResults": [
+        {
+          "id": "6003",
+          "content": "[Speaker B]: Thanks! They were scared but we reassured them and explained their brother would be OK. They're tough kids.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3273",
+          "content": "[Speaker B]: I'll never forget the day my youngest took her first steps. Seeing her wobble as she took those initial steps really put into perspective how fleeting life is and how lucky I am to be able to share these moments.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1128",
+          "content": "[Speaker B]: Woah, Caroline, it sounds like you're doing some impressive work. It's inspiring to see your dedication to helping others. What motivated you to pursue counseling?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1833",
+          "content": "[Speaker B]: Caroline, so glad you got the support! Your experience really brought you to where you need to be. You're gonna make a huge difference! This book I read last year reminds me to always pursue my dreams, just like you are doing!🌟",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4053",
+          "content": "[Speaker A]: That's so funny! I used to go horseback riding with my dad when I was a kid, we'd go through the fields, feeling the wind. It was so special. I've always had a love for horses!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4593",
+          "content": "[Speaker B]: That's so nice, Caroline! Art can be in the most unlikely places. Love and acceptance really can be found everywhere.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2988",
+          "content": "[Speaker A]: Hey Melanie! Just wanted to say hi!\n[Speaker B]: Hey Caroline! Good to talk to you again. What's up? Anything new since last time?\n[Speaker A]: Hey Mel! A lot's happened since we last chatted - I just joined a new LGBTQ activist group last Tues. I'm meeting so many cool people who are a",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "423",
+          "content": "[Speaker B]: Wow, Caroline! That's awesome! Taking in kids in need - you're so kind. Your future family is gonna be so lucky to have you!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1878",
+          "content": "[Speaker A]: I loved \"Becoming Nicole\" by Amy Ellis Nutt. It's a real inspiring true story about a trans girl and her family. It made me feel connected and gave me a lot of hope for my own path. Highly recommend it for sure!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1713",
+          "content": "[Speaker A]: Hey Mel, great to chat with you again! So much has happened since we last spoke - I went to an LGBTQ conference two days ago and it was really special. I got the chance to meet and connect with people who've gone through similar journeys. It was such a welcoming environment and I felt t",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 124,
+      "answerDurationMs": 259677,
+      "totalDurationMs": 1180648,
+      "retrievalMetrics": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10,
+        "relevantRetrieved": 0,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q3",
+      "questionType": "single-hop",
+      "question": "What did Caroline research?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "Failed to parse judge response",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "Adoption agencies",
+      "searchResults": [
+        {
+          "id": "64",
+          "content": "[Speaker B]: Wow, that's cool, Caroline! What happened that was so awesome? Did you hear any inspiring stories?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "259",
+          "content": "[Speaker A]: Totally agree, Mel. Relaxing and expressing ourselves is key. Well, I'm off to go do some research.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5614",
+          "content": "[Speaker B]: Thanks for the tip, Caroline. Doing research and readying myself emotionally makes sense. I'll do that. BTW, recently I had a setback. Last month I got hurt and had to take a break from pottery, which I use for self-expression and peace.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2419",
+          "content": "[Speaker B]: Wow, what an experience! How did it make you feel?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1894",
+          "content": "[Speaker B]: That sounds awesome! What did you take away from it to use in your life?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4",
+          "content": "[Speaker A]: Hey Mel! Good to see you! How have you been?\n[Speaker B]: Hey Caroline! Good to see you! I'm swamped with the kids & work. What's up with you? Anything new?\n[Speaker A]: I went to a LGBTQ support group yesterday and it was so powerful.\n[Speaker B]: Wow, that's cool, Caroline! What happe",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5599",
+          "content": "[Speaker A]: Yep! Do your research and find an adoption agency or lawyer. They'll help with the process and provide all the info. Gather documents like references, financial info and medical checks. Don't forget to prepare emotionally, since the wait can be hard. It's all worth it in the end though.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5674",
+          "content": "[Speaker B]: Yeah, Here's one I did last week. It's inspired by the sunsets. The colors make me feel calm. What have you been up to lately, artistically?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2449",
+          "content": "[Speaker B]: Wow, Caroline! That's huge! How did it feel to be around so much love and acceptance?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "6154",
+          "content": "[Speaker B]: Thanks, Caroline! Yup, we just did it yesterday! The kids loved it and it was a nice way to relax after the road trip.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 120,
+      "answerDurationMs": 174649,
+      "totalDurationMs": 1095626,
+      "retrievalMetrics": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10,
+        "relevantRetrieved": 0,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q4",
+      "questionType": "single-hop",
+      "question": "What is Caroline's identity?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "The hypothesis does not contain any information about Caroline's identity; it simply states 'I don't know', which is insufficient to match the ground truth answer of 'Transgender woman'. Therefore, the response is incorrect.",
+      "hypothesis": "I don't know",
+      "groundTruth": "Transgender woman",
+      "searchResults": [
+        {
+          "id": "3530",
+          "content": "[Speaker A]: Thanks, Melanie. Here's one- 'Embracing Identity' is all about finding comfort and love in being yourself. The woman in the painting stands for the journey of acceptance. My aim was to show warmth, love and self-acceptance.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4145",
+          "content": "[Speaker A]: Thanks, Mel! I felt liberated and empowered doing it. Painting helps me explore my identity and be true to myself. It's definitely therapeutic.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "605",
+          "content": "[Speaker A]: Thanks, Mel! Your backing really means a lot. I felt super powerful giving my talk. I shared my own journey, the struggles I had and how much I've developed since coming out. It was wonderful to see how the audience related to what I said and how it inspired them to be better allies. Co",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5315",
+          "content": "[Speaker A]: Melanie, those bowls are amazing! They each have such cool designs. I love that you chose pottery for your art. Painting and drawing have helped me express my feelings and explore my gender identity. Creating art was really important to me during my transition - it helped me understand ",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4670",
+          "content": "[Speaker A]: Yeah, definitely! Drawing flowers is one of my faves. Appreciating nature and sharing it is great. What about you, Mel? What type of art do you love?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3695",
+          "content": "[Speaker A]: That bowl is awesome, Mel! What gave you the idea for all the colors and patterns?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5360",
+          "content": "[Speaker B]: Wow, Caroline! This painting is awesome. Love the red and blue. What gave you the idea?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3350",
+          "content": "[Speaker B]: Hey Caroline! Last night was amazing! We celebrated my daughter's birthday with a concert surrounded by music, joy and the warm summer breeze. Seeing my kids' smiles was so awesome, and I'm so thankful for our special moments together.\n[Speaker A]: Wow, sounds wonderful! Your love for y",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2945",
+          "content": "[Speaker B]: Wow, Caroline, that painting is awesome! Those colors are so vivid and the whole thing looks really unified. What inspired you?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3395",
+          "content": "[Speaker B]: Thanks, Caroline! It was Matt Patterson, he is so talented! His voice and songs were amazing. What's up with you? Anything interesting going on?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 117,
+      "answerDurationMs": 129091,
+      "totalDurationMs": 1050070,
+      "retrievalMetrics": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10,
+        "relevantRetrieved": 0,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q5",
+      "questionType": "multi-hop",
+      "question": "When did Melanie run a charity race?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "The hypothesis states that Melanie ran the race on Saturday, but the ground truth specifies Sunday before May 25, 2023 (which is May 21). Therefore, the answer does not match.",
+      "hypothesis": "Answer: Melanie ran a charity race last Saturday.",
+      "groundTruth": "The sunday before 25 May 2023",
+      "searchResults": [
+        {
+          "id": "321",
+          "content": "[Speaker A]: That charity race sounds great, Mel! Making a difference & raising awareness for mental health is super rewarding - I'm really proud of you for taking part!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "306",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "291",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.\n[Speaker A]: That charity race sounds great, Mel! Making a difference & rai",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4281",
+          "content": "[Speaker A]: Thanks, Melanie! That plate is awesome! Did you make it?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3666",
+          "content": "[Speaker A]: Sure thing, Melanie! Can't wait to see your pottery project.  I'm happy you found something that makes you happy. Show me when you can!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "966",
+          "content": "[Speaker A]: Thanks, Melanie! This necklace is super special to me - a gift from my grandma in my home country, Sweden. She gave it to me when I was young, and it stands for love, faith and strength. It's like a reminder of my roots and all the love and support I get from my family.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3966",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3951",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2391",
+          "content": "[Speaker B]: Wow, looks awesome! Did you join in?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5436",
+          "content": "[Speaker A]: Whoa, Mel, that sign looks serious. Did anything happen?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 115,
+      "answerDurationMs": 551212,
+      "totalDurationMs": 1472178,
+      "retrievalMetrics": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10,
+        "relevantRetrieved": 0,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q7",
+      "questionType": "single-hop",
+      "question": "What is Caroline's relationship status?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "The hypothesis 'Answer: I don't know' does not contain the correct answer 'Single'. It expresses uncertainty rather than providing the factual relationship status.",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "Single",
+      "searchResults": [
+        {
+          "id": "4672",
+          "content": "[Speaker A]: Yeah, definitely! Drawing flowers is one of my faves. Appreciating nature and sharing it is great. What about you, Mel? What type of art do you love?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3697",
+          "content": "[Speaker A]: That bowl is awesome, Mel! What gave you the idea for all the colors and patterns?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5362",
+          "content": "[Speaker B]: Wow, Caroline! This painting is awesome. Love the red and blue. What gave you the idea?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2947",
+          "content": "[Speaker B]: Wow, Caroline, that painting is awesome! Those colors are so vivid and the whole thing looks really unified. What inspired you?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3397",
+          "content": "[Speaker B]: Thanks, Caroline! It was Matt Patterson, he is so talented! His voice and songs were amazing. What's up with you? Anything interesting going on?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1777",
+          "content": "[Speaker B]: Wow, Caroline. We've come so far, but there's more to do. Your drive to help is awesome! What's your plan to pitch in?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "712",
+          "content": "[Speaker B]: Yes, Caroline! We can do it. Your courage is inspiring. I want to be couragous for my family- they motivate me and give me love. What motivates you?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3382",
+          "content": "[Speaker A]: Wow, sounds wonderful! Your love for your kids is so awesome. What concert was it? The advocacy event was a cool experience - so much love and support, amazing!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5392",
+          "content": "[Speaker B]: Wow, Caro, that painting is amazing! You've made so much progress. I'm super proud of you for being your true self. What effect has the journey had on your relationships?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2197",
+          "content": "[Speaker A]: Aww, that's so sweet! That cup is so cute. It's awesome to see how kids show their personalities through art. What other creative projects do you do with them, besides pottery?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 111,
+      "answerDurationMs": 184079,
+      "totalDurationMs": 1105029,
+      "retrievalMetrics": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10,
+        "relevantRetrieved": 0,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q14",
+      "questionType": "temporal",
+      "question": "Would Caroline still want to pursue counseling as a career if she hadn't received support growing up?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "The model's response 'I don't know' does not contain the correct answer (Likely no). It provides no relevant information or reasoning that could be interpreted as supporting the ground truth answer.",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "Likely no",
+      "searchResults": [
+        {
+          "id": "1088",
+          "content": "[Speaker A]: Lately, I've been looking into counseling and mental health as a career. I want to help people who have gone through the same things as me.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "923",
+          "content": "[Speaker A]: Hey Melanie! Long time no talk! A lot's been going on in my life! Take a look at this.\n[Speaker B]: Hey, Caroline! Nice to hear from you! Love the necklace, any special meaning to it?\n[Speaker A]: Thanks, Melanie! This necklace is super special to me - a gift from my grandma in my home ",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1793",
+          "content": "[Speaker A]: Thanks, Mell! I'm still looking into counseling and mental health jobs. It's important to me that people have someone to talk to, and I want to help make that happen.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1133",
+          "content": "[Speaker B]: Woah, Caroline, it sounds like you're doing some impressive work. It's inspiring to see your dedication to helping others. What motivated you to pursue counseling?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1823",
+          "content": "[Speaker A]: I struggled with mental health, and support I got was really helpful. It made me realize how important it is for others to have a support system. So, I started looking into counseling and mental health career options, so I could help other people on their own journeys like I was helped.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1253",
+          "content": "[Speaker A]: Thanks, Mel! It really motivated me for sure. Talking to the community made me want to use my story to help others too - I'm still thinking that counseling and mental health is the way to go. I'm super excited to give back.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1148",
+          "content": "[Speaker A]: Thanks, Melanie. It really mattered. My own journey and the support I got made a huge difference. Now I want to help people go through it too. I saw how counseling and support groups improved my life, so I started caring more about mental health and understanding myself. Now I'm passion",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1103",
+          "content": "[Speaker B]: Sounds great! What kind of counseling and mental health services do you want to persue?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3278",
+          "content": "[Speaker B]: I'll never forget the day my youngest took her first steps. Seeing her wobble as she took those initial steps really put into perspective how fleeting life is and how lucky I am to be able to share these moments.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1718",
+          "content": "[Speaker A]: Hey Mel, great to chat with you again! So much has happened since we last spoke - I went to an LGBTQ conference two days ago and it was really special. I got the chance to meet and connect with people who've gone through similar journeys. It was such a welcoming environment and I felt t",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 108,
+      "answerDurationMs": 566183,
+      "totalDurationMs": 759253,
+      "retrievalMetrics": {
+        "hitAtK": 1,
+        "precisionAtK": 0.1,
+        "recallAtK": 1,
+        "f1AtK": 0.18181818181818182,
+        "mrr": 0.25,
+        "ndcg": 0.43067655807339306,
+        "k": 10,
+        "relevantRetrieved": 1,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q22",
+      "questionType": "temporal",
+      "question": "Would Caroline likely have Dr. Seuss books on her bookshelf?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "The model did not provide an affirmative answer ('Yes') as required by the question and ground truth; it only expressed uncertainty.",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "Yes, since she collects classic children's books",
+      "searchResults": [
+        {
+          "id": "1869",
+          "content": "[Speaker B]: Wow, Caroline! Books have such an awesome power! Which one has been your favorite guide?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1464",
+          "content": "[Speaker A]: Hey Mel! Long time no talk. Lots has been going on since then!\n[Speaker B]: Hey Caroline! Missed you. Anything new? Spill the beans!\n[Speaker A]: Since our last chat, I've been looking into counseling or mental health work more. I'm passionate about helping people and making a positive ",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3279",
+          "content": "[Speaker B]: I'll never forget the day my youngest took her first steps. Seeing her wobble as she took those initial steps really put into perspective how fleeting life is and how lucky I am to be able to share these moments.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "6009",
+          "content": "[Speaker B]: Thanks! They were scared but we reassured them and explained their brother would be OK. They're tough kids.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1599",
+          "content": "[Speaker A]: I've got lots of kids' books- classics, stories from different cultures, educational books, all of that. What's a favorite book you remember from your childhood?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1584",
+          "content": "[Speaker B]: Sounds great! What kind of books you got in your library?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1884",
+          "content": "[Speaker A]: I loved \"Becoming Nicole\" by Amy Ellis Nutt. It's a real inspiring true story about a trans girl and her family. It made me feel connected and gave me a lot of hope for my own path. Highly recommend it for sure!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1719",
+          "content": "[Speaker A]: Hey Mel, great to chat with you again! So much has happened since we last spoke - I went to an LGBTQ conference two days ago and it was really special. I got the chance to meet and connect with people who've gone through similar journeys. It was such a welcoming environment and I felt t",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1854",
+          "content": "[Speaker A]: Thanks so much, Mel! Seeing this pic just made me appreciate my love of reading even more. Books guide me, motivate me and help me discover who I am. They're a huge part of my journey, and this one's reminding me to keep going and never give up!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2994",
+          "content": "[Speaker A]: Hey Melanie! Just wanted to say hi!\n[Speaker B]: Hey Caroline! Good to talk to you again. What's up? Anything new since last time?\n[Speaker A]: Hey Mel! A lot's happened since we last chatted - I just joined a new LGBTQ activist group last Tues. I'm meeting so many cool people who are a",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 103,
+      "answerDurationMs": 270895,
+      "totalDurationMs": 508957,
+      "retrievalMetrics": {
+        "hitAtK": 1,
+        "precisionAtK": 0.1,
+        "recallAtK": 1,
+        "f1AtK": 0.18181818181818182,
+        "mrr": 0.2,
+        "ndcg": 0.38685280723454163,
+        "k": 10,
+        "relevantRetrieved": 1,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q82",
+      "questionType": "world-knowledge",
+      "question": "What did the charity race raise awareness for?",
+      "score": 1,
+      "label": "correct",
+      "explanation": "The hypothesis directly states that the charity race raised awareness for mental health, which matches the ground truth answer exactly.",
+      "hypothesis": "Answer: The charity race raised awareness for mental health.",
+      "groundTruth": "mental health",
+      "searchResults": [
+        {
+          "id": "325",
+          "content": "[Speaker A]: That charity race sounds great, Mel! Making a difference & raising awareness for mental health is super rewarding - I'm really proud of you for taking part!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "310",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "295",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.\n[Speaker A]: That charity race sounds great, Mel! Making a difference & rai",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "595",
+          "content": "[Speaker B]: Hey Caroline! Great to hear from you. Sounds like your event was amazing! I'm so proud of you for spreading awareness and getting others involved in the LGBTQ community. You've come a long way since your transition - keep on inspiring people with your strength and courage!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2425",
+          "content": "[Speaker B]: Wow, what an experience! How did it make you feel?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1735",
+          "content": "[Speaker A]: Hey Mel, great to chat with you again! So much has happened since we last spoke - I went to an LGBTQ conference two days ago and it was really special. I got the chance to meet and connect with people who've gone through similar journeys. It was such a welcoming environment and I felt t",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5680",
+          "content": "[Speaker B]: Yeah, Here's one I did last week. It's inspired by the sunsets. The colors make me feel calm. What have you been up to lately, artistically?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1900",
+          "content": "[Speaker B]: That sounds awesome! What did you take away from it to use in your life?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "70",
+          "content": "[Speaker B]: Wow, that's cool, Caroline! What happened that was so awesome? Did you hear any inspiring stories?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3970",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 99,
+      "answerDurationMs": 518030,
+      "totalDurationMs": 771785,
+      "retrievalMetrics": {
+        "hitAtK": 1,
+        "precisionAtK": 0.3,
+        "recallAtK": 1,
+        "f1AtK": 0.4615384615384615,
+        "mrr": 1,
+        "ndcg": 1,
+        "k": 10,
+        "relevantRetrieved": 3,
+        "totalRelevant": 3
+      }
+    },
+    {
+      "questionId": "conv-26-q83",
+      "questionType": "world-knowledge",
+      "question": "What did Melanie realize after the charity race?",
+      "score": 1,
+      "label": "correct",
+      "explanation": "The model's response contains the correct answer 'self-care is important'. It explicitly states that Melanie realized self-care is really important after the charity race, which matches the ground truth. The additional detail about looking after herself helping her look after her family is consistent with and supports the core answer.",
+      "hypothesis": "I am Qwythos, created by Empero AI. After the charity race, Melanie realized that self-care is really important and that looking after herself helps her look after her family.",
+      "groundTruth": "self-care is important",
+      "searchResults": [
+        {
+          "id": "326",
+          "content": "[Speaker A]: That charity race sounds great, Mel! Making a difference & raising awareness for mental health is super rewarding - I'm really proud of you for taking part!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "311",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "341",
+          "content": "[Speaker B]: Thanks, Caroline! The event was really thought-provoking. I'm starting to realize that self-care is really important. It's a journey for me, but when I look after myself, I'm able to better look after my family.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "296",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.\n[Speaker A]: That charity race sounds great, Mel! Making a difference & rai",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "6161",
+          "content": "[Speaker B]: Thanks, Caroline! Yup, we just did it yesterday! The kids loved it and it was a nice way to relax after the road trip.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2966",
+          "content": "[Speaker A]: Thanks, Melanie! I painted this after I visited a LGBTQ center. I wanted to capture everyone's unity and strength.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1196",
+          "content": "[Speaker B]: Congrats Caroline! Good on you for going after what you really care about.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4286",
+          "content": "[Speaker A]: Thanks, Melanie! That plate is awesome! Did you make it?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4346",
+          "content": "[Speaker A]: Thanks, Melanie! I painted it after I visited the beach last week. Just seeing the sun dip below the horizon, all the amazing colors - it was amazing and calming. So I just had to try to capture that feeling in my painting.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3971",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 94,
+      "answerDurationMs": 548366,
+      "totalDurationMs": 837239,
+      "retrievalMetrics": {
+        "hitAtK": 1,
+        "precisionAtK": 0.3,
+        "recallAtK": 1,
+        "f1AtK": 0.4615384615384615,
+        "mrr": 0.5,
+        "ndcg": 0.7328286204777911,
+        "k": 10,
+        "relevantRetrieved": 3,
+        "totalRelevant": 3
+      }
+    },
+    {
+      "questionId": "conv-26-q84",
+      "questionType": "world-knowledge",
+      "question": "How does Melanie prioritize self-care?",
+      "score": 0,
+      "label": "incorrect",
+      "explanation": "The hypothesis does not contain the correct answer because it says 'I don't know,' providing no details about how Melanie prioritizes self-care, while the ground truth lists concrete activities like running, reading, or playing the violin.",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "by carving out some me-time each day for activities like running, reading, or playing the violin",
+      "searchResults": [
+        {
+          "id": "357",
+          "content": "[Speaker A]: I totally agree, Melanie. Taking care of ourselves is so important - even if it's not always easy. Great that you're prioritizing self-care.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3987",
+          "content": "[Speaker B]: Caroline, congrats! So proud of you for taking this step. How does it feel? Also, do you have any pets?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3552",
+          "content": "[Speaker B]: Wow, Caroline, that's gorgeous! I love the self-acceptance and love theme. How does art help you with your self-discovery and acceptance journey?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4182",
+          "content": "[Speaker A]: Thanks, Melanie. Art gives me a sense of freedom, but so does having supportive people around, promoting LGBTQ rights and being true to myself. I want to live authentically and help others to do the same.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5832",
+          "content": "[Speaker B]: That's awesome, Caroline! You drew it? What does it mean to you?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "342",
+          "content": "[Speaker B]: Thanks, Caroline! The event was really thought-provoking. I'm starting to realize that self-care is really important. It's a journey for me, but when I look after myself, I'm able to better look after my family.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3957",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2532",
+          "content": "[Speaker A]: Thanks, Melanie! Been a long road, but I'm proud of how far I've come. How're you doing finding peace?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2562",
+          "content": "[Speaker A]: That's awesome, Melanie! How have your family been supportive during your move?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4092",
+          "content": "[Speaker A]: Wow, Melanie, that's amazing! Love all the details and how you got the horse's grace and strength. Do you like painting animals?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 91,
+      "answerDurationMs": 410885,
+      "totalDurationMs": 939890,
+      "retrievalMetrics": {
+        "hitAtK": 1,
+        "precisionAtK": 0.1,
+        "recallAtK": 1,
+        "f1AtK": 0.18181818181818182,
+        "mrr": 1,
+        "ndcg": 1,
+        "k": 10,
+        "relevantRetrieved": 1,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q152",
+      "questionType": "adversarial",
+      "question": "What did Caroline realize after her charity race?",
+      "score": 1,
+      "label": "correct",
+      "explanation": "The ground truth answer is undefined, meaning the information was not in the conversation. The system correctly abstained by responding 'I don't know', which aligns with the requirement to indicate uncertainty when the answer cannot be determined from the given context.",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "undefined",
+      "searchResults": [
+        {
+          "id": "328",
+          "content": "[Speaker A]: That charity race sounds great, Mel! Making a difference & raising awareness for mental health is super rewarding - I'm really proud of you for taking part!",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "313",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "343",
+          "content": "[Speaker B]: Thanks, Caroline! The event was really thought-provoking. I'm starting to realize that self-care is really important. It's a journey for me, but when I look after myself, I'm able to better look after my family.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "298",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.\n[Speaker A]: That charity race sounds great, Mel! Making a difference & rai",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "6163",
+          "content": "[Speaker B]: Thanks, Caroline! Yup, we just did it yesterday! The kids loved it and it was a nice way to relax after the road trip.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3283",
+          "content": "[Speaker B]: I'll never forget the day my youngest took her first steps. Seeing her wobble as she took those initial steps really put into perspective how fleeting life is and how lucky I am to be able to share these moments.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "1198",
+          "content": "[Speaker B]: Congrats Caroline! Good on you for going after what you really care about.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "73",
+          "content": "[Speaker B]: Wow, that's cool, Caroline! What happened that was so awesome? Did you hear any inspiring stories?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2743",
+          "content": "[Speaker B]: Hey Caroline, hope all's good! I had a quiet weekend after we went camping with my fam two weekends ago. It was great to unplug and hang with the kids. What've you been up to? Anything fun over the weekend?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "2428",
+          "content": "[Speaker B]: Wow, what an experience! How did it make you feel?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 89,
+      "answerDurationMs": 404395,
+      "totalDurationMs": 996770,
+      "retrievalMetrics": {
+        "hitAtK": 1,
+        "precisionAtK": 0.3,
+        "recallAtK": 1,
+        "f1AtK": 0.4615384615384615,
+        "mrr": 0.5,
+        "ndcg": 0.7328286204777911,
+        "k": 10,
+        "relevantRetrieved": 3,
+        "totalRelevant": 3
+      }
+    },
+    {
+      "questionId": "conv-26-q153",
+      "questionType": "adversarial",
+      "question": "What are Melanie's plans for the summer with respect to adoption?",
+      "score": 1,
+      "label": "correct",
+      "explanation": "The hypothesis correctly abstains because the information about Melanie's summer adoption plans was not present in the conversation (ground truth = undefined). The system appropriately indicated uncertainty rather than fabricating an answer.",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "undefined",
+      "searchResults": [
+        {
+          "id": "404",
+          "content": "[Speaker B]: Thanks, Caroline. It's still a work in progress, but I'm doing my best. My kids are so excited about summer break! We're thinking about going camping next month. Any fun plans for the summer?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "6404",
+          "content": "[Speaker B]: That must have been tough for you, Caroline. Respect for finding acceptance and helping others with what you've been through. You're so strong and inspiring.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "299",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.\n[Speaker A]: That charity race sounds great, Mel! Making a difference & rai",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "6284",
+          "content": "[Speaker A]: Woohoo Melanie! I passed the adoption agency interviews last Friday! I'm so excited and thankful. This is a big move towards my goal of having a family.\n[Speaker B]: Congrats, Caroline! Adoption sounds awesome. I'm so happy for you. These figurines I bought yesterday remind me of family",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5219",
+          "content": "[Speaker B]: Hey Caroline! It's so good to hear from you! That pic is so beautiful, the colors really pop. Biking sounds like a great way to get out in nature. We went camping with the kids a few weeks ago, had a blast exploring the forest and hiking. Nature can be so refreshing for your soul. Any p",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5519",
+          "content": "[Speaker A]: Hey Mel, what's up? Long time no see! I just contacted my mentor for adoption advice. I'm ready to be a mom and share my love and family. It's a great feeling. Anything new with you? Anything exciting going on?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "6314",
+          "content": "[Speaker B]: Congrats, Caroline! Adoption sounds awesome. I'm so happy for you. These figurines I bought yesterday remind me of family love. Tell me, what's your vision for the future?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3869",
+          "content": "[Speaker B]: That was a blast! So much fun with the whole gang! Wanna do a family outing this summer?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3374",
+          "content": "[Speaker B]: Hey Caroline! Last night was amazing! We celebrated my daughter's birthday with a concert surrounded by music, joy and the warm summer breeze. Seeing my kids' smiles was so awesome, and I'm so thankful for our special moments together.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4169",
+          "content": "[Speaker B]: Wow, Caroline, that's great! Art's awesome for showing us who we really are and getting in touch with ourselves. What else helps you out?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 85,
+      "answerDurationMs": 419576,
+      "totalDurationMs": 1340466,
+      "retrievalMetrics": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10,
+        "relevantRetrieved": 0,
+        "totalRelevant": 1
+      }
+    },
+    {
+      "questionId": "conv-26-q154",
+      "questionType": "adversarial",
+      "question": "What type of individuals does the adoption agency Melanie is considering support?",
+      "score": 1,
+      "label": "correct",
+      "explanation": "The hypothesis is correct because the system properly abstained by stating 'I don't know', which aligns with the ground truth answer being undefined (no information available in the conversation).",
+      "hypothesis": "Answer: I don't know",
+      "groundTruth": "undefined",
+      "searchResults": [
+        {
+          "id": "6300",
+          "content": "[Speaker A]: Woohoo Melanie! I passed the adoption agency interviews last Friday! I'm so excited and thankful. This is a big move towards my goal of having a family.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4680",
+          "content": "[Speaker A]: Yeah, definitely! Drawing flowers is one of my faves. Appreciating nature and sharing it is great. What about you, Mel? What type of art do you love?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "6285",
+          "content": "[Speaker A]: Woohoo Melanie! I passed the adoption agency interviews last Friday! I'm so excited and thankful. This is a big move towards my goal of having a family.\n[Speaker B]: Congrats, Caroline! Adoption sounds awesome. I'm so happy for you. These figurines I bought yesterday remind me of family",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5040",
+          "content": "[Speaker B]: Cool! What type of music do you play?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5070",
+          "content": "[Speaker B]: That's awesome! What type of guitar? Been playing long?",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "300",
+          "content": "[Speaker B]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. I ran a charity race for mental health last Saturday – it was really rewarding. Really made me think about taking care of our minds.\n[Speaker A]: That charity race sounds great, Mel! Making a difference & rai",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3975",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "5610",
+          "content": "[Speaker A]: Yep! Do your research and find an adoption agency or lawyer. They'll help with the process and provide all the info. Gather documents like references, financial info and medical checks. Don't forget to prepare emotionally, since the wait can be hard. It's all worth it in the end though.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "4185",
+          "content": "[Speaker A]: Thanks, Melanie. Art gives me a sense of freedom, but so does having supportive people around, promoting LGBTQ rights and being true to myself. I want to live authentically and help others to do the same.",
+          "score": 0,
+          "metadata": {
+            "type": "observation",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        },
+        {
+          "id": "3960",
+          "content": "[Speaker A]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the first step towards becoming a mom - I applied to adoption agencies! It's a big decision, but I think I'm ready to give all my love to a child. I got lots of help from this adoption advice/assistance group I atten",
+          "score": 0,
+          "metadata": {
+            "type": "fact",
+            "confidence": 100,
+            "provenance": "observed"
+          }
+        }
+      ],
+      "searchDurationMs": 79,
+      "answerDurationMs": 546852,
+      "totalDurationMs": 1467797,
+      "retrievalMetrics": {
+        "hitAtK": 0,
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "f1AtK": 0,
+        "mrr": 0,
+        "ndcg": 0,
+        "k": 10,
+        "relevantRetrieved": 0,
+        "totalRelevant": 1
+      }
+    }
+  ]
+}

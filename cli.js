@@ -1843,6 +1843,161 @@ commands.doctor = {
 
 // ─── Rebuild: SQLite as a rebuildable index, not the only truth ────
 
+commands.distill = {
+  desc: 'Distill learning/error observations into generalized lessons/ (local, sanitized, human-reviewable)',
+  args: ['[--project PATH]', '[--out DIR]', '[--since-days N]', '[--min-confidence N]', '[--limit N]', '[--dry-run]'],
+  parse(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--out') opts.outDir = args[++i];
+      if (args[i] === '--since-days') opts.sinceDays = parseInt(args[++i], 10);
+      if (args[i] === '--min-confidence') opts.minConfidence = parseInt(args[++i], 10);
+      if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+      if (args[i] === '--dry-run') opts.dryRun = true;
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const r = api.distill(opts);
+    const label = opts.dryRun ? 'would write' : 'written';
+    console.log('distill' + (opts.dryRun ? ' (dry run)' : ''));
+    console.log('──────────────────────────────────────────────');
+    console.log('considered  ' + r.considered + ' eligible observations');
+    console.log(label.padEnd(12) + r.written + ' lessons');
+    console.log('skipped     ' + r.skipped);
+    if (r.reasons.length) {
+      console.log('');
+      for (const x of r.reasons.slice(0, 10)) console.log('  #' + x.id + ' — ' + x.reason);
+      if (r.reasons.length > 10) console.log('  … ' + (r.reasons.length - 10) + ' more');
+    }
+    if (r.files.length && !opts.dryRun) {
+      console.log('');
+      console.log('files:');
+      for (const f of r.files.slice(0, 10)) console.log('  ' + f);
+      if (r.files.length > 10) console.log('  … ' + (r.files.length - 10) + ' more (see INDEX.md)');
+    }
+  },
+};
+
+commands.seeds = {
+  desc: 'Lesson seed exchange: review → publish → pull → grade (registry = git repo)',
+  args: ['<enqueue|queue|review|publish|pull|grade|tally|sync|retire|log-verify|log-head|log-observe|log-proof> [args]', '[--project PATH]', '[--registry DIR]', '[--limit N]', '[--dry-run]'],
+  parse(args) {
+    const opts = { sub: args[0] };
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === '--project') opts.project = args[++i];
+      if (args[i] === '--registry') opts.registry = args[++i];
+      if (args[i] === '--out') opts.out = args[++i];
+      if (args[i] === '--seed-hash') opts.seedHash = args[++i];
+      if (args[i] === '--limit') opts.limit = parseInt(args[++i], 10);
+      if (args[i] === '--status') opts.status = args[++i];
+      if (args[i] === '--id') opts.id = parseInt(args[++i], 10);
+      if (args[i] === '--decision') opts.decision = args[++i];
+      if (args[i] === '--grade') opts.grade = args[++i];
+      if (args[i] === '--trust-keys') opts.trustKeysFile = args[++i];
+      if (args[i] === '--canary-pct') opts.canaryPct = parseInt(args[++i], 10);
+      if (args[i] === '--yes') opts.yes = true;
+    }
+    return opts;
+  },
+  run(db, opts) {
+    const sub = opts.sub || 'queue';
+    if (sub === 'enqueue') {
+      const path = require('path');
+      const project = opts.project || process.cwd();
+      const lessonsDir = opts.out || path.join(project, '.cortex', 'lessons');
+      const r = require('./src/core/seeds').enqueueLessons(db, lessonsDir, { limit: opts.limit });
+      console.log('enqueued ' + r.queued + ' lesson(s) from ' + lessonsDir + ' for review');
+      return;
+    }
+    if (sub === 'queue') {
+      const rows = api.seedQueue({ status: opts.status || 'pending', limit: opts.limit || 30 });
+      console.log('seed review queue (' + (opts.status || 'pending') + '): ' + rows.length);
+      for (const r of rows) {
+        console.log('  #' + r.id + '  [' + r.scope + '] ' + r.type.padEnd(10) + r.title.slice(0, 70));
+      }
+      if (rows.length) console.log('\nreview: agentic-cortex seeds review --id <n> --decision approved|rejected');
+      return;
+    }
+    if (sub === 'review') {
+      const r = api.seedReview({ id: opts.id, decision: opts.decision, reviewedBy: 'cli' });
+      console.log('seed #' + r.id + ' → ' + r.status);
+      return;
+    }
+    if (sub === 'publish') {
+      const r = api.seedPublish({ registry: opts.registry });
+      console.log('published ' + r.published + ' seed(s) into ' + opts.registry + ' — now `git add seeds && git commit && git push` in that repo');
+      for (const f of r.files) console.log('  ' + f);
+      for (const s of r.skipped) console.log('  skipped #' + s.id + ': ' + s.reason);
+      return;
+    }
+    if (sub === 'pull') {
+      const r = api.seedPull({ registry: opts.registry, trustKeysFile: opts.trustKeysFile, canaryPct: opts.canaryPct });
+      console.log('seeds scanned ' + r.scanned + ' · imported ' + r.imported + ' · canary-parked ' + r.canary + ' · skipped ' + r.skipped + ' · retired ' + r.retired.length);
+      return;
+    }
+    if (sub === 'grade') {
+      const r = api.seedGrade({ id: opts.id, grade: opts.grade });
+      console.log('graded seed ' + r.seedHash + ' → ' + r.grade);
+      return;
+    }
+    if (sub === 'tally') {
+      const rows = api.seedTally({ registry: opts.registry });
+      if (!rows.length) { console.log('no seed grades recorded yet — grade with: seeds grade --id <observation id> --grade helpful|not_helpful'); return; }
+      for (const t of rows) console.log('  ' + t.seed_hash + '  helpful ' + t.helpfulPct + '% of ' + t.total + ' across ' + (t.machines || 1) + ' machine(s)  → ' + t.verdict);
+      return;
+    }
+    if (sub === 'sync') {
+      const r = api.seedSync({ registry: opts.registry });
+      console.log('CRDT grade sync (machine ' + r.machineId.slice(0, 8) + '…):');
+      console.log('  replicas merged   ' + r.replicas);
+      console.log('  seeds tracked     ' + r.seedsTracked);
+      const promote = r.quorum.filter(q => q.verdict === 'promote');
+      const retire = r.quorum.filter(q => q.verdict === 'retire');
+      if (promote.length) console.log('  promote: ' + promote.map(q => q.seedHash).join(', '));
+      if (retire.length) console.log('  retire:  ' + retire.map(q => q.seedHash).join(', '));
+      if (!promote.length && !retire.length) console.log('  quorum:  no verdicts yet (need ≥3 machines grading)');
+      if (r.retired.length) console.log('  retired locally: ' + r.retired.length + ' seed(s)');
+      console.log('  now `git add grades && git commit && git push` in the registry repo');
+      return;
+    }
+    if (sub === 'retire') {
+      const retired = require('./src/core/seeds').retireFailedSeeds(db, {});
+      console.log(retired.length ? 'retired: ' + retired.join(', ') : 'nothing to retire');
+      return;
+    }
+    if (sub === 'log-verify') {
+      const r = api.seedLogVerify({ registry: opts.registry });
+      console.log('seed log: ' + r.length + ' entries, chain ' + (r.chainBroken ? 'BROKEN at seq ' + r.brokenAt : 'intact'));
+      return;
+    }
+    if (sub === 'log-head') {
+      const head = api.seedLogHead({ registry: opts.registry });
+      console.log('head  seq ' + head.seq + '  hub ' + head.hubId);
+      console.log('hash  ' + head.headHash);
+      console.log('signed ' + head.signedAt + ' — gossip this file: log/head.json');
+      return;
+    }
+    if (sub === 'log-observe') {
+      const r = api.seedLogObserve({ registry: opts.registry, trustKeysFile: opts.trustKeysFile });
+      console.log('witnessed hubs: ' + r.witnesses);
+      if (r.conflicts.length) {
+        console.log('⚠ CONFLICTS — a hub re-signed the same seq with a different hash:');
+        for (const c of r.conflicts) console.log('  hub ' + c.hubId + ' seq ' + c.seq + ': kept ' + c.keptHash + ' · saw ' + c.seenHash);
+      }
+      return;
+    }
+    if (sub === 'log-proof') {
+      const p = api.seedLogProof({ registry: opts.registry, seedHash: opts.seedHash });
+      if (!p.ok) { console.log('no proof: ' + p.reason); return; }
+      console.log('seed ' + opts.seedHash + ' included at seq ' + p.fromSeq + ' (head span to ' + p.toSeq + '), chain depth ' + p.chain.length);
+      return;
+    }
+    throw new Error('unknown seeds subcommand: ' + sub);
+  },
+};
+
 commands.rebuild = {
   desc: 'Wipe and rebuild the vault from a JSON export (--yes required)',
   args: ['--from <export.json>', '[--yes]', '[--project PATH]'],

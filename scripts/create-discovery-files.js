@@ -62,7 +62,7 @@ const MCP_TOOLS = {
   ]
 };
 
-const MCP_TOOL_COUNT = 78; // core + session + reasoning + failure-classifier + experience-replay + translations + burst-budget + war-room + reasoner + swarm
+const MCP_TOOL_COUNT = 138; // core + session + reasoning + failure-classifier + experience-replay + translations + burst-budget + war-room + reasoner + swarm + calibration/claims/doctor/rebuild (v7.5.0)
 
 /**
  * Create multi-agent discovery files in the project directory.
@@ -263,6 +263,27 @@ function createDiscoveryFiles(projectDir) {
   const toolListSession = 'Session: ' + MCP_TOOLS.session.join(', ');
   const toolListBootstrap = 'Bootstrap: ' + MCP_TOOLS.bootstrap.join(', ');
 
+  // ── Shared lesson-capture protocol (the routing mechanism: problems → AC) ──
+  const lessonCapture = [
+    '<lesson_capture>',
+    'EVERY problem you encounter is a lesson. Capture it — do not let it die in the conversation.',
+    '',
+    'CAPTURE IMMEDIATELY (same turn) when you:',
+    '  1. Fix a bug after a wrong first attempt        → memory_save({ type: "learning", content: "Problem: <what broke> | Wrong turn: <what you tried first and why it failed> | Fix: <what worked> | Guard: <how to avoid next time>" })',
+    '  2. Hit a tool/API/schema error and recover      → memory_save({ type: "error", content: "<exact error> → <root cause> → <fix>" })',
+    '  3. Discover a constraint of this codebase       → memory_save({ type: "fact", content: "<constraint>" })',
+    '  4. Make a non-obvious decision                  → memory_save({ type: "decision", content: "<decision> because <reason>; rejected: <alternative>" })',
+    '',
+    'CAPTURE AT SESSION END (mandatory, before finishing):',
+    '  - 2+ problems were encountered: save each as learning/error above.',
+    '  - Or one-shot dump: `agentic-cortex ingest --file <transcript-path>` (regex + LLM extraction of decisions/errors/learnings).',
+    '',
+    'FORMAT for lessons (searchable later): name the surface (file/tool/function), the failure mode, and the working fix. Never save secrets, API keys, tokens, or credentials — the sanitizer blocks/redacts them.',
+    '',
+    'This is how the system learns from mistakes instead of repeating them. Saving nothing from a problem-heavy session is a failure.',
+    '</lesson_capture>',
+  ].join('\n');
+
   // ── 1. AGENTS.md (root — canonical MCP-first discovery for OpenCode + Claude Code) ──
   try {
     const agentsMdContent = [
@@ -287,6 +308,8 @@ function createDiscoveryFiles(projectDir) {
       '**Fallback (CLI):** `agentic-cortex save "title" "content"`',
       '',
       'Type auto-detected. Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90',
+      '',
+      lessonCapture,
       '',
       '## All ' + MCP_TOOL_COUNT + ' MCP Tools',
       '',
@@ -358,6 +381,8 @@ function createDiscoveryFiles(projectDir) {
       'PREFERRED: Use MCP tool memory_save({ content, type?, importance?, confidence?, tags? }).',
       'FALLBACK CLI: agentic-cortex save "title" "content"',
       'Type auto-detected. Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90',
+      '',
+      lessonCapture,
       '</auto_save>',
       '',
       '<commands>',
@@ -414,6 +439,8 @@ function createDiscoveryFiles(projectDir) {
       'PREFERRED: Use MCP tool memory_save({ content, type?, importance?, confidence?, tags? }).',
       'FALLBACK CLI: agentic-cortex save "title" "content"',
       'Type auto-detected. Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90',
+      '',
+      lessonCapture,
       '</auto_save>',
       '',
       '<commands>',
@@ -457,6 +484,8 @@ function createDiscoveryFiles(projectDir) {
       'Use MCP tool memory_save({ content, type?, importance?, confidence?, tags? }).',
       'Type auto-detected from content patterns.',
       'Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90',
+      '',
+      lessonCapture,
       '</auto_save>',
       '',
       '<all_' + MCP_TOOL_COUNT + '_mcp_tools>',

@@ -85,3 +85,7 @@ knowledge.md
 
 # Codebuff tool metadata (do not commit)
 .freebuff/
+
+# Machine-local cortex state — holds a PEM signing key, machine id and local
+# grades. Never commit: the signing key must not be published.
+.cortex/

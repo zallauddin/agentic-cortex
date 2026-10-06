@@ -1,7 +1,10 @@
-<!-- agentic-cortex:start:v6.7.0 -->
+
+
+
+<!-- agentic-cortex:start:v7.5.0 -->
 <agentic_cortex>
 Persistent, self-improving agent memory. MCP server configured in opencode.json.
-93 MCP tools available.
+138 MCP tools available.
 
 <bootstrap>
 CRITICAL: Call MCP tool memory_bootstrap({}) first — no args needed.
@@ -13,9 +16,27 @@ coding standards, codebase graph, machine-wide global vault.
 Use MCP tool memory_save({ content, type?, importance?, confidence?, tags? }).
 Type auto-detected from content patterns.
 Triggers: decision|90 error|95 context|80 preference|100 fact|85 event|95 learning|75 instruction|90
+
+<lesson_capture>
+EVERY problem you encounter is a lesson. Capture it — do not let it die in the conversation.
+
+CAPTURE IMMEDIATELY (same turn) when you:
+  1. Fix a bug after a wrong first attempt        → memory_save({ type: "learning", content: "Problem: <what broke> | Wrong turn: <what you tried first and why it failed> | Fix: <what worked> | Guard: <how to avoid next time>" })
+  2. Hit a tool/API/schema error and recover      → memory_save({ type: "error", content: "<exact error> → <root cause> → <fix>" })
+  3. Discover a constraint of this codebase       → memory_save({ type: "fact", content: "<constraint>" })
+  4. Make a non-obvious decision                  → memory_save({ type: "decision", content: "<decision> because <reason>; rejected: <alternative>" })
+
+CAPTURE AT SESSION END (mandatory, before finishing):
+  - 2+ problems were encountered: save each as learning/error above.
+  - Or one-shot dump: `agentic-cortex ingest --file <transcript-path>` (regex + LLM extraction of decisions/errors/learnings).
+
+FORMAT for lessons (searchable later): name the surface (file/tool/function), the failure mode, and the working fix. Never save secrets, API keys, tokens, or credentials — the sanitizer blocks/redacts them.
+
+This is how the system learns from mistakes instead of repeating them. Saving nothing from a problem-heavy session is a failure.
+</lesson_capture>
 </auto_save>
 
-<all_93_mcp_tools>
+<all_138_mcp_tools>
 
 Memory core: memory_save, memory_search, memory_get, memory_list, memory_edit, memory_forget, memory_context, memory_reflect, memory_conflicts, memory_export, memory_import, memory_health, memory_embed, memory_relate, memory_graph, memory_hook, memory_share, memory_feedback, memory_trail (19)
 
@@ -23,11 +44,9 @@ Memory advanced: memory_learn_from_error, memory_record_action, memory_transfer_
 
 Session: session_start, session_end, session_summarize, agent_session_start, agent_session_end, agent_list_sessions, memory_shared_get, memory_provider, memory_send, memory_inbox, memory_mark_read (11)
 
-Reasoning: memory_tree_search, memory_verify_step, memory_budget, memory_verify_code, memory_reflexion, memory_reasoning_trace, memory_reasoning_stats, memory_synthesize_solution, memory_self_consistency, memory_budget_force (10)
-
 Bootstrap: memory_bootstrap (1)
 
-</all_67_mcp_tools>
+</all_138_mcp_tools>
 
 <key_tools>
 memory_bootstrap({}) — session start context (CRITICAL: call first)
@@ -48,8 +67,6 @@ memory_daily_summary({}) — yesterday's observations summary
 
 <memory_types>instruction fact decision goal commitment preference relationship context event learning observation artifact error</memory_types>
 
-<mcp>93 tools via opencode.json mcp config. Run agentic-cortex-mcp locally.</mcp>
+<mcp>138 tools via opencode.json mcp config. Run agentic-cortex-mcp locally.</mcp>
 </agentic_cortex>
 <!-- agentic-cortex:end -->
-
-

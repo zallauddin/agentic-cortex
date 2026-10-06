@@ -1,0 +1,192 @@
+{
+  "variant": "no-rerank",
+  "variantName": "AC — no cross-encoder reranking",
+  "description": "Same as default but rerank=false on all searches. Measures reranker cost vs benefit.",
+  "search": {
+    "latency": {
+      "min": 0.11440000000000339,
+      "p50": 0.17839999999999634,
+      "p95": 1.0899,
+      "p99": 1.1053999999999888,
+      "max": 1.1053999999999888,
+      "mean": 0.3578952380952387,
+      "count": 21
+    },
+    "perQuery": [
+      {
+        "query": "which test framework should I use",
+        "label": "test framework",
+        "ms": 0.6817999999999955
+      },
+      {
+        "query": "how does authentication work",
+        "label": "auth",
+        "ms": 0.238900000000001
+      },
+      {
+        "query": "how do I release",
+        "label": "release",
+        "ms": 0.14679999999999893
+      },
+      {
+        "query": "indentation preference",
+        "label": "preference",
+        "ms": 0.11960000000000548
+      },
+      {
+        "query": "path gotcha",
+        "label": "path",
+        "ms": 0.11440000000000339
+      },
+      {
+        "query": "vitest test framework decision",
+        "label": "find signal in noise",
+        "ms": 0.17079999999999984
+      },
+      {
+        "query": "JWT auth architecture",
+        "label": "auth in noise",
+        "ms": 0.1688999999999936
+      }
+    ]
+  },
+  "save": {
+    "latency": {
+      "min": 0.7982999999999976,
+      "p50": 1.0626000000000033,
+      "p95": 1.1221999999999923,
+      "p99": 1.1221999999999923,
+      "max": 1.1221999999999923,
+      "mean": 1.0229599999999976,
+      "count": 5
+    },
+    "count": 5
+  },
+  "bootstrap": {
+    "latency": {
+      "min": 3.5708000000000766,
+      "p50": 4.140300000000025,
+      "p95": 662.6058,
+      "p99": 662.6058,
+      "max": 662.6058,
+      "mean": 223.43896666666672,
+      "count": 3
+    },
+    "iterations": 3,
+    "contextPreview": ""
+  },
+  "concurrency": {
+    "n": 20,
+    "wallMs": 20.349399999999946,
+    "throughputPerSec": 982.8299605885212,
+    "okCount": 20,
+    "failed": 0
+  },
+  "dbSizeBytes": 1048576,
+  "quality": {
+    "total": 7,
+    "hits": 5,
+    "recallAtK": 71.42857142857143,
+    "byCategory": {},
+    "cases": [
+      {
+        "category": "single_hop",
+        "query": "which test framework should I use",
+        "label": "test framework",
+        "expect": [
+          "vitest"
+        ],
+        "hit": false,
+        "returned": 5,
+        "topPreview": [
+          "Keep business rules isolated from HTTP handlers, database queries, and UI compon",
+          "# OBEY Clean Code by Robert C. Martin\n## When to use\nUse when readability, local"
+        ]
+      },
+      {
+        "category": "single_hop",
+        "query": "how does authentication work",
+        "label": "auth",
+        "expect": [
+          "JWT"
+        ],
+        "hit": false,
+        "returned": 5,
+        "topPreview": [
+          "Use clear, descriptive names for variables, functions, and classes. Names should",
+          "# Clean Code Naming Rules\n\n## Names Must Reveal Intent\n- Use intention-revealing"
+        ]
+      },
+      {
+        "category": "single_hop",
+        "query": "how do I release",
+        "label": "release",
+        "expect": [
+          "npm publish"
+        ],
+        "hit": true,
+        "returned": 5,
+        "topPreview": [
+          "# Clean Code Naming Rules\n\n## Names Must Reveal Intent\n- Use intention-revealing",
+          "PROCEDURE: to release — npm version minor, run all tests, npm publish, git push "
+        ]
+      },
+      {
+        "category": "single_hop",
+        "query": "indentation preference",
+        "label": "preference",
+        "expect": [
+          "tab"
+        ],
+        "hit": true,
+        "returned": 4,
+        "topPreview": [
+          "PREFERENCE: maintainer prefers tab indentation and single quotes.",
+          "When adding code to an existing project, match the project's established pattern"
+        ]
+      },
+      {
+        "category": "single_hop",
+        "query": "path gotcha",
+        "label": "path",
+        "expect": [
+          "forward slash"
+        ],
+        "hit": true,
+        "returned": 5,
+        "topPreview": [
+          "GOTCHA: path.join on this repo must use forward slashes when passed to better-sq",
+          "# Compounding Knowledge Pattern\n\n## Concept\nTreat your agent's context file (CLA"
+        ]
+      },
+      {
+        "category": "noise",
+        "query": "vitest test framework decision",
+        "label": "find signal in noise",
+        "expect": [
+          "vitest"
+        ],
+        "hit": true,
+        "returned": 5,
+        "topPreview": [
+          "DECISION: this project uses vitest for all tests. Do not add jest config.",
+          "Recurring type \"decision\" observed 3 times. Key examples:\n- [decision] self-impr"
+        ]
+      },
+      {
+        "category": "noise",
+        "query": "JWT auth architecture",
+        "label": "auth in noise",
+        "expect": [
+          "JWT"
+        ],
+        "hit": true,
+        "returned": 5,
+        "topPreview": [
+          "ARCHITECTURE: auth uses short-lived JWT in Authorization header, refreshed via /",
+          "# Event-Driven Multi-Agent Design Patterns\n\nFrom Confluent's engineering guide o"
+        ]
+      }
+    ]
+  }
+}

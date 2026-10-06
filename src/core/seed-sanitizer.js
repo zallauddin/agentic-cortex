@@ -195,4 +195,5 @@ module.exports = {
   MAX_REDACTIONS,
   screenSeed,
   sanitizeSeed,
+  _redact,
 };

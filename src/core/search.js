@@ -98,6 +98,61 @@ const RESULT_COLUMNS = 'o.id, o.agent_id, o.project_path, o.type, o.title, subst
  * @param {number} [opts.limit=10] - Maximum number of results
  * @returns {Array<Object>} Search results with rank
  */
+/**
+ * English function words. FTS5 ships no stopword list, and its BM25 idf for a
+ * term present in most documents is *negative* — so quoting "the", "is",
+ * "what" into an OR query does not merely add noise, it actively subtracts
+ * score from documents that contain them. Dropping them is pure query hygiene.
+ */
+const FTS_STOPWORDS = new Set((
+  'a an and are as at be but by for from had has have he her his i if in into is it its me my of on or our ' +
+  'she so that the their them they this to was we were what when where which who will with you your about ' +
+  'after before over under again then too very can just not no do does did done been being am than out up ' +
+  'down off own same all any both each few more most other such only now'
+).split(/\s+/));
+
+/**
+ * Tokenise a free-text query into ranked-search terms.
+ *
+ * @param {string} rawQuery
+ * @param {Object} [opts] — { keepStopwords?, maxTerms? }
+ * @returns {string[]} lowercased, de-duplicated, stopword-filtered terms
+ */
+function queryTerms(rawQuery, opts = {}) {
+  const safe = String(rawQuery || '').replace(/["']/g, '');
+  let terms = [...new Set(safe.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))];
+  if (terms.length === 0) return [];
+  if (!opts.keepStopwords) {
+    const filtered = terms.filter(t => !FTS_STOPWORDS.has(t));
+    if (filtered.length > 0) terms = filtered;
+  }
+  const maxTerms = opts.maxTerms || 24;
+  if (terms.length > maxTerms) terms = terms.slice(0, maxTerms);
+  return terms;
+}
+
+/**
+ * Build the FTS5 MATCH expression for a free-text query.
+ *
+ * Tokenises on non-alphanumerics (so punctuation never leaks into a phrase),
+ * lowercases, de-duplicates and caps term count to bound query size, then ORs
+ * the terms — OR keeps recall high for conversational questions where any
+ * single distinctive word is a good anchor, while BM25 still ranks by how
+ * many rare terms a document matches.
+ *
+ * Stopwords are dropped unless that would leave nothing to match (a query of
+ * only function words still searches, rather than silently returning []), and
+ * can be kept entirely with `opts.keepStopwords`.
+ *
+ * @param {string} rawQuery
+ * @param {Object} [opts] — { keepStopwords?: boolean, maxTerms?: number }
+ * @returns {string} FTS5 MATCH expression, or '' when the query has no terms
+ */
+function buildFtsQuery(rawQuery, opts = {}) {
+  const terms = queryTerms(rawQuery, opts);
+  return terms.map(t => '"' + t + '"').join(' OR ');
+}
+
 function keywordSearch(db, opts) {
   const { whereClause, params } = buildWhereClause(opts);
   const limit = (opts.limit || 10) * 2;
@@ -115,7 +170,7 @@ function keywordSearch(db, opts) {
     }
   }
 
-  const ftsQuery = safe.split(' ').map(w => '"' + w + '"').join(' OR ');
+  const ftsQuery = buildFtsQuery(opts.query, opts);
   const sql =
     'SELECT ' + RESULT_COLUMNS + ', o.embedding IS NOT NULL as has_embedding, rank ' +
     'FROM observations_fts fts JOIN observations o ON o.id = fts.rowid ' +
@@ -581,7 +636,7 @@ function diversifyResults(results, opts = {}) {
   const lambda = opts.lambda == null ? 0.72 : Math.max(0, Math.min(1, opts.lambda));
   const selected = [];
   const remaining = results.map((result, index) => ({ result, index }));
-  const tokens = result => new Set(String((result.title || '') + ' ' + (result.preview || result.content || '')).toLowerCase().split(/\\W+/).filter(t => t.length > 2));
+  const tokens = result => new Set(String((result.title || '') + ' ' + (result.preview || result.content || '')).toLowerCase().split(/\W+/).filter(t => t.length > 2));
   const similarity = (a, b) => {
     const ta = tokens(a), tb = tokens(b);
     if (!ta.size || !tb.size) return 0;
@@ -659,10 +714,448 @@ function attachOutcomeFields(db, results, opts = {}) {
   });
 }
 
+/**
+ * Group key for a conversation memory: the row's `session_id` when the store
+ * populated one, otherwise the title with the adapter's ` (date)` / ` - turn`
+ * suffixes stripped. Returns null for memories that are not fragments of a
+ * larger conversation (they are never grouped or expanded).
+ */
+function sessionGroupKey(row) {
+  if (!row) return null;
+  if (row.session_id) return String(row.session_id);
+  const title = String(row.title || '');
+  if (!title) return null;
+  const key = title.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s*-\s*turn\s*$/, '').trim();
+  // Only treat it as a fragment when the title actually had one of those
+  // suffixes — otherwise every unrelated memory would collapse into one group.
+  const grouped = key !== title;
+  return grouped ? key : null;
+}
+
+/**
+ * Parent-document expansion ("give me the whole conversation, not the line
+ * that matched").
+ *
+ * Stores that keep both a full session transcript and its individual turns
+ * otherwise spend most of top-k on several turns from the same session. This
+ * replaces the first hit of each session with that session's transcript —
+ * which already contains every other hit from it — and drops the now-covered
+ * duplicates, so k slots span k conversations instead of 1.
+ *
+ * Measured on the benchmark corpora (scripts/strategy-sweep.js): recall
+ * never regresses, and LongMemEval context falls because duplicate turns are
+ * removed. Deliberately opt-in via `opts.expandSessions`: it trades returned
+ * count for a much larger payload per result.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {Array<Object>} results — ranked search results (id, title, project_path)
+ * @param {Object} [opts] — { limit?, project? }
+ * @returns {Array<Object>} expanded results, capped at limit
+ */
+function expandToSessions(db, results, opts = {}) {
+  if (!Array.isArray(results) || results.length === 0) return results || [];
+  if (!db) return results;
+  const limit = opts.limit || results.length;
+  const out = [];
+  const expanded = new Set();
+
+  let parentStmt = null;
+  const parentByKey = new Map();
+
+  for (const r of results) {
+    if (out.length >= limit) break;
+    const key = sessionGroupKey(r);
+    if (!key) {
+      out.push(r);
+      continue;
+    }
+    if (expanded.has(key)) continue; // already covered by this session's transcript
+    expanded.add(key);
+
+    let parent = parentByKey.get(key);
+    if (parent === undefined) {
+      parent = null;
+      try {
+        if (!parentStmt) {
+          parentStmt = db.prepare(
+            'SELECT id, title, session_id, project_path FROM observations ' +
+            'WHERE is_active = 1 AND project_path = ? AND ' +
+            "(session_id = ? OR (session_id IS NULL AND title LIKE ?)) " +
+            'ORDER BY length(content) DESC LIMIT 1'
+          );
+        }
+        const project = r.project_path || opts.project;
+        if (project) parent = parentStmt.get(project, key, key + ' (%') || null;
+      } catch { parent = null; }
+      parentByKey.set(key, parent);
+    }
+
+    // Only replace when the parent really is a bigger document than the hit:
+    // a self-match (the hit IS the transcript) must not be treated as a parent.
+    if (parent && parent.id !== r.id) {
+      out.push({ ...r, id: parent.id, title: parent.title, session_id: parent.session_id, project_path: parent.project_path });
+    } else {
+      out.push(r);
+    }
+  }
+  return out;
+}
+
+/**
+ * Breadth control: allow at most `per` results from any one conversation.
+ *
+ * A single OR-query over a long conversation matches many of its turns, so a
+ * plain top-k can be filled with near-duplicates of one session and crowd out
+ * every other conversation. Capping fragments per session spreads k slots
+ * across k conversations without discarding within-session evidence the way
+ * strict deduplication does.
+ *
+ * Measured on both benchmark corpora (scripts/strategy-sweep.js): at `per=3`
+ * recall rises on LongMemEval-S and LoCoMo simultaneously, with only a small
+ * context increase — strict deduplication (per=1) instead *lost* 13 points on
+ * LoCoMo, because its answers need several turns of the same conversation.
+ *
+ * @param {Array<Object>} results — ranked results carrying `title` or `session_id`
+ * @param {Object} [opts] — { per? (default 3), limit? }
+ * @returns {Array<Object>} results with per-session duplicates removed
+ */
+function capPerSession(results, opts = {}) {
+  if (!Array.isArray(results) || results.length === 0) return results || [];
+  const per = Math.max(1, opts.per == null ? 3 : opts.per);
+  const limit = opts.limit || results.length;
+  const counts = new Map();
+  const out = [];
+  for (const r of results) {
+    if (out.length >= limit) break;
+    const key = sessionGroupKey(r);
+    // Non-conversation memories are never capped — the rule is about
+    // conversations, not about unrelated memories that happen to co-occur.
+    if (!key) {
+      out.push(r);
+      continue;
+    }
+    const n = counts.get(key) || 0;
+    if (n >= per) continue;
+    counts.set(key, n + 1);
+    out.push(r);
+  }
+  return out;
+}
+
+/**
+ * Smoothed BM25 IDF for each query term within one project.
+ *
+ * FTS5's own idf goes *negative* for a term present in most documents, which
+ * is the defect `buildFtsQuery` works around for query construction. Ranking
+ * needs the opposite sign convention — a ubiquitous term must contribute
+ * little, never subtract — so this uses `log(1 + (N - df + 0.5) / (df + 0.5))`,
+ * which is always positive.
+ *
+ * @param {Database} db
+ * @param {string} project
+ * @param {string[]} terms
+ * @returns {Map<string, number>} term → weight (0.1 floor so nothing is inert)
+ */
+function idfWeights(db, project, terms) {
+  const weights = new Map();
+  if (!project || !Array.isArray(terms) || terms.length === 0) return weights;
+  let total = 0;
+  try {
+    total = db
+      .prepare('SELECT count(*) AS n FROM observations WHERE project_path = ? AND is_active = 1')
+      .get(project).n;
+  } catch (e) { total = 0; }
+  if (!total) return weights;
+  let dfStmt = null;
+  try {
+    dfStmt = db.prepare(
+      'SELECT count(*) AS n FROM observations_fts fts JOIN observations o ON o.id = fts.rowid ' +
+      'WHERE observations_fts MATCH ? AND o.project_path = ? AND o.is_active = 1'
+    );
+  } catch (e) { return weights; }
+  for (const t of terms) {
+    let df = 0;
+    try { df = dfStmt.get('"' + String(t).replace(/"/g, '') + '"', project).n; } catch (e) { df = 0; }
+    const idf = Math.log(1 + (total - df + 0.5) / (df + 0.5));
+    weights.set(t, Math.max(0.1, idf));
+  }
+  return weights;
+}
+
+/**
+ * IDF-weighted fraction of query terms present in a document.
+ *
+ * This is deliberately length-*unaware*: it is the ranking function that
+ * filesystem@session uses to good effect, and the one BM25's length
+ * normalisation replaces. A 13K-char transcript containing every query term
+ * scores 1.0 here but gets pushed past rank 50 by BM25 (observed ranks 58,
+ * 143, 187 on LongMemEval) where no downstream reranker can reach it.
+ *
+ * @param {string} docText
+ * @param {string[]} terms
+ * @param {Map<string, number>} idf
+ * @param {{ normalize?: boolean }} [opts] — divide by log-length (usually worse)
+ * @returns {number} coverage in [0, 1]
+ */
+function coverageScore(docText, terms, idf, opts = {}) {
+  if (!Array.isArray(terms) || terms.length === 0) return 0;
+  const lower = String(docText || '').toLowerCase();
+  if (!lower) return 0;
+  let hit = 0;
+  let total = 0;
+  const seen = new Set();
+  for (const t of terms) {
+    const w = idf && idf.get ? (idf.get(t) || 0.1) : 1;
+    total += w;
+    if (seen.has(t)) continue;
+    if (lower.includes(t)) { hit += w; seen.add(t); }
+  }
+  let score = total > 0 ? hit / total : 0;
+  if (opts.normalize && score > 0) score = score / Math.log10(10 + lower.length / 200);
+  return score;
+}
+
+/**
+ * Reciprocal rank fusion of several rankings (Cormack 2009, k=60).
+ *
+ * RRF is used rather than score averaging because the two channels are not on
+ * comparable scales: FTS returns BM25 rank (unbounded, negative-trending) and
+ * the transcript channel returns a coverage ratio in [0, 1]. RRF needs only
+ * the orderings, and is robust when one channel is much noisier than the other.
+ *
+ * @param {Array<Array<Object>>} rankLists
+ * @param {number} limit
+ * @returns {Array<Object>} fused rows, deduplicated by `id` when present
+ */
+function rrfFuse(rankLists, limit) {
+  const byKey = new Map();
+  (rankLists || []).forEach((list, li) => {
+    (list || []).forEach((row, i) => {
+      // Two channels can return *different objects* for the same observation;
+      // keying on identity would then emit it twice and waste a result slot.
+      const key = row && row.id != null ? 'id:' + row.id : row;
+      const s = 1 / (60 + i + 1);
+      const prev = byKey.get(key);
+      if (prev) {
+        prev.score += s;
+        // Keep the better-ranked instance of a duplicated row.
+        if (i < prev.idx) { prev.idx = i; prev.row = row; }
+      } else {
+        byKey.set(key, { row, score: s, idx: i, li });
+      }
+    });
+  });
+  return [...byKey.values()]
+    .sort((a, b) => b.score - a.score || a.idx - b.idx)
+    .map((x) => x.row)
+    .slice(0, limit);
+}
+
+/**
+ * Second retrieval channel: rank every conversation transcript in the project
+ * by query coverage, then fuse it with the BM25 candidate list.
+ *
+ * AC stores conversations at two granularities (turn fragments *and* whole
+ * session transcripts), so it can afford the view that fixes BM25's length
+ * normalisation without giving up turn-level precision — the two channels are
+ * complementary, which is why fusing beats either alone on both benchmark
+ * corpora. Cheap by construction: one table scan of ~40 transcripts per query.
+ *
+ * @param {Database} db
+ * @param {Array<Object>} results — BM25 candidate list (already cap-limited)
+ * @param {{ project: string, terms: string[], limit?: number, maxTranscripts?: number, fill?: boolean, idf?: Map }} opts
+ *   `fill: true` keeps zero-coverage transcripts too — used to top up a short
+ *   candidate list rather than to rerank a healthy one.
+ * @returns {Array<Object>} RRF-fused rows
+ */
+function fuseTranscripts(db, results, opts = {}) {
+  const project = opts.project;
+  const terms = Array.isArray(opts.terms) ? opts.terms : [];
+  if (!project || terms.length === 0) return results || [];
+  const idf = opts.idf || idfWeights(db, project, terms);
+  let transcripts = [];
+  try {
+    transcripts = db
+      .prepare(
+        'SELECT id, title, project_path, content, substr(content, 1, 300) AS preview, tags, session_id ' +
+        'FROM observations WHERE project_path = ? AND is_active = 1 AND tags LIKE ?'
+      )
+      .all(project, '%session-transcript%');
+  } catch (e) {
+    return results || [];
+  }
+  if (!transcripts.length) return results || [];
+  const ranked = transcripts
+    .map((row) => ({ row, cov: coverageScore(row.content, terms, idf) }))
+    .sort((a, b) => b.cov - a.cov)
+    // Zero-coverage rows carry no relevance signal, so they only enter when
+    // the caller is topping up an undersized result set — surfacing *some*
+    // conversation beats returning nothing at all. `minCoverage` is the same
+    // idea applied to rerank mode: a transcript the query barely touches is
+    // redundant with the fragments already retrieved, and costs a whole
+    // session's worth of context to prove it.
+    .filter((x) => opts.fill || (x.cov > 0 && (opts.minCoverage == null || x.cov >= opts.minCoverage)))
+    .map((x) => x.row);
+  if (!ranked.length) return results || [];
+  // Budget the second channel: each admitted transcript is a whole session,
+  // so it costs several fragments' worth of context. `maxTranscripts` bounds
+  // how many the channel may put forward, keeping the fusion from doubling
+  // context for a recall gain that a handful of transcripts already delivers.
+  const admitted = opts.maxTranscripts > 0 ? ranked.slice(0, opts.maxTranscripts) : ranked;
+  const limit = opts.limit || (results || []).length + admitted.length;
+  const fused = rrfFuse([results || [], admitted], limit);
+  return fused.length > 0 ? fused : results || [];
+}
+
+/**
+ * Greedy query-term coverage selection (set-cover over the query's terms).
+ *
+ * Different *hops* of a multi-hop question are different terms landing in
+ * different documents, and different sessions of a multi-session question
+ * carry different terms too. Ranking by global relevance therefore spends
+ * several slots re-proving the same sub-fact. This picks the candidate that
+ * covers the most still-uncovered query term first, tie-breaking on rank, so
+ * the k slots jointly maximise what the question asked about.
+ *
+ * Content is hydrated by id: `search()` returns 300-char previews, and
+ * measuring coverage on a preview would systematically favour short turns
+ * over long transcripts — the exact length bias BM25 already has.
+ *
+ * @param {Database} db
+ * @param {Array<Object>} results — ranked candidate pool
+ * @param {{ terms: string[], limit?: number }} opts
+ * @returns {Array<Object>} at most `limit` results, in selection order
+ */
+function greedyCoverageSelect(db, results, opts = {}) {
+  const terms = Array.isArray(opts.terms) ? opts.terms : [];
+  const limit = opts.limit || results.length;
+  if (!Array.isArray(results) || results.length === 0) return results || [];
+  if (terms.length === 0 || results.length <= limit) return results.slice(0, limit);
+
+  let contentStmt = null;
+  try { contentStmt = db.prepare('SELECT content FROM observations WHERE id = ?'); } catch { /* fall back to previews */ }
+  const textOf = (r) => {
+    if (r.content && r.content.length > 300) return String(r.content).toLowerCase();
+    if (contentStmt) {
+      try {
+        const row = contentStmt.get(Number(r.id));
+        if (row) return String(row.content).toLowerCase();
+      } catch { /* fall through */ }
+    }
+    return String(r.preview || '').toLowerCase();
+  };
+
+  const remaining = results.map((r) => ({ r, text: textOf(r) }));
+  const covered = new Set();
+  const chosen = [];
+  while (chosen.length < limit && remaining.length > 0) {
+    let bestIdx = 0;
+    let bestGain = -1;
+    for (let i = 0; i < remaining.length; i++) {
+      let gain = 0;
+      for (const t of terms) if (!covered.has(t) && remaining[i].text.includes(t)) gain++;
+      // Strict `>` keeps the earliest (highest-ranked) candidate on ties.
+      if (gain > bestGain) { bestGain = gain; bestIdx = i; }
+    }
+    // Nothing new to cover anywhere: fall back to raw rank order.
+    const pick = bestGain > 0 ? bestIdx : 0;
+    const item = remaining.splice(pick, 1)[0];
+    for (const t of terms) if (item.text.includes(t)) covered.add(t);
+    chosen.push(item.r);
+  }
+  return chosen;
+}
+
+/**
+ * Enforce a floor on how many distinct conversations occupy the top-k.
+ *
+ * `capPerSession` only *limits* how much one conversation can dominate; it
+ * cannot guarantee that a second conversation gets in at all. This takes the
+ * ranked top-k and, whenever it spans fewer than `minDistinct` conversations,
+ * evicts the weakest member of the most over-represented conversation to make
+ * room for the best unused candidate from an unseen one.
+ *
+ * Deliberately conservative — it never removes a conversation's only member,
+ * never touches non-conversation memories, and only ever trades a *duplicate*
+ * for a *new* conversation. LoCoMo answers need several turns of the same
+ * conversation, so a stricter policy (1 per conversation) measures 25 pts
+ * worse; this is the smallest intervention that can still add diversity.
+ *
+ * @param {Array<Object>} results — ranked, already cap-limited candidates
+ * @param {{ limit?: number, minDistinct?: number }} opts
+ * @returns {Array<Object>} at most `limit` results, original rank order kept
+ */
+function spreadAcrossSessions(results, opts = {}) {
+  if (!Array.isArray(results) || results.length === 0) return results || [];
+  const limit = opts.limit || results.length;
+  const minDistinct = opts.minDistinct == null ? 0 : opts.minDistinct;
+  const chosen = results.slice(0, limit);
+  if (minDistinct <= 1 || chosen.length === 0) return chosen;
+
+  // Positions of conversation members inside `chosen`, grouped by session.
+  const byKey = new Map();
+  chosen.forEach((r, i) => {
+    const k = sessionGroupKey(r);
+    if (!k) return; // non-conversation memory: never a donor, never counted
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(i);
+  });
+  const distinct = () => byKey.size;
+  if (distinct() >= minDistinct) return chosen;
+
+  // Unused candidates beyond the cut, grouped by the conversation they'd add.
+  const poolByKey = new Map();
+  results.slice(limit).forEach((r, j) => {
+    const k = sessionGroupKey(r);
+    if (!k || byKey.has(k)) return; // only conversations not yet represented
+    if (!poolByKey.has(k)) poolByKey.set(k, []);
+    poolByKey.get(k).push(limit + j);
+  });
+
+  const keep = new Set(chosen.map((_, i) => i));
+  while (distinct() < minDistinct) {
+    const incomingKey = poolByKey.keys().next().value;
+    if (incomingKey == null) break;
+    // Donor must have >1 member, otherwise evicting it loses a conversation.
+    let donor = null;
+    for (const [k, idxs] of byKey) {
+      // byKey is a Map — index it with .get(), not property access.
+      const donorLen = donor == null ? 0 : byKey.get(donor).length;
+      if (idxs.length >= 2 && idxs.length > donorLen) donor = k;
+    }
+    if (donor == null) break;
+    const evicted = byKey.get(donor).pop();
+    keep.delete(evicted);
+    const added = poolByKey.get(incomingKey).shift();
+    keep.add(added);
+    byKey.set(incomingKey, [added]);
+    poolByKey.delete(incomingKey);
+    if (byKey.get(donor).length === 0) byKey.delete(donor);
+  }
+  // `keep` holds indices into `results` (the promoted rows sit beyond `limit`),
+  // so map them back to rows rather than filtering `chosen`, which would
+  // silently discard every promoted row.
+  return [...keep]
+    .filter((i) => i >= 0 && i < results.length)
+    .sort((a, b) => a - b)
+    .map((i) => results[i]);
+}
+
 module.exports = {
   sanitizeDate,
   buildWhereClause,
+  buildFtsQuery,
+  queryTerms,
+  idfWeights,
+  coverageScore,
+  rrfFuse,
+  fuseTranscripts,
   keywordSearch,
+  expandToSessions,
+  capPerSession,
+  greedyCoverageSelect,
+  spreadAcrossSessions,
+  sessionGroupKey,
   applyOutcomeWeights,
   attachOutcomeFields,
   diversifyResults,

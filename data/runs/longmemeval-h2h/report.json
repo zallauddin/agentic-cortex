@@ -1,0 +1,810 @@
+{
+  "title": "LongMemEval retrieval head-to-head: agentic-cortex vs filesystem (no LLM judge)",
+  "version": 1,
+  "harness": "supermemoryai/memorybench",
+  "harnessRunId": "ac-lme-1",
+  "dataset": "xiaowu0162/longmemeval-cleaned (longmemeval_s_cleaned.json, 500 questions)",
+  "k": 10,
+  "questions": 30,
+  "questionsScored": 25,
+  "questionsUnscorable": [
+    "00ca467f",
+    "01493427",
+    "06db6396",
+    "0bc8ad92",
+    "18dcd5a5"
+  ],
+  "sampling": "5 per category, consecutive (harness sampling)",
+  "ranAt": "2026-10-06T22:19:20.013Z",
+  "evaluation": "deterministic hit@k: >=50% ground-truth answer word overlap (words len>2) in top-k context — same matcher as the LoCoMo head-to-head; retrieval recall, not LLM-judged answer accuracy. Questions whose answer has no word longer than 2 chars (e.g. \"2\", \"25\") are EXCLUDED from the denominator, not counted as misses: word-overlap cannot judge them (see scripts/lib/bench-metric.js). providers.*.rawHits/rawTotal preserve the unfiltered counts.",
+  "hydration": "full content hydrated by id from C:/Users/user/AppData/Local/Temp/ac-mb-long.db (AC search returns 300-char previews; rank order unchanged)",
+  "baselineDefinition": "filesystem = MemoryBench's own scoring algorithm (tokenize/scoreDocument/selection copied verbatim from src/providers/filesystem/index.ts) run over RAW session transcripts. The harness's native FilesystemProvider.ingest() first LLM-condenses each session via extractMemories(..., maxTokens: 2000) and stores that instead — this run had no LLM available for extraction, so filesystem@session carries more text per unit than the native provider would, and its context cost is an upper bound relative to it.",
+  "providers": {
+    "agentic-cortex@default": {
+      "recallAtK": 80,
+      "hits": 20,
+      "total": 25,
+      "rawHits": 20,
+      "rawTotal": 30
+    },
+    "filesystem@session": {
+      "recallAtK": 92,
+      "hits": 23,
+      "total": 25,
+      "rawHits": 23,
+      "rawTotal": 30
+    },
+    "filesystem@turn": {
+      "recallAtK": 64,
+      "hits": 16,
+      "total": 25,
+      "rawHits": 16,
+      "rawTotal": 30
+    }
+  },
+  "byType": {
+    "single-session-user": {
+      "agentic-cortex@default": {
+        "recallAtK": 100,
+        "hits": 5,
+        "total": 5,
+        "rawHits": 5,
+        "rawTotal": 5
+      },
+      "filesystem@session": {
+        "recallAtK": 100,
+        "hits": 5,
+        "total": 5,
+        "rawHits": 5,
+        "rawTotal": 5
+      },
+      "filesystem@turn": {
+        "recallAtK": 80,
+        "hits": 4,
+        "total": 5,
+        "rawHits": 4,
+        "rawTotal": 5
+      }
+    },
+    "multi-session": {
+      "agentic-cortex@default": {
+        "recallAtK": 25,
+        "hits": 1,
+        "total": 4,
+        "rawHits": 1,
+        "rawTotal": 5
+      },
+      "filesystem@session": {
+        "recallAtK": 75,
+        "hits": 3,
+        "total": 4,
+        "rawHits": 3,
+        "rawTotal": 5
+      },
+      "filesystem@turn": {
+        "recallAtK": 0,
+        "hits": 0,
+        "total": 4,
+        "rawHits": 0,
+        "rawTotal": 5
+      }
+    },
+    "knowledge-update": {
+      "agentic-cortex@default": {
+        "recallAtK": 100,
+        "hits": 3,
+        "total": 3,
+        "rawHits": 3,
+        "rawTotal": 5
+      },
+      "filesystem@session": {
+        "recallAtK": 100,
+        "hits": 3,
+        "total": 3,
+        "rawHits": 3,
+        "rawTotal": 5
+      },
+      "filesystem@turn": {
+        "recallAtK": 100,
+        "hits": 3,
+        "total": 3,
+        "rawHits": 3,
+        "rawTotal": 5
+      }
+    },
+    "single-session-preference": {
+      "agentic-cortex@default": {
+        "recallAtK": 100,
+        "hits": 5,
+        "total": 5,
+        "rawHits": 5,
+        "rawTotal": 5
+      },
+      "filesystem@session": {
+        "recallAtK": 100,
+        "hits": 5,
+        "total": 5,
+        "rawHits": 5,
+        "rawTotal": 5
+      },
+      "filesystem@turn": {
+        "recallAtK": 100,
+        "hits": 5,
+        "total": 5,
+        "rawHits": 5,
+        "rawTotal": 5
+      }
+    },
+    "temporal-reasoning": {
+      "agentic-cortex@default": {
+        "recallAtK": 75,
+        "hits": 3,
+        "total": 4,
+        "rawHits": 3,
+        "rawTotal": 5
+      },
+      "filesystem@session": {
+        "recallAtK": 100,
+        "hits": 4,
+        "total": 4,
+        "rawHits": 4,
+        "rawTotal": 5
+      },
+      "filesystem@turn": {
+        "recallAtK": 50,
+        "hits": 2,
+        "total": 4,
+        "rawHits": 2,
+        "rawTotal": 5
+      }
+    },
+    "single-session-assistant": {
+      "agentic-cortex@default": {
+        "recallAtK": 75,
+        "hits": 3,
+        "total": 4,
+        "rawHits": 3,
+        "rawTotal": 5
+      },
+      "filesystem@session": {
+        "recallAtK": 75,
+        "hits": 3,
+        "total": 4,
+        "rawHits": 3,
+        "rawTotal": 5
+      },
+      "filesystem@turn": {
+        "recallAtK": 50,
+        "hits": 2,
+        "total": 4,
+        "rawHits": 2,
+        "rawTotal": 5
+      }
+    }
+  },
+  "contextCost": {
+    "agentic-cortex@default": {
+      "medianChars": 32465,
+      "meanChars": 34681
+    },
+    "filesystem@session": {
+      "medianChars": 138744,
+      "meanChars": 139562
+    },
+    "filesystem@turn": {
+      "medianChars": 21037,
+      "meanChars": 22123
+    },
+    "medianHaystackChars": 492759,
+    "medianPctOfHaystack": {
+      "agentic-cortex@default": 7,
+      "filesystem@session": 28,
+      "filesystem@turn": 4
+    },
+    "fsSessionVsAcRatio": 4,
+    "fsTurnVsAcRatio": 1,
+    "note": "context chars placed in the prompt per question; lower is cheaper"
+  },
+  "details": [
+    {
+      "questionId": "001be529",
+      "type": "single-session-user",
+      "question": "How long did I wait for the decision on my asylum application?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 31291,
+        "filesystem@session": 113889,
+        "filesystem@turn": 21037,
+        "haystack": 485917
+      },
+      "latencies": {
+        "agentic-cortex@default": 510
+      }
+    },
+    {
+      "questionId": "00ca467f",
+      "type": "multi-session",
+      "question": "How many doctor's appointments did I go to in March?",
+      "scorable": false,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": false,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 24494,
+        "filesystem@session": 134710,
+        "filesystem@turn": 33402,
+        "haystack": 498662
+      },
+      "latencies": {
+        "agentic-cortex@default": 475
+      }
+    },
+    {
+      "questionId": "0100672e",
+      "type": "multi-session",
+      "question": "How much did I spend on each coffee mug for my coworkers?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": true,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 38543,
+        "filesystem@session": 138744,
+        "filesystem@turn": 25244,
+        "haystack": 501659
+      },
+      "latencies": {
+        "agentic-cortex@default": 462
+      }
+    },
+    {
+      "questionId": "01493427",
+      "type": "knowledge-update",
+      "question": "How many new postcards have I added to my collection since I started collecting again?",
+      "scorable": false,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": false,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 51144,
+        "filesystem@session": 156851,
+        "filesystem@turn": 13865,
+        "haystack": 488314
+      },
+      "latencies": {
+        "agentic-cortex@default": 446
+      }
+    },
+    {
+      "questionId": "031748ae",
+      "type": "knowledge-update",
+      "question": "How many engineers do I lead when I just started my new role as Senior Software Engineer? How many engineers do I lead now?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 33009,
+        "filesystem@session": 145043,
+        "filesystem@turn": 18333,
+        "haystack": 498430
+      },
+      "latencies": {
+        "agentic-cortex@default": 431
+      }
+    },
+    {
+      "questionId": "031748ae_abs",
+      "type": "knowledge-update",
+      "question": "How many engineers do I lead when I just started my new role as Software Engineer Manager?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 30094,
+        "filesystem@session": 133760,
+        "filesystem@turn": 13911,
+        "haystack": 497327
+      },
+      "latencies": {
+        "agentic-cortex@default": 415
+      }
+    },
+    {
+      "questionId": "06878be2",
+      "type": "single-session-preference",
+      "question": "Can you suggest some accessories that would complement my current photography setup?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 26631,
+        "filesystem@session": 144469,
+        "filesystem@turn": 19611,
+        "haystack": 494984
+      },
+      "latencies": {
+        "agentic-cortex@default": 405
+      }
+    },
+    {
+      "questionId": "06db6396",
+      "type": "knowledge-update",
+      "question": "How many projects have I completed since starting painting classes?",
+      "scorable": false,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": false,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 61613,
+        "filesystem@session": 155025,
+        "filesystem@turn": 30632,
+        "haystack": 496645
+      },
+      "latencies": {
+        "agentic-cortex@default": 388
+      }
+    },
+    {
+      "questionId": "06f04340",
+      "type": "single-session-preference",
+      "question": "What should I serve for dinner this weekend with my homegrown ingredients?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 32465,
+        "filesystem@session": 121769,
+        "filesystem@turn": 17438,
+        "haystack": 488386
+      },
+      "latencies": {
+        "agentic-cortex@default": 374
+      }
+    },
+    {
+      "questionId": "07741c44",
+      "type": "knowledge-update",
+      "question": "Where do I initially keep my old sneakers?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 23886,
+        "filesystem@session": 135927,
+        "filesystem@turn": 26622,
+        "haystack": 507229
+      },
+      "latencies": {
+        "agentic-cortex@default": 364
+      }
+    },
+    {
+      "questionId": "078150f1",
+      "type": "multi-session",
+      "question": "How much more money did I raise than my initial goal in the charity cycling event?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": true,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 50987,
+        "filesystem@session": 154816,
+        "filesystem@turn": 20755,
+        "haystack": 480750
+      },
+      "latencies": {
+        "agentic-cortex@default": 358
+      }
+    },
+    {
+      "questionId": "07b6f563",
+      "type": "single-session-preference",
+      "question": "Can you suggest some useful accessories for my phone?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 31593,
+        "filesystem@session": 134037,
+        "filesystem@turn": 11375,
+        "haystack": 496683
+      },
+      "latencies": {
+        "agentic-cortex@default": 346
+      }
+    },
+    {
+      "questionId": "0862e8bf",
+      "type": "single-session-user",
+      "question": "What is the name of my cat?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 28838,
+        "filesystem@session": 114054,
+        "filesystem@turn": 30094,
+        "haystack": 475211
+      },
+      "latencies": {
+        "agentic-cortex@default": 334
+      }
+    },
+    {
+      "questionId": "0862e8bf_abs",
+      "type": "single-session-user",
+      "question": "What is the name of my hamster?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 25882,
+        "filesystem@session": 112940,
+        "filesystem@turn": 21658,
+        "haystack": 482499
+      },
+      "latencies": {
+        "agentic-cortex@default": 331
+      }
+    },
+    {
+      "questionId": "08f4fc43",
+      "type": "temporal-reasoning",
+      "question": "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 22358,
+        "filesystem@session": 155903,
+        "filesystem@turn": 18257,
+        "haystack": 496746
+      },
+      "latencies": {
+        "agentic-cortex@default": 331
+      }
+    },
+    {
+      "questionId": "099778bb",
+      "type": "multi-session",
+      "question": "What percentage of leadership positions do women hold in the my company?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": false,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 47717,
+        "filesystem@session": 159210,
+        "filesystem@turn": 20838,
+        "haystack": 510897
+      },
+      "latencies": {
+        "agentic-cortex@default": 317
+      }
+    },
+    {
+      "questionId": "09ba9854",
+      "type": "multi-session",
+      "question": "How much will I save by taking the train from the airport to my hotel instead of a taxi?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 30337,
+        "filesystem@session": 133021,
+        "filesystem@turn": 16629,
+        "haystack": 485188
+      },
+      "latencies": {
+        "agentic-cortex@default": 311
+      }
+    },
+    {
+      "questionId": "09d032c9",
+      "type": "single-session-preference",
+      "question": "I've been having trouble with the battery life on my phone lately. Any tips?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 12954,
+        "filesystem@session": 155064,
+        "filesystem@turn": 15870,
+        "haystack": 481276
+      },
+      "latencies": {
+        "agentic-cortex@default": 298
+      }
+    },
+    {
+      "questionId": "0a34ad58",
+      "type": "single-session-preference",
+      "question": "I’m a bit anxious about getting around Tokyo. Do you have any helpful tips?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 59198,
+        "filesystem@session": 154110,
+        "filesystem@turn": 19262,
+        "haystack": 496786
+      },
+      "latencies": {
+        "agentic-cortex@default": 285
+      }
+    },
+    {
+      "questionId": "0bb5a684",
+      "type": "temporal-reasoning",
+      "question": "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Communication in the Workplace'?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": true,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 49816,
+        "filesystem@session": 157299,
+        "filesystem@turn": 16208,
+        "haystack": 502216
+      },
+      "latencies": {
+        "agentic-cortex@default": 274
+      }
+    },
+    {
+      "questionId": "0bc8ad92",
+      "type": "temporal-reasoning",
+      "question": "How many months have passed since I last visited a museum with a friend?",
+      "scorable": false,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": false,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 35069,
+        "filesystem@session": 149389,
+        "filesystem@turn": 20906,
+        "haystack": 480968
+      },
+      "latencies": {
+        "agentic-cortex@default": 256
+      }
+    },
+    {
+      "questionId": "0bc8ad93",
+      "type": "temporal-reasoning",
+      "question": "I mentioned visiting a museum two months ago. Did I visit with a friend or not?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 33018,
+        "filesystem@session": 138792,
+        "filesystem@turn": 18826,
+        "haystack": 496760
+      },
+      "latencies": {
+        "agentic-cortex@default": 243
+      }
+    },
+    {
+      "questionId": "0db4c65d",
+      "type": "temporal-reasoning",
+      "question": "How many days had passed since I finished reading 'The Seven Husbands of Evelyn Hugo' when I attended the book reading event at the local library, where the author of 'The Silent Patient' is discussing her latest thriller novel?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 29937,
+        "filesystem@session": 152870,
+        "filesystem@turn": 26873,
+        "haystack": 473190
+      },
+      "latencies": {
+        "agentic-cortex@default": 234
+      }
+    },
+    {
+      "questionId": "0e5e2d1a",
+      "type": "single-session-assistant",
+      "question": "I wanted to follow up on our previous conversation about binaural beats for anxiety and depression. Can you remind me how many subjects were in the study published in the journal Music and Medicine that found significant reductions in symptoms of depression, anxiety, and stress?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 30916,
+        "filesystem@session": 121207,
+        "filesystem@turn": 32760,
+        "haystack": 489411
+      },
+      "latencies": {
+        "agentic-cortex@default": 218
+      }
+    },
+    {
+      "questionId": "118b2229",
+      "type": "single-session-user",
+      "question": "How long is my daily commute to work?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 29854,
+        "filesystem@session": 124226,
+        "filesystem@turn": 22746,
+        "haystack": 484033
+      },
+      "latencies": {
+        "agentic-cortex@default": 199
+      }
+    },
+    {
+      "questionId": "1568498a",
+      "type": "single-session-assistant",
+      "question": "I'm looking back at our previous chess game and I was wondering, what was the move you made after 27. Kg2 Bd5+?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 20683,
+        "filesystem@session": 138198,
+        "filesystem@turn": 25189,
+        "haystack": 478871
+      },
+      "latencies": {
+        "agentic-cortex@default": 186
+      }
+    },
+    {
+      "questionId": "15745da0",
+      "type": "single-session-user",
+      "question": "How long have I been collecting vintage cameras?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 45632,
+        "filesystem@session": 156071,
+        "filesystem@turn": 27577,
+        "haystack": 488908
+      },
+      "latencies": {
+        "agentic-cortex@default": 175
+      }
+    },
+    {
+      "questionId": "16c90bf4",
+      "type": "single-session-assistant",
+      "question": "I'm looking back at our previous conversation about the Seco de Cordero recipe from Ancash. You mentioned using a light or medium-bodied beer, but I was wondering if you could remind me what type of beer you specifically recommended?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": true,
+        "filesystem@session": true,
+        "filesystem@turn": true
+      },
+      "contextChars": {
+        "agentic-cortex@default": 32785,
+        "filesystem@session": 126147,
+        "filesystem@turn": 22482,
+        "haystack": 492759
+      },
+      "latencies": {
+        "agentic-cortex@default": 164
+      }
+    },
+    {
+      "questionId": "18dcd5a5",
+      "type": "single-session-assistant",
+      "question": "I'm going back to our previous chat about the Lost Temple of the Djinn one-shot. Can you remind me how many mummies the party will face in the temple?",
+      "scorable": false,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": false,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 34764,
+        "filesystem@session": 133284,
+        "filesystem@turn": 28651,
+        "haystack": 497765
+      },
+      "latencies": {
+        "agentic-cortex@default": 146
+      }
+    },
+    {
+      "questionId": "1903aded",
+      "type": "single-session-assistant",
+      "question": "I think we discussed work from home jobs for seniors earlier. Can you remind me what was the 7th job in the list you provided?",
+      "scorable": true,
+      "hits": {
+        "agentic-cortex@default": false,
+        "filesystem@session": false,
+        "filesystem@turn": false
+      },
+      "contextChars": {
+        "agentic-cortex@default": 34909,
+        "filesystem@session": 136028,
+        "filesystem@turn": 26631,
+        "haystack": 489513
+      },
+      "latencies": {
+        "agentic-cortex@default": 128
+      }
+    }
+  ]
+}

@@ -165,6 +165,72 @@ describe('Save Search Reflect Pipeline', () => {
     assert.equal(list.length, 3);
   });
 
+  it('should not return an empty result set when the query words are absent verbatim', async () => {
+    // Regression: a purely lexical channel returns NOTHING when no query term
+    // occurs verbatim in the corpus — "relationship" vs corpus "relationships"
+    // is enough, because FTS5 does not stem. Returning zero memories for a
+    // question about data we hold is a correctness bug, not a ranking miss.
+    await api.save({
+      title: 'conv-1 (1 Jan)',
+      content: 'Caroline told Mel that her relationships are complicated right now',
+      project: '/int-test',
+      type: 'observation',
+      tags: ['memorybench', 'session-transcript'],
+    });
+    await api.save({
+      title: 'conv-1 - turn',
+      content: 'Caroline told Mel that her relationships are complicated',
+      project: '/int-test',
+      type: 'observation',
+      tags: ['memorybench', 'dialog-turn'],
+    });
+
+    const results = await api.search("What is Caroline's relationship status?", {
+      project: '/int-test',
+      limit: 5,
+    });
+
+    assert.ok(results.length > 0, 'a lexical miss must still surface the conversation');
+    assert.ok(results.some(r => r.title === 'conv-1 (1 Jan)'),
+      'tops up with the whole-session transcript');
+  });
+
+  it('applies a selection policy instead of silently falling back to rank order', async () => {
+    // Regression: spreadAcrossSessions used property access on a Map and
+    // threw on its first eviction; the surrounding catch then fell back to a
+    // plain cut, so the policy looked *inert* rather than broken. This asserts
+    // the policy actually changes the result set.
+    for (let s = 1; s <= 5; s++) {
+      for (let t = 1; t <= 2; t++) {
+        await api.save({
+          title: `sess-${s} - turn`,
+          // Higher term frequency for lower session numbers so BM25 ranks
+          // session 1 and 2 first, deterministically.
+          content: `${'redis '.repeat(6 - s)}weight filler for turn ${t}`,
+          project: '/int-test',
+          type: 'observation',
+        });
+      }
+    }
+    const opts = { project: '/int-test', limit: 4, rerank: true };
+    const byRank = await api.search('redis', opts);
+    const key = (r) => require('../src/core/search').sessionGroupKey(r);
+    const distinctOf = (rows) => new Set(rows.map(key).filter(Boolean)).size;
+
+    assert.ok(byRank.length >= 4, 'candidate pool should be deep enough to re-select from');
+    assert.ok(distinctOf(byRank) < 4,
+      'precondition: rank order clusters the top-k into few conversations');
+
+    const spread = await api.search('redis', {
+      ...opts,
+      selectionPolicy: 'spread',
+      minDistinctSessions: 4,
+    });
+    assert.equal(spread.length, byRank.length, 'policy must not shrink the result set');
+    assert.ok(distinctOf(spread) >= 4,
+      `selection policy must span 4 conversations, got ${distinctOf(spread)}`);
+  });
+
   it('should save with embeddings and enable search', async () => {
     const r1 = await api.save({ title: 'Redis', content: 'Redis cache', project: '/int-test' });
     assert.ok(r1.embedded, 'Should auto-embed via mock');

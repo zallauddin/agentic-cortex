@@ -17,13 +17,17 @@ import type {
 } from "../../types/provider"
 import type { UnifiedSession } from "../../types/unified"
 import { logger } from "../../utils/logger"
-import { AC_PROMPTS } from "./prompts"
 
 const BASE_DIR = join(process.cwd(), "data", "providers", "agentic-cortex")
 
 export class ACProvider implements Provider {
   name = "agentic-cortex"
-  prompts = AC_PROMPTS
+  // NOTE: deliberately no `prompts` override. The harness's ProviderPrompts
+  // shape is `{ answerPrompt?, judgePrompt? }`; AC's own extract/answer prompt
+  // vocabulary (see ./prompts.ts) does not map onto it, so claiming the field
+  // would type-error AND silently swap the harness's default answer prompt out
+  // from under reported benchmark numbers. Leaving it unset keeps every
+  // provider on the harness default — the controlled configuration.
   concurrency = {
     default: 50,
     ingest: 200,
@@ -38,8 +42,12 @@ export class ACProvider implements Provider {
     this.projectPath = config.baseUrl || process.cwd()
 
     // Load agentic-cortex API from config or auto-discover
-    if (config.acApiPath) {
-      this.api = require(config.acApiPath)
+    // ProviderConfig is `{ apiKey: string; [key: string]: unknown }`, so the
+    // extension key arrives as `unknown` — narrow it before handing it to
+    // require(), otherwise a non-string value throws deep in module loading.
+    const acApiPath = config.acApiPath
+    if (typeof acApiPath === "string" && acApiPath.length > 0) {
+      this.api = require(acApiPath)
     } else {
       // Try to find agentic-cortex API in common locations
       const candidates = [
@@ -96,6 +104,7 @@ export class ACProvider implements Provider {
         type: "fact",
         tags: ["memorybench", "locomo", options.containerTag, "session-transcript"],
         project,
+        session: sessionId,
         importance: 3,
         confidence: 100,
         provenance: "observed",
@@ -111,6 +120,7 @@ export class ACProvider implements Provider {
           type: "observation",
           tags: ["memorybench", "locomo", options.containerTag, "dialog-turn"],
           project,
+          session: sessionId,
           importance: 1,
           confidence: 100,
           provenance: "observed",
@@ -143,11 +153,33 @@ export class ACProvider implements Provider {
       project,
       limit: options.limit || 10,
       rerank: true,
+      // Breadth control: cap fragments per conversation so one long session
+      // cannot fill every k slot with near-duplicate turns. Measured in
+      // scripts/strategy-sweep.js to raise recall on BOTH benchmark corpora;
+      // strict per-session deduplication instead *lost* 13 points on LoCoMo,
+      // whose answers need several turns of the same conversation.
+      maxPerSession: 3,
     })
+
+    // Hydrate full content by id: AC's search returns only a 300-char
+    // preview (substr(o.content, 1, 300)), which would silently truncate
+    // retrieved evidence before the judge/metric ever sees it. Ranking is
+    // unchanged — only the payload is completed, exactly as a real consumer
+    // does (memory_search -> memory_get).
+    const hydrate = (r: any): string => {
+      if (r.content && !r.preview) return r.content
+      try {
+        const full = this.api.get?.(Number(r.id))
+        if (full && typeof full.content === "string" && full.content.length > 0) {
+          return full.content
+        }
+      } catch { /* fall back to preview */ }
+      return r.preview || r.content || r.title || ""
+    }
 
     return results.map((r: any) => ({
       id: String(r.id),
-      content: r.preview || r.content || r.title || "",
+      content: hydrate(r),
       score: r.rerank_score ?? r.combined_score ?? r.semantic_score ?? 0,
       metadata: {
         type: r.type,

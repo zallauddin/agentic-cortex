@@ -1,0 +1,975 @@
+{
+  "title": "MemoryBench Head-to-Head with Granularity Control: agentic-cortex vs filesystem vs supermemory (LoCoMo)",
+  "version": 3,
+  "harness": "supermemoryai/memorybench",
+  "harnessRunId": "ac-smoke1",
+  "dataset": "snap-research/locomo (locomo10.json)",
+  "k": 10,
+  "questions": 15,
+  "conversations": [
+    "conv-26"
+  ],
+  "ranAt": "2026-10-06T00:01:13.726Z",
+  "evaluation": "deterministic hit@k: >=50% ground-truth word overlap in top-k context (evidence dia_id path symmetric/absent for all)",
+  "supermemory": {
+    "ran": false,
+    "reason": "skipped: SUPERMEMORY_API_KEY not set — set it and re-run to add the cloud row (cached AC/FS results make that a supermemory-only run)",
+    "plannedSampleSize": 12,
+    "samplePerCategory": 3,
+    "plannedSampledQuestionIds": [
+      "conv-26-q0",
+      "conv-26-q1",
+      "conv-26-q5",
+      "conv-26-q3",
+      "conv-26-q4",
+      "conv-26-q7",
+      "conv-26-q14",
+      "conv-26-q2",
+      "conv-26-q22",
+      "conv-26-q82",
+      "conv-26-q83",
+      "conv-26-q84"
+    ],
+    "containerScope": "per-conversation (ac-h2h-<sampleId>)",
+    "cacheFile": "D:\\sourcecode\\agentic-cortex\\data\\runs\\h2h-15q-2026-10-05\\supermemory-cache.json",
+    "note": "set SUPERMEMORY_API_KEY and re-run — AC/FS rows are deterministic and the three-way table will use the recorded planned sample"
+  },
+  "design": {
+    "controlledVariable": "document granularity (unit size)",
+    "matchedPairs": {
+      "sessionLevel": [
+        "filesystem@session",
+        "agentic-cortex@session",
+        "supermemory@session"
+      ],
+      "turnLevel": [
+        "filesystem@turn",
+        "agentic-cortex@turn"
+      ]
+    },
+    "unitCounts": "session-level: 19 docs per question container; turn-level: ~415 docs (turns >= 30 chars, same threshold as AC adapter)",
+    "note": "All providers scored with the identical deterministic matcher. AC/FS run on all 600 questions; supermemory on a deterministic stratified sample — the three-way table compares all providers on the SAME sampled subset."
+  },
+  "providersFull": {
+    "filesystem@session": {
+      "recallAtK": 53.3,
+      "hits": 8,
+      "total": 15,
+      "byCategory": {
+        "multi_hop": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        },
+        "temporal": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "single_hop": {
+          "recall": 100,
+          "hits": 3,
+          "total": 3
+        },
+        "world_knowledge": {
+          "recall": 100,
+          "hits": 3,
+          "total": 3
+        },
+        "adversarial": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        }
+      },
+      "avgLatencyMs": null
+    },
+    "agentic-cortex@session": {
+      "recallAtK": 53.3,
+      "hits": 8,
+      "total": 15,
+      "byCategory": {
+        "multi_hop": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "temporal": {
+          "recall": 33.3,
+          "hits": 1,
+          "total": 3
+        },
+        "single_hop": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "world_knowledge": {
+          "recall": 100,
+          "hits": 3,
+          "total": 3
+        },
+        "adversarial": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        }
+      },
+      "avgLatencyMs": 22
+    },
+    "filesystem@turn": {
+      "recallAtK": 20,
+      "hits": 3,
+      "total": 15,
+      "byCategory": {
+        "multi_hop": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        },
+        "temporal": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        },
+        "single_hop": {
+          "recall": 33.3,
+          "hits": 1,
+          "total": 3
+        },
+        "world_knowledge": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "adversarial": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        }
+      },
+      "avgLatencyMs": null
+    },
+    "agentic-cortex@turn": {
+      "recallAtK": 26.7,
+      "hits": 4,
+      "total": 15,
+      "byCategory": {
+        "multi_hop": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        },
+        "temporal": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        },
+        "single_hop": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "world_knowledge": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "adversarial": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        }
+      },
+      "avgLatencyMs": 4
+    }
+  },
+  "providersSample": {
+    "filesystem@session": {
+      "recallAtK": 66.7,
+      "hits": 8,
+      "total": 12,
+      "byCategory": {
+        "multi_hop": {
+          "recall": 0,
+          "hits": 0,
+          "total": 3
+        },
+        "temporal": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "single_hop": {
+          "recall": 100,
+          "hits": 3,
+          "total": 3
+        },
+        "world_knowledge": {
+          "recall": 100,
+          "hits": 3,
+          "total": 3
+        }
+      },
+      "avgLatencyMs": null
+    },
+    "agentic-cortex@session": {
+      "recallAtK": 66.7,
+      "hits": 8,
+      "total": 12,
+      "byCategory": {
+        "multi_hop": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "temporal": {
+          "recall": 33.3,
+          "hits": 1,
+          "total": 3
+        },
+        "single_hop": {
+          "recall": 66.7,
+          "hits": 2,
+          "total": 3
+        },
+        "world_knowledge": {
+          "recall": 100,
+          "hits": 3,
+          "total": 3
+        }
+      },
+      "avgLatencyMs": 23
+    }
+  },
+  "details": {
+    "filesystem@session": [
+      {
+        "questionId": "conv-26-q0",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Melanie! Just wanted to say hi!\n[Melanie]: Hey Caroline! Good to talk to y",
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir",
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to "
+        ]
+      },
+      {
+        "questionId": "conv-26-q1",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to ",
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir",
+          "[Caroline]: Hey, Mel! How's it going? There's something I want to tell you. I went hiking "
+        ]
+      },
+      {
+        "questionId": "conv-26-q2",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Melanie! Long time no talk! A lot's been going on in my life! Take a look ",
+          "[Caroline]: Hey Mel, great to chat with you again! So much has happened since we last spok",
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir"
+        ]
+      },
+      {
+        "questionId": "conv-26-q3",
+        "category": "single_hop",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to ",
+          "[Caroline]: Hey Mel, what's up? Long time no see! I just contacted my mentor for adoption ",
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. "
+        ]
+      },
+      {
+        "questionId": "conv-26-q4",
+        "category": "single_hop",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Melanie! How's it going? I wanted to tell you about my school event last w",
+          "[Melanie]: Hey Caroline! Last night was amazing! We celebrated my daughter's birthday with",
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir"
+        ]
+      },
+      {
+        "questionId": "conv-26-q5",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. ",
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir",
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to "
+        ]
+      },
+      {
+        "questionId": "conv-26-q7",
+        "category": "single_hop",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Mel, long time no chat! I had a wicked day out with the gang last weekend ",
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to ",
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. "
+        ]
+      },
+      {
+        "questionId": "conv-26-q14",
+        "category": "temporal",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Melanie! Long time no talk! A lot's been going on in my life! Take a look ",
+          "[Caroline]: Hey Mel, great to chat with you again! So much has happened since we last spok",
+          "[Caroline]: Since we last spoke, some big things have happened. Last week I went to an LGB"
+        ]
+      },
+      {
+        "questionId": "conv-26-q22",
+        "category": "temporal",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Mel! Long time no talk. Lots has been going on since then!\n[Melanie]: Hey ",
+          "[Caroline]: Hey Mel, great to chat with you again! So much has happened since we last spok",
+          "[Caroline]: Hey, Mel! How's it going? There's something I want to tell you. I went hiking "
+        ]
+      },
+      {
+        "questionId": "conv-26-q82",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. ",
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to ",
+          "[Caroline]: Hey Mel, great to chat with you again! So much has happened since we last spok"
+        ]
+      },
+      {
+        "questionId": "conv-26-q83",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. ",
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to ",
+          "[Caroline]: Hey Mel, great to chat with you again! So much has happened since we last spok"
+        ]
+      },
+      {
+        "questionId": "conv-26-q84",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir",
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to ",
+          "[Caroline]: Hey Melanie! Long time no talk! A lot's been going on in my life! Take a look "
+        ]
+      },
+      {
+        "questionId": "conv-26-q152",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. ",
+          "[Caroline]: Hey Mel! Good to see you! How have you been?\n[Melanie]: Hey Caroline! Good to ",
+          "[Caroline]: Hey Mel, great to chat with you again! So much has happened since we last spok"
+        ]
+      },
+      {
+        "questionId": "conv-26-q153",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. ",
+          "[Caroline]: Woohoo Melanie! I passed the adoption agency interviews last Friday! I'm so ex",
+          "[Caroline]: Hey Mel, what's up? Been a busy week since we talked.\n[Melanie]: Hey Caroline,"
+        ]
+      },
+      {
+        "questionId": "conv-26-q154",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hey Mel, what's up? Long time no see! I just contacted my mentor for adoption ",
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. ",
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir"
+        ]
+      }
+    ],
+    "agentic-cortex@session": [
+      {
+        "questionId": "conv-26-q0",
+        "category": "multi_hop",
+        "hit": true,
+        "latencyMs": 44,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_1 (1:56 pm on 8 May, 2023)] [Speaker A]: Hey Mel! Good to see you! How ha",
+          "[conv-26-session_10 (8:56 pm on 20 July, 2023)] [Speaker A]: Hey Melanie! Just wanted to s",
+          "[conv-26-session_13 (3:31 pm on 23 August, 2023)] [Speaker A]: Hi Melanie! Hope you're doi"
+        ]
+      },
+      {
+        "questionId": "conv-26-q1",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 13,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_13 (3:31 pm on 23 August, 2023)] [Speaker A]: Hi Melanie! Hope you're doi",
+          "[conv-26-session_1 (1:56 pm on 8 May, 2023)] [Speaker A]: Hey Mel! Good to see you! How ha",
+          "[conv-26-session_18 (6:55 pm on 20 October, 2023)] [Speaker B]: Hey Caroline, that roadtri"
+        ]
+      },
+      {
+        "questionId": "conv-26-q2",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 17,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_10 (8:56 pm on 20 July, 2023)] [Speaker A]: Hey Melanie! Just wanted to s",
+          "[conv-26-session_7 (4:33 pm on 12 July, 2023)] [Speaker A]: Hey Mel, great to chat with yo",
+          "[conv-26-session_13 (3:31 pm on 23 August, 2023)] [Speaker A]: Hi Melanie! Hope you're doi"
+        ]
+      },
+      {
+        "questionId": "conv-26-q3",
+        "category": "single_hop",
+        "hit": true,
+        "latencyMs": 10,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_1 (1:56 pm on 8 May, 2023)] [Speaker A]: Hey Mel! Good to see you! How ha",
+          "[conv-26-session_17 (10:31 am on 13 October, 2023)] [Speaker A]: Hey Mel, what's up? Long ",
+          "[conv-26-session_8 (1:51 pm on 15 July, 2023)] [Speaker A]: Hey Mel, what's up? Been a bus"
+        ]
+      },
+      {
+        "questionId": "conv-26-q4",
+        "category": "single_hop",
+        "hit": true,
+        "latencyMs": 25,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_11 (2:24 pm on 14 August, 2023)] [Speaker B]: Hey Caroline! Last night wa",
+          "[conv-26-session_1 (1:56 pm on 8 May, 2023)] [Speaker A]: Hey Mel! Good to see you! How ha",
+          "[conv-26-session_16 (12:09 am on 13 September, 2023)] [Speaker A]: Hey Mel, long time no c"
+        ]
+      },
+      {
+        "questionId": "conv-26-q5",
+        "category": "multi_hop",
+        "hit": true,
+        "latencyMs": 13,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 (1:14 pm on 25 May, 2023)] [Speaker B]: Hey Caroline, since we last cha",
+          "[conv-26-session_13 (3:31 pm on 23 August, 2023)] [Speaker A]: Hi Melanie! Hope you're doi",
+          "[conv-26-session_18 (6:55 pm on 20 October, 2023)] [Speaker B]: Hey Caroline, that roadtri"
+        ]
+      },
+      {
+        "questionId": "conv-26-q7",
+        "category": "single_hop",
+        "hit": false,
+        "latencyMs": 11,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_1 (1:56 pm on 8 May, 2023)] [Speaker A]: Hey Mel! Good to see you! How ha",
+          "[conv-26-session_9 (2:31 pm on 17 July, 2023)] [Speaker B]: Hey Caroline, hope all's good!",
+          "[conv-26-session_11 (2:24 pm on 14 August, 2023)] [Speaker B]: Hey Caroline! Last night wa"
+        ]
+      },
+      {
+        "questionId": "conv-26-q14",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 50,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_4 (10:37 am on 27 June, 2023)] [Speaker A]: Hey Melanie! Long time no tal",
+          "[conv-26-session_7 (4:33 pm on 12 July, 2023)] [Speaker A]: Hey Mel, great to chat with yo",
+          "[conv-26-session_5 (1:36 pm on 3 July, 2023)] [Speaker A]: Since we last spoke, some big t"
+        ]
+      },
+      {
+        "questionId": "conv-26-q22",
+        "category": "temporal",
+        "hit": true,
+        "latencyMs": 41,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_6 (8:18 pm on 6 July, 2023)] [Speaker A]: Hey Mel! Long time no talk. Lot",
+          "[conv-26-session_7 (4:33 pm on 12 July, 2023)] [Speaker A]: Hey Mel, great to chat with yo",
+          "[conv-26-session_10 (8:56 pm on 20 July, 2023)] [Speaker A]: Hey Melanie! Just wanted to s"
+        ]
+      },
+      {
+        "questionId": "conv-26-q82",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 23,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 (1:14 pm on 25 May, 2023)] [Speaker B]: Hey Caroline, since we last cha",
+          "[conv-26-session_7 (4:33 pm on 12 July, 2023)] [Speaker A]: Hey Mel, great to chat with yo",
+          "[conv-26-session_1 (1:56 pm on 8 May, 2023)] [Speaker A]: Hey Mel! Good to see you! How ha"
+        ]
+      },
+      {
+        "questionId": "conv-26-q83",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 17,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 (1:14 pm on 25 May, 2023)] [Speaker B]: Hey Caroline, since we last cha",
+          "[conv-26-session_18 (6:55 pm on 20 October, 2023)] [Speaker B]: Hey Caroline, that roadtri",
+          "[conv-26-session_1 (1:56 pm on 8 May, 2023)] [Speaker A]: Hey Mel! Good to see you! How ha"
+        ]
+      },
+      {
+        "questionId": "conv-26-q84",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 16,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_13 (3:31 pm on 23 August, 2023)] [Speaker A]: Hi Melanie! Hope you're doi",
+          "[conv-26-session_11 (2:24 pm on 14 August, 2023)] [Speaker B]: Hey Caroline! Last night wa",
+          "[conv-26-session_2 (1:14 pm on 25 May, 2023)] [Speaker B]: Hey Caroline, since we last cha"
+        ]
+      },
+      {
+        "questionId": "conv-26-q152",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 3,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 (1:14 pm on 25 May, 2023)] [Speaker B]: Hey Caroline, since we last cha",
+          "[conv-26-session_1 (1:56 pm on 8 May, 2023)] [Speaker A]: Hey Mel! Good to see you! How ha",
+          "[conv-26-session_18 (6:55 pm on 20 October, 2023)] [Speaker B]: Hey Caroline, that roadtri"
+        ]
+      },
+      {
+        "questionId": "conv-26-q153",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 26,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 (1:14 pm on 25 May, 2023)] [Speaker B]: Hey Caroline, since we last cha",
+          "[conv-26-session_19 (9:55 am on 22 October, 2023)] [Speaker A]: Woohoo Melanie! I passed t",
+          "[conv-26-session_13 (3:31 pm on 23 August, 2023)] [Speaker A]: Hi Melanie! Hope you're doi"
+        ]
+      },
+      {
+        "questionId": "conv-26-q154",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 22,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_19 (9:55 am on 22 October, 2023)] [Speaker A]: Woohoo Melanie! I passed t",
+          "[conv-26-session_2 (1:14 pm on 25 May, 2023)] [Speaker B]: Hey Caroline, since we last cha",
+          "[conv-26-session_13 (3:31 pm on 23 August, 2023)] [Speaker A]: Hi Melanie! Hope you're doi"
+        ]
+      }
+    ],
+    "filesystem@turn": [
+      {
+        "questionId": "conv-26-q0",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Thanks, Melanie. It really mattered. My own journey and the support I got made",
+          "[Caroline]: Thanks, Melanie! It's awesome to have our own platform to be ourselves and sup",
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir"
+        ]
+      },
+      {
+        "questionId": "conv-26-q1",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Painting landscapes and still life is my favorite! Nature's amazing, here's a p",
+          "[Melanie]: Yeah, I painted that lake sunrise last year! It's special to me.",
+          "[Melanie]: Wow, that sounds great - I agree, they're awesome. Here's a photo of my horse p"
+        ]
+      },
+      {
+        "questionId": "conv-26-q2",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Woah, Caroline, it sounds like you're doing some impressive work. It's inspirin",
+          "[Melanie]: Caroline, so glad you got the support! Your experience really brought you to wh",
+          "[Melanie]: That's awesome, Caroline! Glad to hear you found a great group where you can ha"
+        ]
+      },
+      {
+        "questionId": "conv-26-q3",
+        "category": "single_hop",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Wow, that's cool, Caroline! What happened that was so awesome? Did you hear any",
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir",
+          "[Caroline]: Wow, what a great day! Glad everyone could make it. What was your favorite par"
+        ]
+      },
+      {
+        "questionId": "conv-26-q4",
+        "category": "single_hop",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir",
+          "[Caroline]: Yeah, definitely! Drawing flowers is one of my faves. Appreciating nature and ",
+          "[Melanie]: Thanks, Caroline! It was Matt Patterson, he is so talented! His voice and songs"
+        ]
+      },
+      {
+        "questionId": "conv-26-q5",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Hey Caroline, since we last chatted, I've had a lot of things happening to me. ",
+          "[Melanie]: Thanks, Caroline! These are for running. Been running longer since our last cha",
+          "[Melanie]: Wow, that's cool, Caroline! What happened that was so awesome? Did you hear any"
+        ]
+      },
+      {
+        "questionId": "conv-26-q7",
+        "category": "single_hop",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir",
+          "[Caroline]: Yeah, definitely! Drawing flowers is one of my faves. Appreciating nature and ",
+          "[Melanie]: Thanks, Caroline! It was Matt Patterson, he is so talented! His voice and songs"
+        ]
+      },
+      {
+        "questionId": "conv-26-q14",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: I'm still figuring out the details, but I'm thinking of working with trans peo",
+          "[Caroline]: Thanks, Melanie. It really mattered. My own journey and the support I got made",
+          "[Caroline]: I struggled with mental health, and support I got was really helpful. It made "
+        ]
+      },
+      {
+        "questionId": "conv-26-q22",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Thanks, Melanie! It's awesome to have our own platform to be ourselves and sup",
+          "[Melanie]: Yeah, Caroline! It takes courage to talk about our own stories. But it's in the",
+          "[Caroline]: I struggled with mental health, and support I got was really helpful. It made "
+        ]
+      },
+      {
+        "questionId": "conv-26-q82",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: That charity race sounds great, Mel! Making a difference & raising awareness f",
+          "[Caroline]: Thanks, Mel! Your backing really means a lot. I felt super powerful giving my ",
+          "[Melanie]: Wow, Caroline! You're so inspiring for wanting to help others with their mental"
+        ]
+      },
+      {
+        "questionId": "conv-26-q83",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Thanks, Caroline! The event was really thought-provoking. I'm starting to reali",
+          "[Melanie]: Hey Caroline, hope all's good! I had a quiet weekend after we went camping with",
+          "[Melanie]: Yeah, Here's one I did last week. It's inspired by the sunsets. The colors make"
+        ]
+      },
+      {
+        "questionId": "conv-26-q84",
+        "category": "world_knowledge",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Wow, Caroline, that's gorgeous! I love the self-acceptance and love theme. How ",
+          "[Melanie]: Thanks, Caroline! The event was really thought-provoking. I'm starting to reali",
+          "[Caroline]: I totally agree, Melanie. Taking care of ourselves is so important - even if i"
+        ]
+      },
+      {
+        "questionId": "conv-26-q152",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: Thanks, Caroline! The event was really thought-provoking. I'm starting to reali",
+          "[Caroline]: I struggled with mental health, and support I got was really helpful. It made ",
+          "[Melanie]: That sounds great, Caroline. Volunteering is a great way to meet people. Creati"
+        ]
+      },
+      {
+        "questionId": "conv-26-q153",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Melanie]: That must have been tough for you, Caroline. Respect for finding acceptance and",
+          "[Melanie]: Wow, Caroline! You're so inspiring for wanting to help others with their mental",
+          "[Melanie]: Hey Caroline! It's so good to hear from you! That pic is so beautiful, the colo"
+        ]
+      },
+      {
+        "questionId": "conv-26-q154",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 0,
+        "returned": 10,
+        "top": [
+          "[Caroline]: Hi Melanie! Hope you're doing good. Guess what I did this week? I took the fir",
+          "[Caroline]: Woohoo Melanie! I passed the adoption agency interviews last Friday! I'm so ex",
+          "[Melanie]: Congrats, Caroline! Adoption sounds awesome. I'm so happy for you. These figuri"
+        ]
+      }
+    ],
+    "agentic-cortex@turn": [
+      {
+        "questionId": "conv-26-q0",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 5,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_1 - turn] [Speaker A]: I went to a LGBTQ support group yesterday and it w",
+          "[conv-26-session_10 - turn] [Speaker A]: Thanks, Melanie! It's awesome to have our own pla",
+          "[conv-26-session_13 - turn] [Speaker A]: That's so funny! I used to go horseback riding wi"
+        ]
+      },
+      {
+        "questionId": "conv-26-q1",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 3,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_1 - turn] [Speaker B]: Yeah, I painted that lake sunrise last year! It's ",
+          "[conv-26-session_14 - turn] [Speaker A]: Thanks, Melanie! That plate is awesome! Did you m",
+          "[conv-26-session_14 - turn] [Speaker B]: Wow Caroline, that looks amazing! Those colors ar"
+        ]
+      },
+      {
+        "questionId": "conv-26-q2",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 4,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_18 - turn] [Speaker B]: Thanks! They were scared but we reassured them an",
+          "[conv-26-session_10 - turn] [Speaker B]: I'll never forget the day my youngest took her fi",
+          "[conv-26-session_4 - turn] [Speaker B]: Woah, Caroline, it sounds like you're doing some i"
+        ]
+      },
+      {
+        "questionId": "conv-26-q3",
+        "category": "single_hop",
+        "hit": true,
+        "latencyMs": 2,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_1 - turn] [Speaker B]: Wow, that's cool, Caroline! What happened that was",
+          "[conv-26-session_1 - turn] [Speaker A]: Totally agree, Mel. Relaxing and expressing oursel",
+          "[conv-26-session_17 - turn] [Speaker B]: Thanks for the tip, Caroline. Doing research and "
+        ]
+      },
+      {
+        "questionId": "conv-26-q4",
+        "category": "single_hop",
+        "hit": true,
+        "latencyMs": 4,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_11 - turn] [Speaker A]: Thanks, Melanie. Here's one- 'Embracing Identity'",
+          "[conv-26-session_13 - turn] [Speaker A]: Thanks, Mel! I felt liberated and empowered doing",
+          "[conv-26-session_3 - turn] [Speaker A]: Thanks, Mel! Your backing really means a lot. I fe"
+        ]
+      },
+      {
+        "questionId": "conv-26-q5",
+        "category": "multi_hop",
+        "hit": false,
+        "latencyMs": 3,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 - turn] [Speaker A]: That charity race sounds great, Mel! Making a diff",
+          "[conv-26-session_2 - turn] [Speaker B]: Hey Caroline, since we last chatted, I've had a lo",
+          "[conv-26-session_14 - turn] [Speaker A]: Thanks, Melanie! That plate is awesome! Did you m"
+        ]
+      },
+      {
+        "questionId": "conv-26-q7",
+        "category": "single_hop",
+        "hit": false,
+        "latencyMs": 3,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_16 - turn] [Speaker B]: Wow, Caroline! This painting is awesome. Love the",
+          "[conv-26-session_9 - turn] [Speaker B]: Wow, Caroline, that painting is awesome! Those col",
+          "[conv-26-session_14 - turn] [Speaker A]: Yeah, definitely! Drawing flowers is one of my fa"
+        ]
+      },
+      {
+        "questionId": "conv-26-q14",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 6,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_4 - turn] [Speaker A]: Lately, I've been looking into counseling and ment",
+          "[conv-26-session_7 - turn] [Speaker A]: Thanks, Mell! I'm still looking into counseling an",
+          "[conv-26-session_4 - turn] [Speaker B]: Woah, Caroline, it sounds like you're doing some i"
+        ]
+      },
+      {
+        "questionId": "conv-26-q22",
+        "category": "temporal",
+        "hit": false,
+        "latencyMs": 3,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_7 - turn] [Speaker B]: Wow, Caroline! Books have such an awesome power! W",
+          "[conv-26-session_10 - turn] [Speaker B]: I'll never forget the day my youngest took her fi",
+          "[conv-26-session_18 - turn] [Speaker B]: Thanks! They were scared but we reassured them an"
+        ]
+      },
+      {
+        "questionId": "conv-26-q82",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 3,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 - turn] [Speaker A]: That charity race sounds great, Mel! Making a diff",
+          "[conv-26-session_2 - turn] [Speaker B]: Hey Caroline, since we last chatted, I've had a lo",
+          "[conv-26-session_3 - turn] [Speaker B]: Hey Caroline! Great to hear from you. Sounds like "
+        ]
+      },
+      {
+        "questionId": "conv-26-q83",
+        "category": "world_knowledge",
+        "hit": true,
+        "latencyMs": 3,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 - turn] [Speaker A]: That charity race sounds great, Mel! Making a diff",
+          "[conv-26-session_2 - turn] [Speaker B]: Hey Caroline, since we last chatted, I've had a lo",
+          "[conv-26-session_2 - turn] [Speaker B]: Thanks, Caroline! The event was really thought-pro"
+        ]
+      },
+      {
+        "questionId": "conv-26-q84",
+        "category": "world_knowledge",
+        "hit": false,
+        "latencyMs": 2,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_11 - turn] [Speaker B]: Wow, Caroline, that's gorgeous! I love the self-a",
+          "[conv-26-session_2 - turn] [Speaker A]: I totally agree, Melanie. Taking care of ourselves",
+          "[conv-26-session_13 - turn] [Speaker B]: Caroline, congrats! So proud of you for taking th"
+        ]
+      },
+      {
+        "questionId": "conv-26-q152",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 2,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 - turn] [Speaker A]: That charity race sounds great, Mel! Making a diff",
+          "[conv-26-session_2 - turn] [Speaker B]: Hey Caroline, since we last chatted, I've had a lo",
+          "[conv-26-session_2 - turn] [Speaker B]: Thanks, Caroline! The event was really thought-pro"
+        ]
+      },
+      {
+        "questionId": "conv-26-q153",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 6,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_2 - turn] [Speaker B]: Thanks, Caroline. It's still a work in progress, b",
+          "[conv-26-session_19 - turn] [Speaker B]: That must have been tough for you, Caroline. Resp",
+          "[conv-26-session_17 - turn] [Speaker A]: Thanks, Melanie! I'm stoked to start this new cha"
+        ]
+      },
+      {
+        "questionId": "conv-26-q154",
+        "category": "adversarial",
+        "hit": false,
+        "latencyMs": 4,
+        "returned": 10,
+        "top": [
+          "[conv-26-session_19 - turn] [Speaker A]: Woohoo Melanie! I passed the adoption agency inte",
+          "[conv-26-session_14 - turn] [Speaker A]: Yeah, definitely! Drawing flowers is one of my fa",
+          "[conv-26-session_15 - turn] [Speaker B]: Cool! What type of music do you play?"
+        ]
+      }
+    ]
+  }
+}

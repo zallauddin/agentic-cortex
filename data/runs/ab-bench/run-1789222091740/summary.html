@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A/B Benchmark — run-1789222091740 — agentic-cortex</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card-bg: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --border: #334155;
+    --green: #22c55e;
+    --cyan: #38bdf8;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --delta-faster: #22c55e;
+    --delta-slower: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    line-height: 1.5;
+    min-width: 720px;
+  }
+  .header {
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .header .meta {
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+  .header .meta span { margin-right: 16px; }
+  .header .varian-names {
+    margin-top: 8px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .header .varian-names span {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  .varian-names .v-a { background: rgba(34,197,94,0.15); color: var(--green); }
+  .varian-names .v-b { background: rgba(56,189,248,0.15); color: var(--cyan); }
+
+  .section {
+    margin-bottom: 20px;
+  }
+  .section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.8rem;
+  }
+
+  .metric-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .metric-label {
+    font-weight: 500;
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+  }
+  .delta-row {
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+  }
+  .delta {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+    font-size: 0.8rem;
+  }
+  .delta-faster { color: var(--delta-faster); background: rgba(34,197,94,0.1); }
+  .delta-slower { color: var(--delta-slower); background: rgba(239,68,68,0.1); }
+  .delta-neutral { color: var(--muted); }
+
+  .bar-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bar-stat-label {
+    width: 100px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .bar-track {
+    flex: 1;
+    height: 18px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .bar-pair {
+    display: flex;
+    height: 100%;
+  }
+  .bar-a, .bar-b, .bar-segment {
+    height: 100%;
+    border-radius: 4px;
+    min-width: 2px;
+  }
+  .bar-a { background: var(--green); }
+  .bar-b { background: var(--cyan); }
+  .bar-segment.hits { background: var(--green); }
+  .bar-segment.misses { background: var(--red); }
+  .bar-value {
+    width: 100px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: right;
+    flex-shrink: 0;
+    font-family: 'SF Mono', Consolas, monospace;
+  }
+
+  .variant-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 0.8rem;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .legend-swatch.a { background: var(--green); }
+  .legend-swatch.b { background: var(--cyan); }
+
+  .per-query-card, .quality-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .query-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .query-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    border: 1px solid var(--border);
+  }
+  .query-item.hit { border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.08); }
+  .query-item.miss { border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.08); }
+  .query-icon { font-weight: 700; font-size: 1rem; }
+  .query-item.hit .query-icon { color: var(--green); }
+  .query-item.miss .query-icon { color: var(--red); }
+  .query-label { color: var(--text); }
+  .query-category { color: var(--muted); font-size: 0.7rem; }
+
+  .footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.8rem;
+    display: flex;
+    justify-content: space-between;
+  }
+  .footer a { color: var(--cyan); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>A/B Performance Benchmark — run-1789222091740</h1>
+  <div class="meta">
+    <span>Ran: 9/12/2026, 3:08:11 PM</span>
+    <span>Iterations: 3</span>
+    <span>Variants: agentic-cortex (default), AC — no cross-encoder reranking</span>
+  </div>
+  <div class="varian-names">
+    <span class="v-a">ac — agentic-cortex (default)</span>
+    <span class="v-b">noRerank — AC — no cross-encoder reranking</span>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Latency Comparison</div>
+<div class="metric-card">
+  <div class="metric-label">Search latency (p50, p95, p99 ms)</div>
+  <div class="delta-row"><span class="delta">δ p50: -0.07 ms (faster)</span></div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label">p50</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:19.3%;background:#22c55e;" title="agentic-cortex (default): 0.252 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:19.3%;background:#22c55e;" title="agentic-cortex (default): 0.252 ms"></div>
+          <div class="bar-b" style="width:13.7%;background:#38bdf8;" title="AC — no cross-encoder reranking: 0.178 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">0.25 / 0.18</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">p95</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:84.6%;background:#22c55e;" title="agentic-cortex (default): 1.104 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:84.6%;background:#22c55e;" title="agentic-cortex (default): 1.104 ms"></div>
+          <div class="bar-b" style="width:83.5%;background:#38bdf8;" title="AC — no cross-encoder reranking: 1.090 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">1.10 / 1.09</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">p99</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 1.135 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 1.135 ms"></div>
+          <div class="bar-b" style="width:84.7%;background:#38bdf8;" title="AC — no cross-encoder reranking: 1.105 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">1.13 / 1.11</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">mean</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:29.9%;background:#22c55e;" title="agentic-cortex (default): 0.391 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:29.9%;background:#22c55e;" title="agentic-cortex (default): 0.391 ms"></div>
+          <div class="bar-b" style="width:27.4%;background:#38bdf8;" title="AC — no cross-encoder reranking: 0.358 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">0.39 / 0.36</span>
+    </div>
+  </div>
+  <div class="variant-legend">
+    <span class="legend-item"><span class="legend-swatch a"></span>agentic-cortex (default)</span>
+    <span class="legend-item"><span class="legend-swatch b"></span>AC — no cross-encoder reranking</span>
+  </div>
+</div>
+<div class="metric-card">
+  <div class="metric-label">Save latency (p50, p95, mean ms)</div>
+  <div class="delta-row"><span class="delta">δ p50: -0.09 ms (faster)</span></div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label">p50</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:70.0%;background:#22c55e;" title="agentic-cortex (default): 1.154 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:70.0%;background:#22c55e;" title="agentic-cortex (default): 1.154 ms"></div>
+          <div class="bar-b" style="width:64.5%;background:#38bdf8;" title="AC — no cross-encoder reranking: 1.063 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">1.15 / 1.06</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">p95</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 1.433 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 1.433 ms"></div>
+          <div class="bar-b" style="width:68.1%;background:#38bdf8;" title="AC — no cross-encoder reranking: 1.122 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">1.43 / 1.12</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">p99</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 1.433 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 1.433 ms"></div>
+          <div class="bar-b" style="width:68.1%;background:#38bdf8;" title="AC — no cross-encoder reranking: 1.122 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">1.43 / 1.12</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">mean</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:71.0%;background:#22c55e;" title="agentic-cortex (default): 1.169 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:71.0%;background:#22c55e;" title="agentic-cortex (default): 1.169 ms"></div>
+          <div class="bar-b" style="width:62.1%;background:#38bdf8;" title="AC — no cross-encoder reranking: 1.023 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">1.17 / 1.02</span>
+    </div>
+  </div>
+  <div class="variant-legend">
+    <span class="legend-item"><span class="legend-swatch a"></span>agentic-cortex (default)</span>
+    <span class="legend-item"><span class="legend-swatch b"></span>AC — no cross-encoder reranking</span>
+  </div>
+</div>
+<div class="metric-card">
+  <div class="metric-label">Bootstrap latency (p50, p95, mean ms)</div>
+  <div class="delta-row"><span class="delta">δ p50: +0.52 ms (slower)</span></div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label">p50</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:0.5%;background:#22c55e;" title="agentic-cortex (default): 3.621 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:0.5%;background:#22c55e;" title="agentic-cortex (default): 3.621 ms"></div>
+          <div class="bar-b" style="width:0.5%;background:#38bdf8;" title="AC — no cross-encoder reranking: 4.140 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">3.62 / 4.14</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">p95</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 670.460 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 670.460 ms"></div>
+          <div class="bar-b" style="width:85.9%;background:#38bdf8;" title="AC — no cross-encoder reranking: 662.606 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">670.46 / 662.61</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">p99</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 670.460 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:87.0%;background:#22c55e;" title="agentic-cortex (default): 670.460 ms"></div>
+          <div class="bar-b" style="width:85.9%;background:#38bdf8;" title="AC — no cross-encoder reranking: 662.606 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">670.46 / 662.61</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">mean</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:29.3%;background:#22c55e;" title="agentic-cortex (default): 225.687 ms"></div>
+        <div class="bar-pair">
+          <div class="bar-a" style="width:29.3%;background:#22c55e;" title="agentic-cortex (default): 225.687 ms"></div>
+          <div class="bar-b" style="width:29.0%;background:#38bdf8;" title="AC — no cross-encoder reranking: 223.439 ms"></div>
+        </div>
+      </div>
+      <span class="bar-value">225.69 / 223.44</span>
+    </div>
+  </div>
+  <div class="variant-legend">
+    <span class="legend-item"><span class="legend-swatch a"></span>agentic-cortex (default)</span>
+    <span class="legend-item"><span class="legend-swatch b"></span>AC — no cross-encoder reranking</span>
+  </div>
+</div>
+</div>
+<div class="section">
+  <div class="section-title">Per-Query Latency</div>
+<div class="per-query-card">
+  <div class="metric-label">Per-query search latency — agentic-cortex (default)</div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label" title="which test framework should I use">test framework</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:100.0%;background:#22c55e;" title="0.61 ms"></div>
+      </div>
+      <span class="bar-value">0.61ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="how does authentication work">auth</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:41.3%;background:#22c55e;" title="0.25 ms"></div>
+      </div>
+      <span class="bar-value">0.25ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="how do I release">release</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:30.2%;background:#22c55e;" title="0.18 ms"></div>
+      </div>
+      <span class="bar-value">0.18ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="indentation preference">preference</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:22.6%;background:#22c55e;" title="0.14 ms"></div>
+      </div>
+      <span class="bar-value">0.14ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="path gotcha">path</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:22.5%;background:#22c55e;" title="0.14 ms"></div>
+      </div>
+      <span class="bar-value">0.14ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="vitest test framework decision">find signal in noise</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:33.9%;background:#22c55e;" title="0.21 ms"></div>
+      </div>
+      <span class="bar-value">0.21ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="JWT auth architecture">auth in noise</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:29.0%;background:#22c55e;" title="0.18 ms"></div>
+      </div>
+      <span class="bar-value">0.18ms</span>
+    </div>
+  </div>
+</div>
+<div class="per-query-card">
+  <div class="metric-label">Per-query search latency — AC — no cross-encoder reranking</div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label" title="which test framework should I use">test framework</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:100.0%;background:#38bdf8;" title="0.68 ms"></div>
+      </div>
+      <span class="bar-value">0.68ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="how does authentication work">auth</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:35.0%;background:#38bdf8;" title="0.24 ms"></div>
+      </div>
+      <span class="bar-value">0.24ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="how do I release">release</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:21.5%;background:#38bdf8;" title="0.15 ms"></div>
+      </div>
+      <span class="bar-value">0.15ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="indentation preference">preference</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:17.5%;background:#38bdf8;" title="0.12 ms"></div>
+      </div>
+      <span class="bar-value">0.12ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="path gotcha">path</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:16.8%;background:#38bdf8;" title="0.11 ms"></div>
+      </div>
+      <span class="bar-value">0.11ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="vitest test framework decision">find signal in noise</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:25.1%;background:#38bdf8;" title="0.17 ms"></div>
+      </div>
+      <span class="bar-value">0.17ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label" title="JWT auth architecture">auth in noise</span>
+      <div class="bar-track">
+        <div class="bar-segment" style="width:24.8%;background:#38bdf8;" title="0.17 ms"></div>
+      </div>
+      <span class="bar-value">0.17ms</span>
+    </div>
+  </div>
+</div>
+</div>
+<div class="section">
+  <div class="section-title">Recall@k Quality</div>
+<div class="quality-card">
+  <div class="metric-label">Recall@k quality — agentic-cortex (default)</div>
+  <div class="delta-row">5/7 hits (71.4%)</div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label">Hit</span>
+      <div class="bar-track">
+        <div class="bar-segment hits" style="width:71.42857142857143%;background:#22c55e;" title="5 hits"></div>
+      </div>
+      <span class="bar-value">71.4%</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">Miss</span>
+      <div class="bar-track">
+        <div class="bar-segment misses" style="width:28.57142857142857%;background:#ef4444;" title="2 misses"></div>
+      </div>
+      <span class="bar-value">28.6%</span>
+    </div>
+  </div>
+  <div class="query-list">
+    <div class="query-item miss">
+      <span class="query-icon">✗</span>
+      <span class="query-label" title="which test framework should I use">test framework</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item miss">
+      <span class="query-icon">✗</span>
+      <span class="query-label" title="how does authentication work">auth</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="how do I release">release</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="indentation preference">preference</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="path gotcha">path</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="vitest test framework decision">find signal in noise</span>
+      <span class="query-category">noise</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="JWT auth architecture">auth in noise</span>
+      <span class="query-category">noise</span>
+    </div>
+  </div>
+</div>
+<div class="quality-card">
+  <div class="metric-label">Recall@k quality — AC — no cross-encoder reranking</div>
+  <div class="delta-row">5/7 hits (71.4%)</div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label">Hit</span>
+      <div class="bar-track">
+        <div class="bar-segment hits" style="width:71.42857142857143%;background:#22c55e;" title="5 hits"></div>
+      </div>
+      <span class="bar-value">71.4%</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">Miss</span>
+      <div class="bar-track">
+        <div class="bar-segment misses" style="width:28.57142857142857%;background:#ef4444;" title="2 misses"></div>
+      </div>
+      <span class="bar-value">28.6%</span>
+    </div>
+  </div>
+  <div class="query-list">
+    <div class="query-item miss">
+      <span class="query-icon">✗</span>
+      <span class="query-label" title="which test framework should I use">test framework</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item miss">
+      <span class="query-icon">✗</span>
+      <span class="query-label" title="how does authentication work">auth</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="how do I release">release</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="indentation preference">preference</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="path gotcha">path</span>
+      <span class="query-category">single_hop</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="vitest test framework decision">find signal in noise</span>
+      <span class="query-category">noise</span>
+    </div>
+    <div class="query-item hit">
+      <span class="query-icon">✓</span>
+      <span class="query-label" title="JWT auth architecture">auth in noise</span>
+      <span class="query-category">noise</span>
+    </div>
+  </div>
+</div>
+</div>
+<div class="section">
+  <div class="section-title">Concurrency</div>
+<div class="metric-card">
+  <div class="metric-label">Concurrency (20 parallel saves, wall ms)</div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label">Wall time (20 parallel)</span>
+      <div class="bar-track">
+        <div class="bar-a" style="width:79.3%;background:#22c55e;" title="18.6 ms"></div>
+        <div class="bar-b" style="width:87.0%;background:#38bdf8;" title="20.3 ms"></div>
+      </div>
+      <span class="bar-value">18.6 / 20.3 ms</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-stat-label">Throughput (ops/sec)</span>
+      <div class="bar-track">
+        <div class="bar-a" style="width:87.0%;background:#22c55e;" title="1078 ops/s"></div>
+        <div class="bar-b" style="width:79.3%;background:#38bdf8;" title="983 ops/s"></div>
+      </div>
+      <span class="bar-value">1078 / 983</span>
+    </div>
+  </div>
+  <div class="variant-legend">
+    <span class="legend-item"><span class="legend-swatch a"></span>ac</span>
+    <span class="legend-item"><span class="legend-swatch b"></span>noRerank</span>
+  </div>
+</div>
+</div>
+<div class="section">
+  <div class="section-title">Resource Usage</div>
+<div class="metric-card">
+  <div class="metric-label">DB size after benchmark (bytes)</div>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-stat-label">After benchmark</span>
+      <div class="bar-track">
+        <div class="bar-a" style="width:87.0%;background:#22c55e;" title="1.0 MB"></div>
+        <div class="bar-b" style="width:87.0%;background:#38bdf8;" title="1.0 MB"></div>
+      </div>
+      <span class="bar-value">1.0 MB / 1.0 MB</span>
+    </div>
+  </div>
+</div>
+</div>
+<div class="footer">
+  <span>Generated by ab-bench-html.js · run-1789222091740</span>
+  <span>Source: <a href="https://github.com/zallauddin/agentic-cortex-memory">agentic-cortex</a></span>
+</div>
+</body>
+</html>
